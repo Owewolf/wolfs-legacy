@@ -19,7 +19,8 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      frameSrc: ["'self'", "blob:"],
       connectSrc: ["'self'"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
@@ -68,8 +69,10 @@ app.get('/api/audit', authenticateToken, (req, res) => {
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/vault', require('./routes/vault'));
+app.use('/api/documents', require('./routes/documents'));
 app.use('/api/beneficiaries', require('./routes/beneficiaries'));
 app.use('/api/deadswitch', require('./routes/deadswitch'));
+app.use('/api/homebank', require('./routes/homebank'));
 
 // Dead man's switch background check — runs every hour
 function checkDeadSwitches() {
@@ -109,4 +112,5 @@ getDb();
 app.listen(PORT, () => {
   log.info('Legacy Vault started', { port: PORT });
   checkDeadSwitches();
+  require('./homebank-service').startWatcher();
 });

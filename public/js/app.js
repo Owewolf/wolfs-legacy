@@ -1,4 +1,4 @@
-/* global API, SECTIONS */
+/* global API, SECTIONS, Docs, HomeBank */
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -81,6 +81,7 @@ async function handleRoute() {
     case 'beneficiaries': return renderBeneficiaries();
     case 'deadswitch': return renderDeadSwitch();
     case 'settings': return renderSettings();
+    case 'homebank': return HomeBank.render();
     case 'audit': return renderAuditLog();
     case 'search': return renderSearchResults(p1);
     default: return renderDashboard();
@@ -167,6 +168,10 @@ function sidebarHTML(activeKey) {
       <nav class="sidebar-nav">
         <div class="nav-section-label">Vault Sections</div>
         ${sectionItems}
+        <div class="nav-section-label" style="margin-top:12px">Financial Overview</div>
+        <button class="nav-item ${activeKey === 'homebank' ? 'active' : ''}" data-nav="homebank">
+          <span class="icon">🏦</span>HomeBank (read only)
+        </button>
         <div class="nav-section-label" style="margin-top:12px">Settings</div>
         <button class="nav-item ${activeKey === 'beneficiaries' ? 'active' : ''}" data-nav="beneficiaries">
           <span class="icon">\u{1F465}</span>Beneficiaries
@@ -260,7 +265,7 @@ async function renderDashboard() {
     </div>
     ${onboardingHTML}
     ${totalEntries > 0 ? `<div class="alert alert-info" style="margin-bottom:24px">
-      ${totalEntries} total entries across ${Object.keys(state.counts).length} sections. All data is AES-256-GCM encrypted.
+      ${totalEntries} total entries across ${Object.keys(state.counts).length} sections. Vault text fields are encrypted; managed document copies remain ordinary files with private filesystem permissions.
     </div>` : ''}
     <div class="vault-grid">${cards}</div>
   `);
@@ -362,6 +367,8 @@ async function renderSection(key) {
   } catch (err) { return showError(err.message); }
 
   const entries = Array.isArray(state.entries) ? state.entries : [];
+  let docCounts = {};
+  try { docCounts = await Docs.counts(key); } catch (err) { console.warn('Document counts unavailable', err); }
   const entriesHTML = entries.length ? entries.map(e => {
     const fieldsHTML = sec.fields.filter(f => e.fields[f.key]).map(f => `
       <div class="field-item">
@@ -374,6 +381,7 @@ async function renderSection(key) {
         <h3>${esc(e.title)}</h3>
         <div class="actions">
           <button class="btn btn-outline btn-sm" data-edit="${e.id}">Edit</button>
+          <button class="btn btn-outline btn-sm" data-edit="${e.id}">Documents (${docCounts[e.id] || 0})</button>
           <button class="btn btn-danger btn-sm" data-delete="${e.id}">Delete</button>
         </div>
       </div>
@@ -442,12 +450,14 @@ async function renderEntryForm(sectionKey, entryId) {
         <div class="form-group"><label>Title / Label</label><input type="text" name="title" value="${esc(existing?.title || '')}" required placeholder="e.g. HDFC Savings, Main Gmail..."></div>
         ${fieldsHTML}
         <div class="form-group"><label>Notes</label><textarea name="notes" placeholder="Any additional notes...">${esc(existing?.notes || '')}</textarea></div>
-        <button type="submit" class="btn btn-primary">${existing ? 'Save Changes' : 'Add Entry'}</button>
+        ${Docs.panel()}
+        <button type="submit" class="btn btn-primary">${existing ? 'Save Changes' : 'Add Entry & Copy Documents'}</button>
       </form>
     </div>
   `);
 
   bindSidebar();
+  const documentWidget = Docs.mount(entryId);
   document.querySelectorAll('.password-toggle').forEach(btn => {
     btn.onclick = () => {
       const inp = btn.parentElement.querySelector('input');
@@ -458,19 +468,30 @@ async function renderEntryForm(sectionKey, entryId) {
 
   $('#entry-form').onsubmit = async (e) => {
     e.preventDefault();
+    const button = e.target.querySelector('button[type=submit]');
+    button.disabled = true;
     const f = new FormData(e.target);
     const fields = {};
     sec.fields.forEach(fd => { const v = f.get(fd.key); if (v) fields[fd.key] = v; });
     try {
+      const payload = { section: sectionKey, title: f.get('title'), fields, notes: f.get('notes') };
       if (existing) {
-        await API.updateEntry(entryId, { section: sectionKey, title: f.get('title'), fields, notes: f.get('notes') });
-        showSuccess('Entry updated');
+        await API.updateEntry(entryId, payload);
       } else {
-        await API.createEntry({ section: sectionKey, title: f.get('title'), fields, notes: f.get('notes') });
-        showSuccess('Entry added');
+        const created = await API.createEntry(payload);
+        entryId = created.id;
+        existing = await API.getEntry(entryId);
       }
+      const result = await documentWidget.uploadQueued(entryId);
+      if (result.failed.length) {
+        showError('Record saved, but '+result.failed.length+' file(s) could not be copied. Correct the error and press Save again.');
+        button.textContent = 'Save Changes / Retry Files';
+        return;
+      }
+      showSuccess('Record and documents saved');
       navigate('section/' + sectionKey);
     } catch (err) { showError(err.message); }
+    finally { button.disabled = false; }
   };
 }
 
@@ -667,7 +688,7 @@ async function renderSettings() {
     <div class="card" style="margin-top:16px">
       <h3 style="margin-bottom:12px">Backup &amp; Restore</h3>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
-        Download a full backup of your vault data as a JSON file, or restore from a previous backup.
+        JSON backup covers vault entries but DOES NOT include attached document files. Use scripts/backup-managed.sh on an independent disk for a full backup.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
         <button class="btn btn-primary" id="backup-btn">Download Backup</button>
@@ -795,12 +816,12 @@ async function renderAccessPortal() {
       const r = await API.accessVault(token);
       if (r.status === 'no_access') result.innerHTML = `<div class="alert alert-warning">Access not yet granted. Request emergency access above.</div>`;
       else if (r.status === 'waiting') result.innerHTML = `<div class="alert alert-warning">Pending. Access on ${fmtDate(r.waitInfo.access_at)} unless denied.</div>`;
-      else if (r.status === 'granted') renderVaultReadonly(r);
+      else if (r.status === 'granted') renderVaultReadonly(r, token);
     } catch (err) { result.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`; }
   };
 }
 
-function renderVaultReadonly(data) {
+function renderVaultReadonly(data, token) {
   const grouped = {};
   data.entries.forEach(e => { if (!grouped[e.section]) grouped[e.section] = []; grouped[e.section].push(e); });
 
@@ -818,13 +839,15 @@ function renderVaultReadonly(data) {
         `<div class="field-item"><label>${esc(f.label)}</label><div class="value">${esc(e.fields[f.key])}</div></div>`
       ).join('');
       html += `<div class="card"><h3 style="margin-bottom:12px">${esc(e.title)}</h3><div class="field-grid">${fieldsHTML}</div>
-        ${e.notes ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><label style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">Notes</label><div style="white-space:pre-wrap;margin-top:4px">${esc(e.notes)}</div></div>` : ''}</div>`;
+        ${e.notes ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><label style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">Notes</label><div style="white-space:pre-wrap;margin-top:4px">${esc(e.notes)}</div></div>` : ''}
+        ${Docs.beneficiaryCards(e.documents)}</div>`;
     }
     html += '</div>';
   }
   if (!data.entries.length) html += '<div class="empty-state"><h3>Vault is empty</h3></div>';
   html += '<div style="text-align:center;margin-top:32px"><a href="#access">&larr; Back</a></div></div>';
   app.innerHTML = html;
+  Docs.bindBeneficiary(data, token);
 }
 
 // ── Init ──

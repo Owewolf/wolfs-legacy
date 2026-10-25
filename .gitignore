@@ -9,3 +9,23 @@ backups/
 *.db-shm
 *.db-wal
 .secrets
+
+# Wolf's Legacy: NEVER commit financial files or data/secret backups.
+*.xhb
+*.xhb~
+*.xhb.bak
+*.bank
+*.qif
+*.ofx
+*.qfx
+*.csv
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.zip
+.env.*
+!*.env.example
+backup*/
+backups*/

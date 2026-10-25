@@ -2,6 +2,7 @@ const express = require('express');
 const { getDb, audit } = require('../db');
 const { generateAccessToken, hashToken, decrypt } = require('../crypto');
 const { authenticateToken } = require('../middleware/auth');
+const { listForEntry } = require('../document-store');
 const { validateString, validateEmail, validateInt, validationError } = require('../validate');
 
 const router = express.Router();
@@ -170,6 +171,7 @@ router.post('/access', (req, res) => {
   });
 
   audit(null, 'vault_accessed', 'beneficiary', b.id, `${b.name} viewed vault of user ${b.user_id}`, req.ip);
+  for (const entry of entries) entry.documents = listForEntry(db, b.user_id, entry.id);
   res.json({ status: 'granted', owner, beneficiary: { name: b.name, relationship: b.relationship }, entries });
 });
 

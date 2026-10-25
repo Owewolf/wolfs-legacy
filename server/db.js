@@ -68,6 +68,39 @@ function initTables() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS managed_documents (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      original_name_encrypted TEXT NOT NULL,
+      display_name_encrypted TEXT NOT NULL,
+      description_encrypted TEXT,
+      stored_filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS document_associations (
+      document_id TEXT NOT NULL REFERENCES managed_documents(id) ON DELETE CASCADE,
+      entry_id INTEGER NOT NULL REFERENCES vault_entries(id) ON DELETE CASCADE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (document_id, entry_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_docs_owner ON managed_documents(user_id);
+    CREATE INDEX IF NOT EXISTS idx_doc_associations_entry ON document_associations(entry_id);
+
+    CREATE TABLE IF NOT EXISTS homebank_snapshots (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      config_encrypted TEXT NOT NULL,
+      snapshot_encrypted TEXT,
+      fingerprint TEXT,
+      source_file TEXT,
+      source_saved_at TEXT,
+      synced_at TEXT,
+      last_error TEXT,
+      content_hash TEXT
+    );
     CREATE TABLE IF NOT EXISTS audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER,
