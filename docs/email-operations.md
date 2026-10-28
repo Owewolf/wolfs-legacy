@@ -263,6 +263,8 @@ Exit code **0** and `outcome: "verified"` require every database check and both 
 
 ## Acceptance evidence and current gate
 
+If email settings shows a JSON parsing error while the rest of an existing vault works, check the actual API response. An older running process can serve new frontend files while returning the HTML app fallback for `/api/notifications`. Use the isolated test instance on port 4445 during acceptance. Its **Open code setup** shortcut goes to `#settings/offline-codes` and brings code generation into view. A refreshed frontend now gives a readable unavailable-feature message, and the reviewed new backend returns JSON 404 for unknown API routes. Apply a production restart only through the reviewed deployment procedure after acceptance; do not use it to reset test enrollment or mailbox state.
+
 Automated tests and local fake transports verify implementation behavior; they cannot prove a particular production provider delivers and receives mail. Record the reviewed commit, test command/result, operator/date, configured provider names (without secrets), exact old/new UTC timestamps and sanitized event IDs.
 
 The real-provider gate requires all of the following:

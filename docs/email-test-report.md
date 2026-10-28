@@ -4,7 +4,7 @@ Date: 28 October 2026 (Africa/Johannesburg). Branch: `feature/email-notification
 
 ## Automated evidence
 
-`npm test` passed: **118 Node tests, 4 Python tests, zero failures/skips**. This includes a real headless Firefox run against the application's actual `index.html` and settings route. `tests/email-ui.test.js` documents the 16 browser behavior checks and explicitly skips only on machines without Firefox; this run did not skip it.
+`npm test` passed: **124 Node tests, 4 Python tests, zero failures/skips**. This includes a real headless Firefox run against the application's actual `index.html` and settings route. `tests/email-ui.test.js` documents the 18 browser behavior checks and explicitly skips only on machines without Firefox; this run did not skip it.
 
 | Brief acceptance item | Evidence |
 | --- | --- |
@@ -23,6 +23,8 @@ Date: 28 October 2026 (Africa/Johannesburg). Branch: `feature/email-notification
 | Threat model | [Threat model](email-threat-model.md), with adapter/service/worker tests for spoofing, replay, independent-code theft, MIME, flooding, failure logging and concurrency. |
 
 The synthetic tests never open the installed application's vault. The manual template preview command also never opens that database or starts workers.
+
+The screenshot-reported JSON parsing failure was reproduced against the older running main server: `/api/notifications` returned the HTML application page. `tests/api-client.test.js` now covers readable errors for HTML/malformed responses without disclosing response content, while the copied-server test verifies unknown API routes return JSON 404. The browser test also verifies `#settings/offline-codes` scrolls to and focuses code generation. The live isolated test's frontend was refreshed without restarting it or changing its verified account/database; the main server was not restarted or deployed.
 
 ## Real iCloud template delivery
 

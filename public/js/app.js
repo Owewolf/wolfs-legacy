@@ -84,7 +84,7 @@ async function handleRoute() {
     case 'edit': return renderEntryForm(p1, p2);
     case 'beneficiaries': return renderBeneficiaries();
     case 'deadswitch': return renderDeadSwitch();
-    case 'settings': return renderSettings();
+    case 'settings': return renderSettings(p1);
     case 'homebank': return HomeBank.render();
     case 'audit': return renderAuditLog();
     case 'search': return renderSearchResults(p1);
@@ -698,7 +698,7 @@ async function renderDeadSwitch() {
 }
 
 // ── Account Settings ──
-async function renderSettings() {
+async function renderSettings(focusSection) {
   app.innerHTML = layoutHTML('settings', `
     <div class="page-header"><h1>\u{2699} Account Settings</h1></div>
     <div class="card">
@@ -732,7 +732,15 @@ async function renderSettings() {
     <div id="notification-settings" style="margin-top:16px"></div>
   `);
   bindSidebar();
-  if (window.Notifications) window.Notifications.mount($('#notification-settings'));
+  if (window.Notifications) {
+    const notificationRoot = $('#notification-settings');
+    const expectedHash = window.location.hash;
+    window.Notifications.mount(notificationRoot).then(() => {
+      if (focusSection !== 'offline-codes' || !notificationRoot.isConnected || window.location.hash !== expectedHash) return;
+      notificationRoot.querySelector('#notification-offline-title')?.closest('section')?.scrollIntoView({ block: 'start' });
+      notificationRoot.querySelector('#notification-recovery-password')?.focus({ preventScroll: true });
+    });
+  }
 
   $('#pw-form').onsubmit = async (e) => {
     e.preventDefault();

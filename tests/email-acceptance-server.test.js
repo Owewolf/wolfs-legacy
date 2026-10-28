@@ -40,6 +40,10 @@ test('acceptance harness isolates paths/secrets and protects one-time real remin
   const base=`http://127.0.0.1:${prepared.port}`;
   const request=(route,body,token)=>fetch(base+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',
     ...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const missing=await request('/api/does-not-exist');
+  assert.equal(missing.status,404);
+  assert.match(missing.headers.get('content-type'),/application\/json/);
+  assert.deepEqual(await missing.json(),{error:'API endpoint not found'});
   assert.equal((await request('/api/notifications/acceptance/status')).status,401);
   const password='SyntheticAcceptancePassword123!';
   const registered=await request('/api/auth/register',{name:'Synthetic acceptance owner',email:'owner@example.invalid',password});

@@ -87,6 +87,11 @@ function checkDeadSwitches() {
 
 setInterval(checkDeadSwitches, 60 * 60 * 1000);
 
+// Unknown API requests must never fall through to the browser application.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
 app.get('{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });

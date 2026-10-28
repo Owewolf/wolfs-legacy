@@ -61,6 +61,10 @@ const browserChecks = `
   check(root.textContent.includes('Submission uncertain'),'real settings route mounts notification status');
   check(!root.querySelector('img'),'escapes provider error markup');
   check(root.textContent.includes('SAST'),'renders Johannesburg dates');
+  await flush();
+  check(document.activeElement?.id==='notification-recovery-password','direct code-setup link focuses the code-generation password');
+  const codeSection=root.querySelector('#notification-offline-title').getBoundingClientRect();
+  check(codeSection.top>=0&&codeSection.top<window.innerHeight,'direct code-setup link scrolls the needed section into view');
   const storageBefore=JSON.stringify({...localStorage});
 
   let form=root.querySelector('[data-notification-form="verify-start"]');
@@ -162,7 +166,7 @@ test('owner notification UI enrollment, factor isolation and navigation cleanup 
     fs.rmSync(profile, { recursive: true, force: true });
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  browser = spawn(firefox, ['--headless', '--no-remote', '--profile', profile, `http://127.0.0.1:${server.address().port}/#settings`], {
+  browser = spawn(firefox, ['--headless', '--no-remote', '--profile', profile, `http://127.0.0.1:${server.address().port}/#settings/offline-codes`], {
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   browser.stderr.on('data', chunk => { browserErrors = (browserErrors + String(chunk)).slice(-2000); });
@@ -171,6 +175,6 @@ test('owner notification UI enrollment, factor isolation and navigation cleanup 
   timer = setTimeout(() => rejectResult(new Error(`Firefox UI checks timed out: ${browserErrors}`)), 30000);
   const report = await result;
   assert.equal(report.ok, true, report.stack || report.error);
-  assert.equal(report.checks.length, 16);
+  assert.equal(report.checks.length, 18);
   t.diagnostic('Real index.html and settings route: ' + report.checks.join('; '));
 });
