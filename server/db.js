@@ -142,6 +142,7 @@ function initTables() {
   require('./vault-visibility').backfillHomeBankLinks(db);
   require('./homebank-vault').clearStoredHomebankLedger(db);
   require('./notifications/schema').initNotificationSchema(db);
+  require('./legacy-schema').initLegacySchema(db);
 }
 
 function audit(userId, action, targetType, targetId, detail, ip) {

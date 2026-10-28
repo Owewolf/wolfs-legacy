@@ -20,6 +20,7 @@ try{
   assert.equal(store.ownerDirectory(123),path.join(tmp,'owner-123'));
   const d=path.join(store.ownerDirectory(123),'00000000-0000-4000-8000-000000000000.pdf');
   fs.copyFileSync(src,d);
+  fs.chmodSync(d,0o600);
   const {fd}=store.openDocument({stored_filename:'owner-123/00000000-0000-4000-8000-000000000000.pdf'});
   fs.closeSync(fd);
   assert.equal(fs.readFileSync(src).toString(),bytes.toString(),'original was changed');

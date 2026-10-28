@@ -92,6 +92,10 @@ function createNotificationWorker({db,env=process.env,now=()=>new Date(),smtp,im
       if(s.verify_nonce!==payload.nonce || !s.verify_hash || s.verify_expires_at<=at()) {cancel(job,'VERIFICATION_EXPIRED');return;}
       payload={verificationCode:derivedCode(env,'verify',payload.nonce),expiresAt:s.verify_expires_at};
     } else if(job.event_type==='email_test') payload={timestamp:at()};
+    else if(job.event_type==='legacy_review_due') {
+      payload=require('../legacy-review-notifications').prepareReviewReminder(db,job,at());
+      if(!payload) {cancel(job,'REVIEW_SUPERSEDED_OR_DISABLED');return;}
+    }
     let rendered;
     try {rendered=renderTemplate(job.event_type,payload);} catch {throw Object.assign(new Error('Invalid event'),{code:'INVALID_EVENT_PAYLOAD',transient:false});}
       smtp ||= createSmtpTransport(env);
@@ -145,6 +149,7 @@ function createNotificationWorker({db,env=process.env,now=()=>new Date(),smtp,im
     busy=true;
     try {
       service.reconcile();
+      require('../legacy-review-notifications').queueReviewReminders({db,service,now});
       if(!secretReady(env) || (env.NOTIFICATION_REMINDER_DAYS && env.NOTIFICATION_REMINDER_DAYS!=='5') ||
           (env.NOTIFICATION_TIMEZONE && env.NOTIFICATION_TIMEZONE!=='Africa/Johannesburg')) {
         await health('smtp',{code:'EMAIL_CONFIGURATION'});await health('imap',{code:'EMAIL_CONFIGURATION'});return;

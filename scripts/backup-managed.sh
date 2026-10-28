@@ -1,22 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Full managed documents backup: call only after stopping the service to ensure SQLite consistency.
-APP="/home/wolf/Projects/legacy-vault"
-DOCS="${DOCUMENT_STORAGE_ROOT:-}"
-DEST="${1:-}"
-if [[ -z "$DEST" || -z "$DOCS" ]]; then
-  echo 'Usage: DOCUMENT_STORAGE_ROOT=/verified/documents scripts/backup-managed.sh /external/backup/folder' >&2
+# Every app/mail writer must be stopped for database-plus-files consistency.
+if [[ "${1:-}" != '--service-stopped' || -z "${2:-}" || $# -lt 2 || $# -gt 3 ]]; then
+  echo 'Usage: DOCUMENT_STORAGE_ROOT=/verified/documents scripts/backup-managed.sh --service-stopped /new/external/snapshot [/effective-unit.txt]' >&2
   exit 2
 fi
-[[ -d "$APP/data" && -d "$DOCS" && -d "$DEST" ]] || { echo 'A required directory is missing; backup aborted' >&2; exit 2; }
-case "$DEST" in "$DOCS"|"$DOCS"/*|"$APP"|"$APP"/*) echo 'Backups must go to an independent destination' >&2; exit 2;; esac
-stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-archive="$DEST/legacy-vault-full-$stamp.tar.gz"
-[[ ! -e "$archive" ]] || { echo 'Backup exists' >&2; exit 2; }
-echo 'IMPORTANT: stop legacy-vault.service before running a consistency backup.'
-# Archive explicit directories (including .secrets) without following symlinks.
-tar -czf "$archive" -C /home/wolf/Projects legacy-vault/data legacy-vault/.env -C / "${DOCS#/}"
-sha256sum "$archive" > "$archive.sha256"
-tar -tzf "$archive" >/dev/null
-printf 'Created and checked: %s\n' "$archive"
-printf 'CHECK: test restoration to an isolated machine before relying on this backup.\n'
+app_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+documents_dir="${DOCUMENT_STORAGE_ROOT:-/srv/data/files/legacy-vault-managed-documents}"
+recovery_args=(backup --service-stopped "$app_dir" "$documents_dir" "$2")
+if [[ $# -eq 3 ]]; then recovery_args+=("$3"); fi
+exec node "$app_dir/scripts/managed-recovery.js" "${recovery_args[@]}"

@@ -24,23 +24,7 @@ function handleUpload(req, res, next) {
   });
 }
 function fail(res,msg,code=400){return res.status(code).json({error:msg});}
-function sendDocument(req,res,doc,mode){
-  let file;
-  try { file = store.openDocument(doc); }
-  catch { return fail(res,'Managed document copy is missing or inaccessible',404); }
-  const view=store.toView(doc);
-  const safeName=String(view.display_name||'document').replace(/[\r\n"\\]/g,'_');
-  const inline=mode==='preview' && /^(application\/pdf|image\/(png|jpeg|webp))$/.test(doc.mime_type);
-  res.set('Content-Type',doc.mime_type);
-  res.set('X-Content-Type-Options','nosniff');
-  res.set('Cache-Control','private, no-store');
-  res.set('Content-Security-Policy',"default-src 'none'; sandbox");
-  res.set('Content-Disposition',`${inline?'inline':'attachment'}; filename="${safeName.replace(/[^\x20-\x7e]/g,'_')}"; filename*=UTF-8''${encodeURIComponent(safeName)}`);
-  res.set('Content-Length', String(file.size));
-  const stream=fs.createReadStream(null,{fd:file.fd,autoClose:true});
-  stream.on('error',()=>res.destroy());
-  stream.pipe(res);
-}
+const { sendDocument } = require('../document-response');
 router.post('/beneficiary/content', express.json(), (req,res)=>{
   const {accessToken,documentId,mode} = req.body || {};
   if (typeof accessToken!=='string'||typeof documentId!=='string') return fail(res,'Invalid request');
@@ -48,7 +32,10 @@ router.post('/beneficiary/content', express.json(), (req,res)=>{
   const ben=db.prepare('SELECT * FROM beneficiaries WHERE access_token=?').get(hashToken(accessToken));
   if (!ben||!ben.access_granted||(ben.token_expires_at&&new Date()>new Date(ben.token_expires_at))) return fail(res,'Access not granted',403);
   const doc=store.ownedDoc(db,ben.user_id,documentId);
-  if(!doc) return fail(res,'Not found',404);
+  if(!doc || doc.legacy_restricted) {
+    require('../legacy-content').event(db,{userId:ben.user_id,beneficiaryId:ben.id,type:'attachment_denied'});
+    return fail(res,'Not found',404);
+  }
   const associations=db.prepare('SELECT e.* FROM document_associations a JOIN vault_entries e ON e.id=a.entry_id WHERE a.document_id=? AND e.user_id=?').all(documentId,ben.user_id);
   const visibility=getVaultVisibility(ben.user_id);
   if(!associations.some(entry=>visibility.isVisible(entry))) return fail(res,'Not found',404);
@@ -114,6 +101,7 @@ router.post('/upload',handleUpload,(req,res)=>{
 router.patch('/:id',(req,res)=>{
   const db=getDb(), doc=store.ownedDoc(db,req.user.id,req.params.id);
   if(!doc) return fail(res,'Not found',404);
+  if(doc.legacy_restricted) return fail(res,'Protected attachment metadata must be revised through its Final Wishes item',409);
   const label=String(req.body?.display_name||'').trim();
   const description=String(req.body?.description||'').trim();
   if(!label||label.length>240||description.length>2000) return fail(res,'Invalid label or description');
@@ -124,7 +112,7 @@ router.patch('/:id',(req,res)=>{
 });
 router.post('/:id/associate',(req,res)=>{
   const db=getDb(), doc=store.ownedDoc(db,req.user.id,req.params.id);
-  if(!doc||!store.ownedEntry(db,req.user.id,req.body?.entryId)) return fail(res,'Not found',404);
+  if(!doc||doc.legacy_restricted||!store.ownedEntry(db,req.user.id,req.body?.entryId)) return fail(res,'Not found',404);
   db.prepare('INSERT OR IGNORE INTO document_associations(document_id,entry_id) VALUES (?,?)').run(doc.id,req.body.entryId);
   audit(req.user.id,'document_associate','managed_document',null,doc.id,req.ip);
   res.json({ok:true});
