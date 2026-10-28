@@ -72,6 +72,19 @@ function initNotificationSchema(db) {
         first_failed_at TEXT, last_failure_at TEXT, last_success_at TEXT, last_error TEXT, alerted_at TEXT
       );
     `);
+    // Protocol 2 confirms activity from the verified mailbox with one
+    // single-use email challenge. Retain historical rows, but never reinterpret
+    // an outstanding two-factor challenge as a one-factor confirmation.
+    const challengeColumns = db.prepare('PRAGMA table_info(checkin_challenges)').all();
+    if (!challengeColumns.some(c => c.name === 'protocol_version')) {
+      db.exec('ALTER TABLE checkin_challenges ADD COLUMN protocol_version INTEGER NOT NULL DEFAULT 1');
+      const at = new Date().toISOString();
+      db.prepare(`UPDATE notification_outbox SET status='cancelled',updated_at=?
+        WHERE event_type='reminder' AND status IN ('queued','retried','failed','sending')
+        AND id IN (SELECT outbox_id FROM checkin_challenges WHERE protocol_version=1)`).run(at);
+      db.prepare('UPDATE checkin_challenges SET revoked_at=? WHERE protocol_version=1 AND used_at IS NULL AND revoked_at IS NULL').run(at);
+      db.prepare('UPDATE checkin_recovery_codes SET revoked_at=? WHERE consumed_at IS NULL AND revoked_at IS NULL').run(at);
+    }
   })();
 }
 

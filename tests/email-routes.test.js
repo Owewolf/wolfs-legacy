@@ -44,33 +44,54 @@ test('notification API requires authentication, current password and owner-scope
   assert.equal(f.service.settings(1).verified_at,null);
   assert.equal((await f.request('/verify/complete',{method:'POST',body:{code:token}})).status,200);
   const other=await f.request('',{userId:2});
-  assert.equal(other.data.settings,null);assert.equal(other.data.remaining_codes,0);assert.deepEqual(other.data.outbox,[]);
+  assert.equal(other.data.settings,null);assert.equal('remaining_codes' in other.data,false);assert.deepEqual(other.data.outbox,[]);
   const own=await f.request();assert.equal(own.data.settings.recipient,'owner@example.test');
+  assert.equal(own.data.settings.reply_enabled,true);
+  assert.equal(f.jobs().filter(job=>job.status==='queued').length,5);
   assert.equal(own.data.transport_configured,true);
   assert.ok(!JSON.stringify(own.data).includes('fixture-app-password'));
   assert.ok(!JSON.stringify(own.data).includes(f.env.NOTIFICATION_SECRET));
   assert.ok(!JSON.stringify(own.data).includes('verify_hash'));
 });
 
-test('verified owner provisions independent codes once and explicitly attests separate storage',async t=>{
+test('verified owner enables reminder replies without offline codes; retired endpoint returns no codes',async t=>{
   const f=await setup(t);
-  assert.equal((await f.request('/recovery-codes',{method:'POST',body:{password:'fixture-current-password'}})).status,400);
-  f.db.prepare("UPDATE notification_settings SET verified_at=?,config_status='ready' WHERE user_id=1").run(f.instant);
-  const batch=await f.request('/recovery-codes',{method:'POST',body:{password:'fixture-current-password'}});
-  assert.equal(batch.status,200);assert.equal(batch.data.codes.length,10);assert.equal(batch.headers.get('cache-control'),'no-store');
+  assert.equal((await f.request('/recovery-codes',{method:'POST',auth:false})).status,401);
+  const retired=await f.request('/recovery-codes',{method:'POST'});
+  assert.equal(retired.status,410);
+  assert.equal(retired.headers.get('cache-control'),'no-store');
+  assert.equal('codes' in retired.data,false);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes').get().n,0);
   const base={reply_enabled:true,password:'fixture-current-password',timezone:'Africa/Johannesburg',reminder_clock:null};
   assert.equal((await f.request('/settings',{method:'PUT',body:base})).status,400);
-  assert.equal(f.service.settings(1).reply_enabled,0);
-  assert.equal((await f.request('/settings',{method:'PUT',body:{...base,offline_stored_separately:true}})).status,200);
+  f.db.prepare("UPDATE notification_settings SET verified_at=?,config_status='ready' WHERE user_id=1").run(f.instant);
+  assert.equal((await f.request('/settings',{method:'PUT',body:{...base,password:'wrong'}})).status,401);
+  assert.equal((await f.request('/settings',{method:'PUT',body:base})).status,200);
   assert.equal(f.service.settings(1).reply_enabled,1);assert.equal(f.jobs().filter(j=>j.status==='queued').length,5);
-  const status=await f.request();for(const value of batch.data.codes) assert.ok(!JSON.stringify(status.data).includes(value));
   assert.equal((await f.request('/test',{method:'POST',body:{password:'fixture-current-password'}})).data.status,'queued');
   assert.equal(f.jobs('email_test').length,1);
-  assert.equal((await f.request('/settings',{method:'PUT',body:{...base,timezone:'America/New_York',offline_stored_separately:true}})).status,400);
-  assert.equal((await f.request('/settings',{method:'PUT',body:{...base,reminder_clock:'25:00',offline_stored_separately:true}})).status,400);
+  assert.equal((await f.request('/settings',{method:'PUT',body:{...base,timezone:'America/New_York'}})).status,400);
+  assert.equal((await f.request('/settings',{method:'PUT',body:{...base,reminder_clock:'25:00'}})).status,400);
   assert.equal((await f.request('/settings',{method:'PUT',body:{...base,reply_enabled:false}})).status,200);
   assert.equal(f.jobs().filter(j=>j.status==='queued').length,0);
   assert.equal(f.beneficiaries()[0].emergency_access_requested,1);
+});
+
+test('verification cannot automatically enable reminders without configured inbound transport',async t=>{
+  const f=await setup(t);
+  await f.request('/verify/start',{method:'POST',body:{recipient:'owner@example.test',password:'fixture-current-password'}});
+  const value=derivedCode(f.env,'verify',f.service.settings(1).verify_nonce);
+  f.env.CHECKIN_IMAP_PASSWORD='';
+  assert.equal((await f.request('/verify/complete',{method:'POST',body:{code:value}})).status,503);
+  assert.equal(f.service.settings(1).verified_at,null);
+  assert.equal(f.service.settings(1).reply_enabled,0);
+  f.env.CHECKIN_IMAP_PASSWORD='fixture-app-password';
+  assert.equal((await f.request('/verify/complete',{method:'POST',body:{code:value}})).status,200);
+  const cycle=f.config().notification_cycle_id;
+  const jobs=f.jobs();
+  assert.equal((await f.request('/verify/complete',{method:'POST',body:{code:value}})).status,400);
+  assert.equal(f.config().notification_cycle_id,cycle);
+  assert.deepEqual(f.jobs(),jobs);
 });
 
 test('verification is short-lived, rate limited and superseding rather than a direct verified flag',async t=>{

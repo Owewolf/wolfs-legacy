@@ -24,10 +24,10 @@ router.get('/status',(req,res)=>{
   if(!run)return res.json({started:false});
   const user=db.prepare('SELECT last_check_in FROM users WHERE id=?').get(req.user.id);
   const accepted=db.prepare("SELECT COUNT(*) n FROM inbound_message_log WHERE user_id=? AND cycle_id=? AND outcome='accepted'").get(req.user.id,run.cycle_id).n;
-  const consumed=db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes WHERE user_id=? AND consumed_at>=?').get(req.user.id,run.started_at).n;
+  const consumed=db.prepare('SELECT COUNT(*) n FROM checkin_challenges WHERE user_id=? AND cycle_id=? AND used_at IS NOT NULL AND protocol_version=2').get(req.user.id,run.cycle_id).n;
   const acknowledgement=db.prepare("SELECT status FROM notification_outbox WHERE user_id=? AND event_type='checkin_confirmed' AND created_at>=? ORDER BY id DESC LIMIT 1").get(req.user.id,run.started_at);
   res.json({started:true,initial_cycle_id:run.cycle_id,started_at:run.started_at,last_check_in:user.last_check_in,
-    accepted_replies:accepted,consumed_codes:consumed,acknowledgement_status:acknowledgement?.status||null});
+    accepted_replies:accepted,consumed_confirmations:consumed,acknowledgement_status:acknowledgement?.status||null});
 });
 router.post('/reminder',rateLimit({windowMs:15*60000,limit:5,keyGenerator:req=>String(req.user.id)}),async(req,res)=>{
   const db=getDb();const user=db.prepare('SELECT password_hash FROM users WHERE id=?').get(req.user.id);
@@ -35,7 +35,7 @@ router.post('/reminder',rateLimit({windowMs:15*60000,limit:5,keyGenerator:req=>S
     return res.status(401).json({error:'Current test-owner password required'});
   const service=createNotificationService({db});const settings=service.settings(req.user.id);
   if(!settings?.verified_at||!settings.reply_enabled||settings.config_status!=='ready')
-    return res.status(400).json({error:'Verify the address, save offline codes independently, and enable reply check-ins first'});
+    return res.status(400).json({error:'Verify the notification address first'});
   try {
     const result=db.transaction(()=>{
       if(db.prepare('SELECT 1 FROM acceptance_runs WHERE user_id=?').get(req.user.id))return null;

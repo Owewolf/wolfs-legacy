@@ -59,14 +59,14 @@ function createFixture(t, { filename = ':memory:', verified = true, replyEnabled
   };
 }
 
-function rawReply({ challenge, recovery, thread, messageId = '<reply-1@example.test>', from = 'owner@example.test',
+function rawReply({ challenge, thread, messageId = '<reply-1@example.test>', from = 'owner@example.test',
   to = 'replies@example.test', subject = 'Re: Wolf check-in', body, extraHeaders = [] } = {}) {
   return [
     `From: Fixture owner <${from}>`, `To: ${to}`, `Subject: ${subject}`,
-    `Message-ID: ${messageId}`, `In-Reply-To: ${thread}`, `References: ${thread}`,
+    `Message-ID: ${messageId}`, ...(thread ? [`In-Reply-To: ${thread}`, `References: ${thread}`] : []),
     'MIME-Version: 1.0', 'Content-Type: text/plain; charset=utf-8',
     'Authentication-Results: mx.example.test; dmarc=pass; dkim=pass; spf=pass',
-    ...extraHeaders, '', body ?? `CONFIRM ${challenge} ${recovery}`,
+    ...extraHeaders, '', body ?? `CONFIRM ${challenge}`,
   ].join('\r\n');
 }
 

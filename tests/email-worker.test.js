@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createFixture, rawReply } = require('./helpers/email-fixture');
 const { createNotificationWorker } = require('../server/notifications/worker');
+const { BUTTON_REPLY_SUBJECT } = require('../server/notifications/parser');
 
 const accepted = () => ({status:'sent_to_server',acceptedCount:1,rejectedCount:0});
 const idleMailbox = {async poll(){return {processed:0};}};
@@ -182,10 +183,9 @@ test('IMAP outages degrade persistently, alert once per hour and recover without
 
 test('mailbox replies process before outgoing reminders and persist monotonic UID checkpoints', async t=>{
   const f=createFixture(t);
-  const batch=f.service.rotateRecoveryCodes(1);
   f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
   const issued=f.issueReminder();
-  const source=rawReply({challenge:issued.value,recovery:batch.codes[0],thread:issued.job.message_id});
+  const source=rawReply({challenge:issued.value,thread:issued.job.message_id});
   const key={account:'fixture-account',mailbox:'INBOX',uidValidity:'17'};
   let pollCount=0;
   const messages=[];
@@ -219,11 +219,45 @@ test('mailbox replies process before outgoing reminders and persist monotonic UI
   assert.equal(f.db.prepare('SELECT last_uid FROM inbound_checkpoints').get().last_uid,42);
 });
 
+test('sending the prepared button email resets only its owner timer once, in plain text or HTML', async t=>{
+  for(const htmlOnly of [false,true]) await t.test(htmlOnly?'HTML-only mail app':'plain-text mail app',async tt=>{
+    const f=createFixture(tt),messages=[],before=f.user(),beneficiaries=f.beneficiaries();
+    f.setDay(32);
+    await worker(tt,f,{smtp:{async sendMail(message){messages.push(message);return accepted();}}}).tick();
+    assert.equal(messages.length,1);
+    assert.deepEqual(f.user(),before,'rendering/submitting the reminder does not reset the timer');
+    const link=new URL(messages[0].text.match(/mailto:\S+/)[0]);
+    assert.equal(link.searchParams.get('subject'),BUTTON_REPLY_SUBJECT);
+    const challenge=link.searchParams.get('body').split(' ')[1];
+    const source=(from,messageId)=>{
+      const raw=rawReply({challenge,from,messageId,subject:link.searchParams.get('subject'),
+        body:htmlOnly?`<div>${link.searchParams.get('body')}</div><div id="AppleMailSignature">Owner</div>`:link.searchParams.get('body')});
+      return htmlOnly?raw.replace('Content-Type: text/plain','Content-Type: text/html'):raw;
+    };
+    f.setNow(Date.parse(f.instant)+60000);
+    const outcomes=[];
+    const imap={async poll(callbacks){
+      outcomes.push(await callbacks.processMessage({identity:'button-wrong-sender',source:source('other@example.test','<wrong@example.test>')}));
+      assert.deepEqual(f.user(),before,'a matching button challenge never authenticates a different sender');
+      outcomes.push(await callbacks.processMessage({identity:'button-owner',source:source('owner@example.test','<owner@example.test>')}));
+      outcomes.push(await callbacks.processMessage({identity:'button-duplicate-uid',source:source('owner@example.test','<owner@example.test>')}));
+      outcomes.push(await callbacks.processMessage({identity:'button-reused-code',source:source('owner@example.test','<reused@example.test>')}));
+      return {processed:4};
+    }};
+    await worker(tt,f,{imap}).tick();
+    assert.deepEqual(outcomes.map(result=>result.outcome),['rejected','accepted','duplicate','rejected']);
+    assert.equal(f.user().last_check_in,f.instant);
+    assert.deepEqual(f.beneficiaries(),beneficiaries,'confirmation never changes emergency requests, grants or vault tokens');
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_challenges WHERE used_at IS NOT NULL').get().n,1);
+    assert.equal(f.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='email_checkin_accepted'").get().n,1);
+  });
+});
+
 test('late mailbox recovery never accepts an expired email and oversized messages are recorded safely', async t=>{
-  const f=createFixture(t),batch=f.service.rotateRecoveryCodes(1);
+  const f=createFixture(t);
   f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
   const issued=f.issueReminder(),before=f.user().last_check_in;
-  const source=rawReply({challenge:issued.value,recovery:batch.codes[0],thread:issued.job.message_id});
+  const source=rawReply({challenge:issued.value,thread:issued.job.message_id});
   f.setNow(Date.parse(f.instant)+86400001);
   const imap={async poll(callbacks){
     assert.equal((await callbacks.processMessage({identity:'late',source})).outcome,'rejected');
@@ -232,7 +266,6 @@ test('late mailbox recovery never accepts an expired email and oversized message
   }};
   await worker(t,f,{imap}).tick();
   assert.equal(f.user().last_check_in,before);
-  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes WHERE consumed_at IS NOT NULL').get().n,0);
   assert.equal(f.db.prepare("SELECT reason FROM inbound_message_log WHERE identity='oversize'").get().reason,'too_large');
 });
 
@@ -252,8 +285,7 @@ test('misconfigured notification key and disabled worker cannot manufacture conf
 });
 
 test('repeated settings and clock changes cannot send two reminders on one local date', async t=>{
-  const f=createFixture(t),batch=f.service.rotateRecoveryCodes(1),messages=[];
-  assert.equal(batch.codes.length,10);
+  const f=createFixture(t),messages=[];
   f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
   f.setDay(32);
   const smtp={async sendMail(message){messages.push(message);return accepted();}};
@@ -269,7 +301,6 @@ test('repeated settings and clock changes cannot send two reminders on one local
 
 test('a complete unconfirmed cycle sends once on each of days 32–36 and no other day', async t=>{
   const f=createFixture(t),messages=[];
-  const batch=f.service.rotateRecoveryCodes(1);
   f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
   const smtp={async sendMail(message){messages.push({day:f.instant,...message});return accepted();}};
   let instance=worker(t,f,{smtp});
@@ -291,17 +322,18 @@ test('a complete unconfirmed cycle sends once on each of days 32–36 and no oth
   assert.deepEqual(messages.map(message=>Number(/Check-in required: (\d)/.exec(message.subject)[1])),[5,4,3,2,1]);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM notification_reminder_days').get().n,5);
   for(const message of messages) {
-    assert.match(message.text,/CONFIRM WL-/);
+    assert.match(message.text,/mailto:replies@example.test\?subject=/);
+    assert.match(message.text,/body=CONFIRM%20WL-/);
+    assert.match(message.html,/>Confirm I’m here<\/a>/);
     assert.ok(!message.text.includes('preserved-token-hash'));
     assert.ok(!message.text.includes('beneficiary@example.test'));
-    assert.ok(batch.codes.every(value=>!message.text.includes(value) && !message.html.includes(value)));
+    assert.ok(!/offline|recovery code|YOUR-NEXT/i.test(message.text+message.html));
   }
   assert.equal(f.user().last_check_in,'2026-01-01T08:15:00.000Z');
 });
 
 test('restart after missed reminder dates sends only the current day without backfill', async t=>{
   const f=createFixture(t),messages=[];
-  f.service.rotateRecoveryCodes(1);
   f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
   f.setDay(34,60000);
   await worker(t,f,{smtp:{async sendMail(message){messages.push(message);return accepted();}}}).tick();

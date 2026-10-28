@@ -19,11 +19,9 @@ const publicRoot = path.join(__dirname, '..', 'public');
 const apiFixture = `
 const fixtureCalls = [];
 let fixturePendingResolve;
-let fixturePendingResult;
-const fixtureCodes = ['RC-FAKE-TEST-1111', 'RC-FAKE-TEST-2222'];
 const fixtureState = {
-  settings: {recipient:'owner@example.com',verified_at:'2026-10-28T12:00:00Z',reply_enabled:false,timezone:'Africa/Johannesburg',reminder_clock:null},
-  remaining_codes:10,cycle:{expiry_at:'2026-11-01T12:00:00Z',status:'open'},
+  settings: {recipient:'owner@example.com',verified_at:'2026-10-28T12:00:00Z',reply_enabled:true,timezone:'Africa/Johannesburg',reminder_clock:null},
+  cycle:{expiry_at:'2026-11-01T12:00:00Z',status:'open'},
   health:[{channel:'imap',status:'degraded',failures:3,last_failure_at:'2026-10-28T12:00:00Z'}],
   outbox:[{event_type:'reminder',schedule_at:'2026-10-28T12:00:00Z',status:'uncertain',attempts:1,last_error:'<img src=x onerror=alert(1)>'}],
   transport_configured:true,reply_transport_configured:true
@@ -34,15 +32,21 @@ const API = {
   setToken(value){this.token=value;},
   async request(method,route,body){
     fixtureCalls.push({method,route,body});
+    if(route==='/notifications/acceptance/status')return {started:true,accepted_replies:1,acknowledgement_status:'sent_to_server'};
     if(method==='GET')return structuredClone(fixtureState);
+    if(body?.password==='wrong-password')throw new Error('Current vault password is incorrect');
     if(route.endsWith('/verify/start')){
-      fixtureState.settings.recipient=body.recipient;fixtureState.settings.verified_at=null;
+      fixtureState.settings.recipient=body.recipient;fixtureState.settings.verified_at=null;fixtureState.settings.reply_enabled=false;
       return {success:true};
     }
-    if(route.endsWith('/verify/complete')){fixtureState.settings.verified_at='2026-10-28T12:00:00Z';return {success:true};}
-    if(route.endsWith('/recovery-codes')){
-      if(window.fixtureDeferCodes)return new Promise(resolve=>{fixturePendingResolve=resolve;});
-      return {codes:[...fixtureCodes]};
+    if(route.endsWith('/verify/complete')){
+      fixtureState.settings.verified_at='2026-10-28T12:00:00Z';fixtureState.settings.reply_enabled=true;
+      return {success:true};
+    }
+    if(route.endsWith('/settings')){
+      if(window.fixtureDeferSettings)return new Promise(resolve=>{fixturePendingResolve=resolve;});
+      fixtureState.settings.reply_enabled=body.reply_enabled;fixtureState.settings.reminder_clock=body.reminder_clock;
+      return {success:true};
     }
     return {success:true};
   }
@@ -61,64 +65,67 @@ const browserChecks = `
   check(root.textContent.includes('Submission uncertain'),'real settings route mounts notification status');
   check(!root.querySelector('img'),'escapes provider error markup');
   check(root.textContent.includes('SAST'),'renders Johannesburg dates');
-  await flush();
-  check(document.activeElement?.id==='notification-recovery-password','direct code-setup link focuses the code-generation password');
-  const codeSection=root.querySelector('#notification-offline-title').getBoundingClientRect();
-  check(codeSection.top>=0&&codeSection.top<window.innerHeight,'direct code-setup link scrolls the needed section into view');
+  check(root.textContent.includes('Email check-ins enabled'),'verified owner is ready without extra setup');
+  check(root.textContent.includes('Confirm I’m here')&&root.textContent.includes('send the prefilled reply'),'explains one-button email confirmation');
+  check(!/offline|two.factor|2FA|attestation/i.test(root.textContent)&&!root.querySelector('[data-notification-form="recovery-codes"]'),'does not offer a second-code workflow');
+  check(root.querySelector('[data-notification-form="verify-start"]').closest('details')?.open===false,'verified address changes stay collapsed');
+  const banner=document.querySelector('[aria-label="Isolated email acceptance"]');
+  check(!!banner?.querySelector('form')&&!banner.querySelector('details'),'test reminder action is visible without extra setup panels');
+  check(!/offline|two.factor|2FA/i.test(banner.textContent),'test banner has no second-code directions');
+  banner.querySelector('input').value='fake-current-password';
+  banner.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
+  check(banner.querySelector('[data-result]').textContent.includes('click “Confirm I’m here”, then send the prefilled reply'),'test reminder provides the simple email action');
+  banner.querySelector('[data-refresh]').click();await flush();
+  check(banner.querySelector('[data-result]').textContent.includes('Accepted replies: 1'),'test result reports the accepted reply');
   const storageBefore=JSON.stringify({...localStorage});
 
   let form=root.querySelector('[data-notification-form="verify-start"]');
+  form.closest('details').open=true;
   form.querySelector('[name="recipient"]').value='verified@example.com';
+  form.querySelector('[name="password"]').value='wrong-password';
+  form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
+  check(root.querySelector('[data-notification-feedback]').textContent==='Current vault password is incorrect','distinguishes vault-password failure from email verification');
+  check(form.querySelector('[name="password"]').value==='','clears vault password after failed submit');
+  check(!root.querySelector('[data-notification-form="verify-complete"]'),'failed password leaves verified address intact');
   form.querySelector('[name="password"]').value='fake-current-password';
   form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
-  check(fixtureCalls.some(call=>call.route==='/notifications/verify/start'&&call.body.recipient==='verified@example.com'&&call.body.password==='fake-current-password'),'submits address verification with current password');
+  check(fixtureCalls.some(call=>call.route==='/notifications/verify/start'&&call.body.recipient==='verified@example.com'&&call.body.password==='fake-current-password'),'protects address changes with the vault password');
   form=root.querySelector('[data-notification-form="verify-complete"]');
-  check(!!form,'offers pending address verification');
+  check(!!form,'offers one-time email verification for the changed address');
+  check(root.textContent.includes('enabled automatically'),'explains automatic enrollment after address verification');
   form.querySelector('[name="code"]').value='NV-FAKE-TEST-CODE';
   form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
-  check(root.textContent.includes('Verified'),'shows verified recipient after code completion');
-
-  form=root.querySelector('[data-notification-form="recovery-codes"]');
-  form.querySelector('input').value='fake-current-password';
-  form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
-  check(root.textContent.includes(fixtureCodes[0]),'shows generated offline codes');
-  check(root.querySelector('#notification-recovery-password').value==='','clears password after submit');
-  check(JSON.stringify({...localStorage})===storageBefore,'does not persist codes in localStorage');
-  root.querySelector('[data-action="clear-codes"]').click();
-  check(!root.textContent.includes(fixtureCodes[0]),'Done clears secret DOM');
+  check(root.textContent.includes('Email address verified. Email check-ins are enabled.'),'address verification enables email check-ins immediately');
+  check(!root.querySelector('[data-notification-form="verify-complete"]'),'completed verification no longer asks for a code');
+  check(JSON.stringify({...localStorage})===storageBefore,'does not persist verification inputs in localStorage');
 
   form=root.querySelector('[data-notification-form="settings"]');
-  form.querySelector('[name="reply_enabled"]').checked=true;
-  form.querySelector('[name="password"]').value='fake-current-password';
-  const before=fixtureCalls.filter(call=>call.method==='PUT').length;
-  form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
-  check(fixtureCalls.filter(call=>call.method==='PUT').length===before,'requires independent-storage attestation');
-  form.querySelector('[name="offline_stored_separately"]').checked=true;
+  form.closest('details').open=true;
   form.querySelector('[name="password"]').value='fake-current-password';
   form.querySelector('[name="reminder_clock"]').value='08:30';
   form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
   const put=fixtureCalls.find(call=>call.method==='PUT');
-  check(put.body.offline_stored_separately&&put.body.timezone==='Africa/Johannesburg'&&put.body.reminder_clock==='08:30'&&put.body.password==='fake-current-password','submits protected fixed-timezone policy');
+  check(put.body.reply_enabled&&put.body.timezone==='Africa/Johannesburg'&&put.body.reminder_clock==='08:30'&&put.body.password==='fake-current-password','saves protected fixed-timezone preferences without extra enrollment');
+  check(!Object.hasOwn(put.body,'offline_stored_separately'),'requires no independent-code attestation');
 
   fixtureState.settings.recipient='\"><script>window.fixtureInjected=true<\\/script>';
   root.querySelector('[data-action="refresh"]').click();await flush();
   check(!window.fixtureInjected&&root.querySelector('#notification-recipient').value===fixtureState.settings.recipient,'escapes recipient attributes');
-  window.fixtureDeferCodes=true;
-  form=root.querySelector('[data-notification-form="recovery-codes"]');
-  form.querySelector('input').value='fake-current-password';
+  window.fixtureDeferSettings=true;
+  form=root.querySelector('[data-notification-form="settings"]');
+  form.querySelector('[name="password"]').value='fake-current-password';
   form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
-  // Exercise the actual router and hashchange cleanup while issuance is pending.
-  window.location.hash='login';await flush();
-  fixturePendingResult={codes:[...fixtureCodes]};fixturePendingResolve(fixturePendingResult);await flush();
-  check(fixturePendingResult.codes.every(value=>value===''),'erases late code response after navigation');
-  check(!document.body.textContent.includes(fixtureCodes[0]),'navigation contains no offline codes');
+  check(form.querySelector('[name="password"]').value==='','clears password while settings update is pending');
+  window.location.hash='login';await until(()=>document.getElementById('login-form'));
+  fixturePendingResolve({success:true});await flush();
+  check(!document.getElementById('notification-settings')&&!document.getElementById('app').textContent.includes('preferences saved'),'late response does not restore removed settings');
   await fetch('/ui-test-result',{method:'POST',body:JSON.stringify({ok:true,checks})});
 })().catch(async error=>{
   await fetch('/ui-test-result',{method:'POST',body:JSON.stringify({ok:false,error:error.message,stack:error.stack})});
 });
 `;
 
-test('owner notification UI enrollment, factor isolation and navigation cleanup in Firefox', {
+test('owner notification UI verifies once, enables simple email check-ins and cleans up navigation in Firefox', {
   timeout: 45000,
   skip: firefox ? false : 'Firefox not installed; set FIREFOX_BIN to run the real browser checks',
 }, async t => {
@@ -143,7 +150,8 @@ test('owner notification UI enrollment, factor isolation and navigation cleanup 
     if (req.url === '/') {
       const actualIndex = fs.readFileSync(path.join(publicRoot, 'index.html'), 'utf8');
       res.setHeader('Content-Type', 'text/html');
-      res.end(actualIndex.replace('</body>', `<script>${browserChecks}</script></body>`));
+      const acceptanceClient = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'email-acceptance', 'client.js'), 'utf8');
+      res.end(actualIndex.replace('</body>', `<script>${acceptanceClient}</script><script>${browserChecks}</script></body>`));
       return;
     }
     const pathname = String(req.url || '').split('?')[0];
@@ -166,7 +174,7 @@ test('owner notification UI enrollment, factor isolation and navigation cleanup 
     fs.rmSync(profile, { recursive: true, force: true });
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  browser = spawn(firefox, ['--headless', '--no-remote', '--profile', profile, `http://127.0.0.1:${server.address().port}/#settings/offline-codes`], {
+  browser = spawn(firefox, ['--headless', '--no-remote', '--profile', profile, `http://127.0.0.1:${server.address().port}/#settings`], {
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   browser.stderr.on('data', chunk => { browserErrors = (browserErrors + String(chunk)).slice(-2000); });
@@ -174,7 +182,7 @@ test('owner notification UI enrollment, factor isolation and navigation cleanup 
   browser.once('exit', code => { if (code !== null && code !== 0) rejectResult(new Error(`Firefox exited ${code}: ${browserErrors}`)); });
   timer = setTimeout(() => rejectResult(new Error(`Firefox UI checks timed out: ${browserErrors}`)), 30000);
   const report = await result;
-  assert.equal(report.ok, true, report.stack || report.error);
-  assert.equal(report.checks.length, 18);
+  assert.equal(report.ok, true, [report.error, report.stack].filter(Boolean).join('\n'));
+  assert.equal(report.checks.length, 26);
   t.diagnostic('Real index.html and settings route: ' + report.checks.join('; '));
 });

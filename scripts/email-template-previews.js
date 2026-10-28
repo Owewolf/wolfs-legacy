@@ -19,7 +19,7 @@ async function main() {
   const plus=days=>new Date(Date.parse(stamp)+days*86400000).toISOString();
   const samples=[];
   for(let days=5;days>=1;days--) samples.push({name:`reminder_${days}_days`,type:'reminder',payload:{releaseAt:plus(days),daysRemaining:days,
-    reminderNumber:6-days,challenge:'WL-PREVIEW-NOT-A-VALID-CHALLENGE',challengeExpiresAt:plus(1)}});
+    reminderNumber:6-days,confirmationMailbox:process.env.CHECKIN_REPLY_MAILBOX,challenge:'WL-PREVIEW-NOT-A-VALID-CHALLENGE',challengeExpiresAt:plus(1)}});
   samples.push(
     {name:'checkin_confirmed',type:'checkin_confirmed',payload:{confirmedAt:stamp,nextCheckinAt:plus(30),nextReleaseAt:plus(37)}},
     {name:'checkin_failed',type:'checkin_failed',payload:{}},
@@ -38,7 +38,7 @@ async function main() {
   const save=()=>fs.writeFileSync(evidence,JSON.stringify(report,null,2),{mode:0o600});
   const smtp=createSmtpTransport(process.env);
   const domain=process.env.SMTP_FROM.split('@').pop();
-  const notice='TEMPLATE PREVIEW ONLY: fictional data and inactive example codes. No check-in, access grant, revocation or release has occurred. Do not reply with a real offline code.';
+  const notice='TEMPLATE PREVIEW ONLY: fictional data and inactive example codes. No check-in, access grant, revocation or release has occurred. These preview buttons do not contain a valid confirmation.';
   try {
     await smtp.verify();
     process.stdout.write(`SMTP TLS/authentication verified. Sending ${samples.length} explicit template previews.\n`);

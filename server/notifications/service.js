@@ -150,35 +150,21 @@ function createNotificationService({db,env=process.env,now=()=>new Date()}={}) {
   function completeVerification(userId,value) {
     return db.transaction(()=>{
       const s=settings(userId),at=timestamp();
-      if(!s?.verify_hash || s.verify_attempts>=5 || s.verify_expires_at<=at) return false;
+      if(!secretReady(env) || !s?.verify_hash || s.verify_attempts>=5 || s.verify_expires_at<=at) return false;
       db.prepare('UPDATE notification_settings SET verify_attempts=verify_attempts+1 WHERE user_id=?').run(userId);
       if(!equal(s.verify_hash,digest('verify',value))) return false;
       db.prepare(`UPDATE notification_settings SET verified_at=?,verify_hash=NULL,verify_nonce=NULL,verify_expires_at=NULL,
-        config_status='ready',updated_at=? WHERE user_id=?`).run(at,at,userId);
+        reply_enabled=1,config_status='ready',updated_at=? WHERE user_id=?`).run(at,at,userId);
       db.prepare(`UPDATE notification_outbox SET status='cancelled',updated_at=? WHERE user_id=? AND event_type='verify_address' AND status IN ${PENDING}`).run(at,userId);
+      newCycle(userId,'notification_address_verified',at);
       audit(db,userId,'notification_address_verified',null,at);return true;
-    }).immediate();
-  }
-  function rotateRecoveryCodes(userId) {
-    return db.transaction(()=>{
-      const at=timestamp(),batch=crypto.randomUUID();
-      const codes=Array.from({length:10},()=>code('RC'));
-      db.prepare('UPDATE checkin_recovery_codes SET revoked_at=? WHERE user_id=? AND consumed_at IS NULL AND revoked_at IS NULL').run(at,userId);
-      const insert=db.prepare('INSERT INTO checkin_recovery_codes (user_id,batch_id,code_hash,created_at) VALUES (?,?,?,?)');
-      for(const value of codes) insert.run(userId,batch,digest('recovery',value),at);
-      db.prepare('UPDATE checkin_challenges SET revoked_at=? WHERE user_id=? AND used_at IS NULL AND revoked_at IS NULL').run(at,userId);
-      // Rotation disables replies until explicitly re-enabled after independent storage.
-      db.prepare('UPDATE notification_settings SET reply_enabled=0,updated_at=? WHERE user_id=?').run(at,userId);
-      newCycle(userId,'recovery_rotation',at);
-      audit(db,userId,'checkin_recovery_rotated',null,at);
-      return {codes,batch_id:batch};
     }).immediate();
   }
   function configureNotifications(userId,{replyEnabled,timezone,reminderClock}) {
     return db.transaction(()=>{
       const s=ensureSettings(userId),at=timestamp();
       if(timezone!=='Africa/Johannesburg' || (reminderClock!==null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(reminderClock))) throw new Error('invalid_notification_settings');
-      if(replyEnabled && (!s.verified_at || !secretReady(env) || !db.prepare('SELECT id FROM checkin_recovery_codes WHERE user_id=? AND consumed_at IS NULL AND revoked_at IS NULL').get(userId))) throw new Error('verification_and_offline_codes_required');
+      if(replyEnabled && (!s.verified_at || !secretReady(env))) throw new Error('verified_notification_address_required');
       db.prepare("UPDATE notification_settings SET reply_enabled=?,timezone=?,reminder_clock=?,updated_at=? WHERE user_id=?")
         .run(replyEnabled?1:0,timezone,reminderClock,at,userId);
       newCycle(userId,'notification_configuration',at);
@@ -201,11 +187,11 @@ function createNotificationService({db,env=process.env,now=()=>new Date()}={}) {
         const id=crypto.randomUUID(),value=derivedCode(env,'challenge',id);
         db.prepare('UPDATE checkin_challenges SET revoked_at=? WHERE user_id=? AND used_at IS NULL AND revoked_at IS NULL').run(at,job.user_id);
         const expiry=new Date(Math.min(utc(at).getTime()+DAY,utc(cycle.expiry_at).getTime())).toISOString();
-        db.prepare(`INSERT INTO checkin_challenges (id,code_hash,user_id,cycle_id,outbox_id,message_id,issued_at,expires_at,reminder_sequence)
-          VALUES (?,?,?,?,?,?,?,?,?)`).run(id,digest('challenge',value),job.user_id,job.cycle_id,job.id,job.message_id,at,expiry,job.reminder_number);
+        db.prepare(`INSERT INTO checkin_challenges (id,code_hash,user_id,cycle_id,outbox_id,message_id,issued_at,expires_at,reminder_sequence,protocol_version)
+          VALUES (?,?,?,?,?,?,?,?,?,2)`).run(id,digest('challenge',value),job.user_id,job.cycle_id,job.id,job.message_id,at,expiry,job.reminder_number);
         challenge=db.prepare('SELECT * FROM checkin_challenges WHERE id=?').get(id);
       }
-      if(challenge.used_at || challenge.revoked_at || challenge.expires_at<=at) return null;
+      if(challenge.protocol_version!==2 || challenge.used_at || challenge.revoked_at || challenge.expires_at<=at) return null;
       return {...JSON.parse(job.data_json),challenge:derivedCode(env,'challenge',challenge.id),challengeExpiresAt:challenge.expires_at};
     }).immediate();
   }
@@ -232,17 +218,14 @@ function createNotificationService({db,env=process.env,now=()=>new Date()}={}) {
       if(challenge && s?.verified_at && s.reply_enabled && s.config_status==='ready') {
         const failures=db.prepare("SELECT COUNT(*) n FROM inbound_message_log WHERE user_id=? AND outcome='rejected' AND received_at>?")
           .get(challenge.user_id,new Date(utc(at).getTime()-3600000).toISOString()).n;
-        const metadata=require('./parser').validateReplyMetadata(parsed,{expectedFrom:s.recipient,replyMailbox:env.CHECKIN_REPLY_MAILBOX,expectedMessageId:challenge.message_id});
+        const metadata=require('./parser').validateReplyMetadata(parsed,{expectedFrom:s.recipient,replyMailbox:env.CHECKIN_REPLY_MAILBOX,expectedMessageId:challenge.message_id,allowButtonReply:true});
         const cycle=db.prepare('SELECT * FROM notification_cycles WHERE id=?').get(challenge.cycle_id);
-        const recovery=db.prepare(`SELECT * FROM checkin_recovery_codes WHERE user_id=? AND code_hash=? AND consumed_at IS NULL AND revoked_at IS NULL`)
-          .get(challenge.user_id,digest('recovery',parsed.recoveryCode));
         if(failures>=10) reason='rate_limited';
-        else if(metadata.ok && equal(challenge.code_hash,digest('challenge',parsed.challenge)) && recovery &&
-          equal(recovery.code_hash,digest('recovery',parsed.recoveryCode)) && !challenge.used_at && !challenge.revoked_at && challenge.expires_at>at &&
+        else if(metadata.ok && challenge.protocol_version===2 && equal(challenge.code_hash,digest('challenge',parsed.challenge)) &&
+          !challenge.used_at && !challenge.revoked_at && challenge.expires_at>at &&
           c?.is_active && !c.switch_triggered && c.notification_cycle_id===challenge.cycle_id && cycle?.status==='open' && cycle.expiry_at>at) {
-          const used=db.prepare('UPDATE checkin_recovery_codes SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND revoked_at IS NULL').run(at,recovery.id);
+          const used=db.prepare('UPDATE checkin_challenges SET used_at=?,inbound_identity=? WHERE id=? AND protocol_version=2 AND used_at IS NULL AND revoked_at IS NULL').run(at,identity,challenge.id);
           if(used.changes!==1) throw new Error('checkin_race');
-          db.prepare('UPDATE checkin_challenges SET used_at=?,inbound_identity=? WHERE id=? AND used_at IS NULL AND revoked_at IS NULL').run(at,identity,challenge.id);
           db.prepare('UPDATE users SET last_check_in=? WHERE id=?').run(at,challenge.user_id);
           // Neither emergency requests nor beneficiary grants are touched.
           db.prepare('UPDATE dead_switch_config SET switch_triggered=0,switch_triggered_at=NULL WHERE user_id=?').run(challenge.user_id);
@@ -277,7 +260,7 @@ function createNotificationService({db,env=process.env,now=()=>new Date()}={}) {
     return queue(type,userId,data,{beneficiaryId:beneficiary.id,key:`beneficiary:${transition.lastInsertRowid}:${beneficiary.id}:${type}`});
   }
   return {timestamp,settings,ensureSettings,queue,cancelCycle,newCycle,reconcile,signedInCheckin,configureSwitch,releaseDue,
-    startVerification,completeVerification,rotateRecoveryCodes,configureNotifications,prepareReminder,processParsedReply,beneficiaryEvent};
+    startVerification,completeVerification,configureNotifications,prepareReminder,processParsedReply,beneficiaryEvent};
 }
 function recordBeneficiaryEvent(db,event) { return createNotificationService({db}).beneficiaryEvent(event); }
 module.exports={createNotificationService,recordBeneficiaryEvent,code,digest,derivedCode,equal,secretReady,audit,PENDING};

@@ -31,11 +31,12 @@ test('acceptance harness isolates paths/secrets and protects one-time real remin
   assert.equal(fs.existsSync(path.join(prepared.staging,'data/vault.db')),false);
   assert.ok(new Date(prepared.childEnv.EMAIL_ACCEPTANCE_EXPIRES_AT)-Date.now()<=2*60*60*1000);
   const template=require(path.join(prepared.staging,'server/notifications/templates')).renderTemplate('reminder',{
-    daysRemaining:5,reminderNumber:1,releaseAt:'2026-11-05T12:00:00Z',challengeExpiresAt:'2026-11-01T12:00:00Z',challenge:'WL-FAKE-EXAMPLE'});
+    daysRemaining:5,reminderNumber:1,releaseAt:'2026-11-05T12:00:00Z',challengeExpiresAt:'2026-11-01T12:00:00Z',challenge:'WL-FAKE-EXAMPLE',confirmationMailbox:'reply@example.invalid'});
   assert.match(template.subject,/^\[ACCEPTANCE TEST\]/);
   assert.match(template.text,/Disposable synthetic vault/);
   assert.match(template.html,/Disposable synthetic vault/);
-  assert.match(template.text,/CONFIRM WL-FAKE-EXAMPLE <YOUR-NEXT-UNUSED-OFFLINE-CODE>/);
+  const action=template.text.match(/mailto:[^\r\n]+/)[0];
+  assert.equal(new URL(action).searchParams.get('body'),'CONFIRM WL-FAKE-EXAMPLE');
   await waitForReady(child,prepared.port,prepared.childEnv.EMAIL_ACCEPTANCE_ID);
   const base=`http://127.0.0.1:${prepared.port}`;
   const request=(route,body,token)=>fetch(base+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',
@@ -70,7 +71,7 @@ test('acceptance harness isolates paths/secrets and protects one-time real remin
   assert.equal(db.prepare('SELECT COUNT(*) n FROM vault_entries').get().n,0);
   const status=await(await request('/api/notifications/acceptance/status',null,token)).json();
   assert.equal(status.accepted_replies,0);
-  assert.equal(status.consumed_codes,0);
+  assert.equal(status.consumed_confirmations,0);
   assert.equal((await request('/api/notifications/acceptance/reminder',{password},token)).status,409);
   const html=await(await fetch(base)).text();
   assert.match(html,/\/js\/acceptance\.js/);

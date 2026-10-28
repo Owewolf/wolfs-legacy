@@ -1,6 +1,6 @@
 # Legacy Vault
 
-Wolf's Legacy email and two-factor reply check-in setup: [operations guide](docs/email-operations.md). Run `npm test` for the isolated regression suite. The email feature requires review and a real provider reply acceptance test before deployment.
+Wolf's Legacy email notifications and simple email check-ins: [operations guide](docs/email-operations.md). Verify your email once, then select **Confirm I’m here** in a reminder and send the prefilled reply to reset the Dead Man’s Switch timer. This grants no vault access. Run `npm test` for the isolated regression suite. The email feature requires review and a real provider reply acceptance test before deployment.
 
 A self-hosted, encrypted personal data vault designed for estate planning and family continuity. Store your financial accounts, legal documents, insurance policies, and final wishes in one secure place -- and ensure your family can access it when the time comes.
 

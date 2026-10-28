@@ -13,16 +13,15 @@ const { reminderSlots, parts } = require('../server/notifications/time');
 const { parseReply } = require('../server/notifications/parser');
 
 function provision(f) {
-  const batch = f.service.rotateRecoveryCodes(1);
   f.service.configureNotifications(1, { replyEnabled: true, timezone: 'Africa/Johannesburg', reminderClock: null });
   const issued = f.issueReminder();
-  return { batch, ...issued };
+  return issued;
 }
 
 function parse(f, issued, overrides = {}) {
-  return parseReply(rawReply({ challenge: issued.value, recovery: issued.batch.codes[0],
+  return parseReply(rawReply({ challenge: issued.value,
     thread: issued.job.message_id, ...overrides }), { replyMailbox: f.env.CHECKIN_REPLY_MAILBOX,
-    trustedAuthservIds: f.env.CHECKIN_TRUSTED_AUTHSERV_IDS });
+    trustedAuthservIds: f.env.CHECKIN_TRUSTED_AUTHSERV_IDS, allowButtonReply:true });
 }
 
 test('30+7 cycle schedules exactly days 32–36 at the final release clock', t => {
@@ -55,8 +54,6 @@ test('restart reconciliation and database constraints prevent duplicate logical 
 test('late enablement creates only future reminder dates and never backfills', t => {
   const f = createFixture(t, { replyEnabled:false });
   f.setDay(34, 60000);
-  const batch = f.service.rotateRecoveryCodes(1);
-  assert.equal(batch.codes.length,10);
   f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
   assert.deepEqual(f.jobs().map(job=>JSON.parse(job.data_json).daysRemaining), [2,1]);
   f.service.reconcile();
@@ -72,11 +69,11 @@ test('local daily clock survives a DST change with UTC persistence', () => {
   assert.ok(slots.every(slot=>parts(slot.at,'Europe/London').hour===9));
 });
 
-test('verified raw email consumes both factors once and starts a new cycle without changing access', async t => {
+test('verified raw email consumes its challenge once and starts a new cycle without changing access', async t => {
   const f = createFixture(t);
   const issued = provision(f);
   const accessBefore = f.beneficiaries();
-  const parsed = await parse(f, issued, {body:`  confirm  ${issued.value.toLowerCase()}\t ${issued.batch.codes[0].toLowerCase()}\n\n-- \nSignature\n> CONFIRM WL-QUOTED-CODE RC-QUOTED-CODE`});
+  const parsed = await parse(f, issued, {body:`  confirm  ${issued.value.toLowerCase()}\t\n\n-- \nSignature\n> CONFIRM WL-QUOTED-CODE`});
   assert.equal(parsed.ok,true);
   const oldCycle = f.config().notification_cycle_id;
   const result = f.service.processParsedReply('imap-valid',parsed);
@@ -86,7 +83,7 @@ test('verified raw email consumes both factors once and starts a new cycle witho
   assert.equal(f.config().switch_triggered,0);
   assert.notEqual(f.config().notification_cycle_id,oldCycle);
   assert.deepEqual(f.beneficiaries(),accessBefore);
-  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes WHERE consumed_at IS NOT NULL').get().n,1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes').get().n,0);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_challenges WHERE used_at IS NOT NULL').get().n,1);
   assert.ok(f.jobs().filter(job=>job.cycle_id===oldCycle).every(job=>job.status==='cancelled'));
   assert.equal(f.jobs('checkin_confirmed').length,1);
@@ -99,6 +96,17 @@ test('verified raw email consumes both factors once and starts a new cycle witho
   assert.equal(f.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='email_checkin_accepted'").get().n,1);
 });
 
+test('prefilled button email confirms activity without direct-reply headers or offline codes', async t => {
+  const f=createFixture(t),issued=provision(f),access=f.beneficiaries();
+  const parsed=await parse(f,issued,{thread:null,subject:"Wolf's Legacy check-in confirmation"});
+  assert.equal(parsed.ok,true);
+  assert.equal(parsed.inReplyTo,null);
+  assert.equal(f.service.processParsedReply('button-confirmation',parsed).outcome,'accepted');
+  assert.equal(f.config().is_active,1);
+  assert.deepEqual(f.beneficiaries(),access);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes').get().n,0);
+});
+
 test('trusted mail authentication review is retained in the inbound audit record', async t => {
   const f = createFixture(t);
   const issued = provision(f);
@@ -108,18 +116,18 @@ test('trusted mail authentication review is retained in the inbound audit record
   assert.equal(f.db.prepare('SELECT authentication_status FROM inbound_message_log').get().authentication_status,'reviewed');
 });
 
-test('factor isolation rejects incomplete, forged, forwarded, automatic and ambiguous raw replies', async t => {
+test('confirmation validation rejects incomplete, forged, forwarded, automatic and ambiguous raw replies', async t => {
   const cases = [
-    ['challenge-only', issued=>({body:`CONFIRM ${issued.value}`})],
+    ['unknown-challenge', ()=>({body:'CONFIRM WL-UNKNOWN-CODE'})],
     ['confirm-only', ()=>({body:'CONFIRM'})],
     ['forged-sender', ()=>({from:'attacker@example.test'})],
     ['wrong-mailbox', ()=>({to:'elsewhere@example.test'})],
     ['forward', ()=>({subject:'Fwd: Wolf check-in'})],
     ['automatic', ()=>({extraHeaders:['Auto-Submitted: auto-replied']})],
     ['wrong-thread', ()=>({thread:'<unrelated@example.test>'})],
-    ['conflicting-lines', issued=>({body:`CONFIRM ${issued.value} ${issued.batch.codes[0]}\nCONFIRM ${issued.value} ${issued.batch.codes[1]}`})],
+    ['conflicting-lines', issued=>({body:`CONFIRM ${issued.value}\nCONFIRM WL-OTHER-CODE`})],
     ['bad-authentication', ()=>({extraHeaders:['Authentication-Results: mx.example.test; dmarc=fail']})],
-    ['wrong-code', ()=>({recovery:'RC-UNUSED-INVALID-CODE'})]
+    ['legacy-two-code-command', issued=>({body:`CONFIRM ${issued.value} RC-UNUSED-INVALID-CODE`})]
   ];
   for (const [label,override] of cases) await t.test(label,async tt=>{
     const f = createFixture(tt),issued=provision(f),before=f.user().last_check_in,access=f.beneficiaries();
@@ -136,7 +144,8 @@ test('expired, superseded, disabled, wrong-owner and released challenges cannot 
     ['expired', (f)=>f.setDay(33,1)],
     ['superseded', (f)=>f.service.newCycle(1,'test-supersession')],
     ['disabled', (f)=>f.db.prepare('UPDATE dead_switch_config SET is_active=0 WHERE user_id=1').run()],
-    ['wrong-owner', (f,issued)=>{issued.batch.codes[0]=f.service.rotateRecoveryCodes(2).codes[0];}],
+    ['wrong-owner', (f)=>{f.db.prepare('UPDATE notification_settings SET recipient=? WHERE user_id=1').run('other@example.test');}],
+    ['legacy-protocol', (f,issued)=>{f.db.prepare('UPDATE checkin_challenges SET protocol_version=1 WHERE id=?').run(issued.challenge.id);}],
     ['released', (f)=>{f.setDay(37);assert.equal(f.service.releaseDue(),1);assert.ok(f.beneficiaries().every(b=>b.access_granted));}]
   ];
   for(const [label,mutate] of mutations) await t.test(label,async tt=>{
@@ -150,20 +159,20 @@ test('expired, superseded, disabled, wrong-owner and released challenges cannot 
   });
 });
 
-test('used recovery code cannot confirm a later cycle and warnings are throttled', async t => {
+test('challenge replay cannot confirm a later cycle and invalid attempts are rate limited', async t => {
   const f=createFixture(t),issued=provision(f);
   assert.equal(f.service.processParsedReply('first',await parse(f,issued)).outcome,'accepted');
   const before=f.user().last_check_in;
-  const next=f.issueReminder();
-  const later={...next,batch:issued.batch};
-  for(let i=0;i<12;i++) assert.equal(f.service.processParsedReply(`reuse-${i}`,
-    await parse(f,later,{messageId:`<reuse-${i}@example.test>`})).outcome,'rejected');
+  assert.equal(f.service.processParsedReply('replayed',await parse(f,issued,{messageId:'<replayed@example.test>'})).outcome,'rejected');
+  const later=f.issueReminder();
+  for(let i=0;i<12;i++) assert.equal(f.service.processParsedReply(`forged-${i}`,
+    await parse(f,later,{messageId:`<forged-${i}@example.test>`,from:'attacker@example.test'})).outcome,'rejected');
   assert.equal(f.user().last_check_in,before);
-  assert.equal(f.jobs('checkin_failed').length,1);
+  assert.equal(f.jobs('checkin_failed').length,2);
   assert.equal(f.db.prepare("SELECT COUNT(*) n FROM inbound_message_log WHERE reason='rate_limited'").get().n,2);
-  assert.equal(f.service.processParsedReply('rate-blocked',await parse(f,later,{messageId:'<rate-blocked@example.test>',recovery:issued.batch.codes[1]})).outcome,'rejected');
+  assert.equal(f.service.processParsedReply('rate-blocked',await parse(f,later,{messageId:'<rate-blocked@example.test>'})).outcome,'rejected');
   f.setNow(Date.parse(f.instant)+3600001);
-  assert.equal(f.service.processParsedReply('rate-expired',await parse(f,later,{messageId:'<rate-expired@example.test>',recovery:issued.batch.codes[1]})).outcome,'accepted');
+  assert.equal(f.service.processParsedReply('rate-expired',await parse(f,later,{messageId:'<rate-expired@example.test>'})).outcome,'accepted');
 });
 
 test('newer daily reminder revokes old challenge and keeps a maximum 24-hour lifetime', t => {
@@ -179,22 +188,22 @@ test('newer daily reminder revokes old challenge and keeps a maximum 24-hour lif
   assert.equal(challenge.expires_at,'2026-02-07T08:15:00.000Z');
 });
 
-test('check-in and factor consumption roll back if confirmation cannot be durably queued', async t => {
+test('check-in and challenge consumption roll back if confirmation cannot be durably queued', async t => {
   const f=createFixture(t),issued=provision(f),before=f.user(),oldCycle=f.config().notification_cycle_id;
   const parsed = await parse(f,issued);
   f.db.exec(`CREATE TRIGGER fixture_ack_failure BEFORE INSERT ON notification_outbox
     WHEN NEW.event_type='checkin_confirmed' BEGIN SELECT RAISE(ABORT,'fixture persistence failure'); END;`);
   assert.throws(()=>f.service.processParsedReply('rollback',parsed), /fixture persistence failure/);
-  function unused() { return f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes WHERE consumed_at IS NOT NULL').get().n; }
+  function consumed() { return f.db.prepare('SELECT COUNT(*) n FROM checkin_challenges WHERE used_at IS NOT NULL').get().n; }
   assert.deepEqual(f.user(),before);
   assert.equal(f.config().notification_cycle_id,oldCycle);
-  assert.equal(unused(),0);
+  assert.equal(consumed(),0);
   assert.equal(f.db.prepare('SELECT used_at FROM checkin_challenges WHERE id=?').get(issued.challenge.id).used_at,null);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM inbound_message_log').get().n,0);
   assert.ok(f.jobs().every(job=>job.status==='queued'));
   f.db.exec('DROP TRIGGER fixture_ack_failure');
   assert.equal(f.service.processParsedReply('rollback',parsed).outcome,'accepted');
-  assert.equal(unused(),1);
+  assert.equal(consumed(),1);
 });
 
 test('migration is additive and backups contain no plaintext factors or transport secrets', t => {
@@ -214,29 +223,44 @@ test('migration is additive and backups contain no plaintext factors or transpor
   f.env.SMTP_PASSWORD='fixture-smtp-secret';
   f.env.CHECKIN_IMAP_PASSWORD='fixture-imap-secret';
   const backup=f.db.serialize();
-  for(const secret of [issued.value,...issued.batch.codes,f.env.SMTP_PASSWORD,f.env.CHECKIN_IMAP_PASSWORD,f.env.NOTIFICATION_SECRET]) {
+  for(const secret of [issued.value,f.env.SMTP_PASSWORD,f.env.CHECKIN_IMAP_PASSWORD,f.env.NOTIFICATION_SECRET]) {
     assert.equal(backup.includes(Buffer.from(secret)),false,'plaintext secret must not enter SQLite');
   }
-  const recovery=f.db.prepare('SELECT * FROM checkin_recovery_codes LIMIT 1').get();
-  assert.equal(recovery.code_hash,digest('recovery',issued.batch.codes[0]));
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes').get().n,0);
+  assert.equal(issued.challenge.code_hash,digest('challenge',issued.value));
+  assert.equal(issued.challenge.protocol_version,2);
 });
 
-test('verified address requires its separate verification code; rotation revokes older offline material', t => {
+test('verifying the notification address enables replies once without codes or a check-in', t => {
   const f=createFixture(t,{verified:false,replyEnabled:false});
+  const before=f.user(),access=f.beneficiaries();
   f.service.startVerification(1,'owner@example.test');
   const settings=f.service.settings(1);
   const value=derivedCode(f.env,'verify',settings.verify_nonce);
   assert.equal(f.service.completeVerification(1,'NV-INCORRECT-CODE'),false);
   assert.equal(f.service.completeVerification(1,value),true);
+  const cycle=f.config().notification_cycle_id;
+  const jobs=f.jobs();
+  assert.equal(f.service.settings(1).reply_enabled,1);
+  assert.equal(jobs.length,5);
   assert.equal(f.service.completeVerification(1,value),false);
-  const first=f.service.rotateRecoveryCodes(1);
-  f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
-  const issued=f.issueReminder();
-  const second=f.service.rotateRecoveryCodes(1);
-  assert.notEqual(first.batch_id,second.batch_id);
+  assert.equal(f.config().notification_cycle_id,cycle);
+  assert.deepEqual(f.jobs(),jobs);
+  assert.deepEqual(f.user(),before);
+  assert.deepEqual(f.beneficiaries(),access);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes').get().n,0);
+});
+
+test('unverified address or missing signing secret cannot enable replies', t => {
+  const f=createFixture(t,{verified:false,replyEnabled:false});
+  const settings={replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null};
+  assert.throws(()=>f.service.configureNotifications(1,settings),/verified_notification_address_required/);
+  f.service.startVerification(1,'owner@example.test');
+  const value=derivedCode(f.env,'verify',f.service.settings(1).verify_nonce);
+  f.env.NOTIFICATION_SECRET='';
+  assert.equal(f.service.completeVerification(1,value),false);
+  assert.equal(f.service.settings(1).verified_at,null);
   assert.equal(f.service.settings(1).reply_enabled,0);
-  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes WHERE batch_id=? AND revoked_at IS NOT NULL').get(first.batch_id).n,10);
-  assert.ok(f.db.prepare('SELECT revoked_at FROM checkin_challenges WHERE id=?').get(issued.challenge.id).revoked_at);
 });
 
 test('release is never early, transitions exactly once, and leaves already-granted timestamps intact', t => {
@@ -255,7 +279,7 @@ test('release is never early, transitions exactly once, and leaves already-grant
   assert.equal(f.beneficiaries()[0].emergency_access_requested,1);
 });
 
-test('simultaneous replies across SQLite connections consume one recovery code exactly once', async t => {
+test('simultaneous replies across SQLite connections consume one challenge exactly once', async t => {
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'wl-email-race-'));
   t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
   const filename=path.join(directory,'fixture.db');
@@ -280,7 +304,7 @@ test('simultaneous replies across SQLite connections consume one recovery code e
   Atomics.notify(new Int32Array(barrier),0,2);
   const outcomes=(await Promise.all(results)).map(([result])=>result.outcome).sort();
   assert.deepEqual(outcomes,['accepted','rejected']);
-  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes WHERE consumed_at IS NOT NULL').get().n,1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_challenges WHERE used_at IS NOT NULL').get().n,1);
   assert.equal(f.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='email_checkin_accepted'").get().n,1);
   assert.equal(f.jobs('checkin_confirmed').length,1);
   await Promise.all(exits);

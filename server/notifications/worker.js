@@ -87,6 +87,7 @@ function createNotificationWorker({db,env=process.env,now=()=>new Date(),smtp,im
     if(job.event_type==='reminder') {
       payload=service.prepareReminder(job);
       if(!payload) {cancel(job,'REMINDER_SUPERSEDED_OR_MISSED');return;}
+      payload={...payload,confirmationMailbox:env.CHECKIN_REPLY_MAILBOX};
     } else if(job.event_type==='verify_address') {
       if(s.verify_nonce!==payload.nonce || !s.verify_hash || s.verify_expires_at<=at()) {cancel(job,'VERIFICATION_EXPIRED');return;}
       payload={verificationCode:derivedCode(env,'verify',payload.nonce),expiresAt:s.verify_expires_at};
@@ -132,7 +133,7 @@ function createNotificationWorker({db,env=process.env,now=()=>new Date(),smtp,im
         hasProcessed:identity=>!!db.prepare('SELECT 1 FROM inbound_message_log WHERE identity=?').get(identity),
         processMessage:async message=>{
           const parsed=message.rejectionReason?{ok:false,reason:'too_large'}:await parse(message.source,{replyMailbox:env.CHECKIN_REPLY_MAILBOX,
-            trustedAuthservIds:env.CHECKIN_TRUSTED_AUTHSERV_IDS});
+            trustedAuthservIds:env.CHECKIN_TRUSTED_AUTHSERV_IDS,allowButtonReply:true});
           return service.processParsedReply(message.identity,parsed);
         }
       });

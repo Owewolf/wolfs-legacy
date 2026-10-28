@@ -48,7 +48,7 @@ test('restore quarantine revokes mail credentials and pending work while preserv
   const insertOutbox = db.prepare(`INSERT INTO notification_outbox(event_type,user_id,cycle_id,idempotency_key,schedule_at,status,message_id,created_at,updated_at)
     VALUES('test',1,'cycle',?,'2026-01-01T00:00:00Z',?,?,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`);
   for (const status of statuses) insertOutbox.run(status,status,`<${status}@test.invalid>`);
-  db.exec(`INSERT INTO checkin_challenges VALUES('challenge','challenge-hash',1,'cycle',1,'<queued@test.invalid>',
+  db.exec(`INSERT INTO checkin_challenges(id,code_hash,user_id,cycle_id,outbox_id,message_id,issued_at,expires_at,used_at,revoked_at,inbound_identity,reminder_sequence) VALUES('challenge','challenge-hash',1,'cycle',1,'<queued@test.invalid>',
     '2026-01-01T00:00:00Z','2026-01-02T00:00:00Z',NULL,NULL,NULL,1);`);
   const result = quarantine(databasePath);
   assert.equal(result.outbox,5);

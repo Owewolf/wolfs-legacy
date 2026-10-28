@@ -6,7 +6,7 @@ const os=require('node:os');
 const path=require('node:path');
 const Database=require('better-sqlite3');
 const DAY=86400000;
-const CHECKS=['run_selected','owner_enrollment_verified','one_accepted_reply','one_consumed_code',
+const CHECKS=['run_selected','owner_enrollment_verified','one_accepted_reply','one_confirmation_used',
   'challenge_used_once_and_linked','receipt_before_release','challenge_expiry_bounded','last_checkin_matches_receipt','initial_cycle_matches_30_plus_7',
   'new_cycle_matches_30_plus_7','new_five_reminders_scheduled','old_cycle_superseded','old_reminders_stopped',
   'old_challenges_invalidated','switch_stays_active_untriggered','emergency_request_preserved','prior_grant_preserved',
@@ -53,12 +53,10 @@ function inspectDatabase(db,userId){
   c.owner_enrollment_verified=!!(settings&&utc(settings.verified_at)&&settings.verified_at<=run.started_at&&
     settings.reply_enabled===1&&settings.config_status==='ready'&&settings.timezone==='Africa/Johannesburg');
   const accepted=db.prepare("SELECT identity,received_at,cycle_id FROM inbound_message_log WHERE user_id=? AND outcome='accepted' AND received_at>=?").all(run.user_id,run.started_at);
-  const used=db.prepare('SELECT id,outbox_id,message_id,issued_at,expires_at,used_at,revoked_at,inbound_identity FROM checkin_challenges WHERE user_id=? AND cycle_id=? AND used_at IS NOT NULL').all(run.user_id,run.cycle_id);
-  const consumed=db.prepare('SELECT created_at,consumed_at,revoked_at FROM checkin_recovery_codes WHERE user_id=? AND consumed_at>=?').all(run.user_id,run.started_at);
-  report.counts.accepted_replies=accepted.length;report.counts.consumed_codes=consumed.length;report.counts.used_challenges=used.length;
+  const used=db.prepare('SELECT id,outbox_id,message_id,issued_at,expires_at,used_at,revoked_at,inbound_identity,protocol_version FROM checkin_challenges WHERE user_id=? AND cycle_id=? AND used_at IS NOT NULL').all(run.user_id,run.cycle_id);
+  report.counts.accepted_replies=accepted.length;report.counts.consumed_confirmations=used.length;report.counts.used_challenges=used.length;
   c.one_accepted_reply=accepted.length===1&&accepted[0].cycle_id===run.cycle_id&&utc(accepted[0].received_at);
-  c.one_consumed_code=consumed.length===1&&utc(consumed[0].created_at)&&consumed[0].created_at<=run.started_at&&
-    !consumed[0].revoked_at&&same(consumed[0].consumed_at,accepted[0]?.received_at);
+  c.one_confirmation_used=used.length===1&&used[0].protocol_version===2&&same(used[0].used_at,accepted[0]?.received_at);
   const receipt=accepted.length===1?accepted[0]:null,challenge=used.length===1?used[0]:null;
   c.challenge_used_once_and_linked=!!(challenge&&receipt&&same(challenge.used_at,receipt.received_at)&&
     challenge.inbound_identity===receipt.identity&&!challenge.revoked_at&&utc(challenge.issued_at)&&utc(challenge.expires_at)&&
@@ -116,7 +114,7 @@ function inspectDatabase(db,userId){
   report.database_verified=databaseKeys.every(key=>c[key]===true);
   const awaitingSubmission=!!(ack&&['queued','sending','failed','retried','dead_letter','uncertain'].includes(ack.status)&&
     databaseKeys.filter(key=>key!=='acknowledgement_submitted').every(key=>c[key]===true));
-  report.reason=report.database_verified?'mailbox_observation_required':accepted.length===0?'awaiting_valid_two_factor_reply':
+  report.reason=report.database_verified?'mailbox_observation_required':accepted.length===0?'awaiting_valid_email_confirmation':
     awaitingSubmission?'awaiting_acknowledgement_submission':'database_invariant_failed';
   if(accepted.length>0&&!report.database_verified&&!awaitingSubmission)report.outcome='failed';
   return {report,ids:report.database_verified?{reminder:reminder.message_id,acknowledgement:ack.message_id}:null};

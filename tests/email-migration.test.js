@@ -3,6 +3,41 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createFixture } = require('./helpers/email-fixture');
+const { initNotificationSchema } = require('../server/notifications/schema');
+
+test('protocol upgrade retires outstanding two-factor material once and preserves verified owners and access', t => {
+  const f = createFixture(t);
+  f.service.reconcile();
+  const [pending, sent] = f.jobs();
+  const before = { user:f.user(), config:f.config(), access:f.beneficiaries(), settings:f.service.settings(1) };
+  f.db.exec('ALTER TABLE checkin_challenges DROP COLUMN protocol_version');
+  const insert = f.db.prepare(`INSERT INTO checkin_challenges
+    (id,code_hash,user_id,cycle_id,outbox_id,message_id,issued_at,expires_at,reminder_sequence,used_at)
+    VALUES (?,?,1,?,?,?,?,?,?,?)`);
+  insert.run('legacy-unused','legacy-unused-hash',pending.cycle_id,pending.id,'<legacy-unused@example.test>',f.instant,'2099-01-01T00:00:00.000Z',1,null);
+  insert.run('legacy-used','legacy-used-hash',sent.cycle_id,sent.id,'<legacy-used@example.test>',f.instant,'2099-01-01T00:00:00.000Z',2,f.instant);
+  f.db.prepare("UPDATE notification_outbox SET status='sent_to_server' WHERE id=?").run(sent.id);
+  f.db.prepare(`INSERT INTO checkin_recovery_codes (user_id,batch_id,code_hash,created_at,consumed_at)
+    VALUES (1,'legacy-batch','legacy-unused-recovery',?,NULL),(1,'legacy-batch','legacy-used-recovery',?,?)`).run(f.instant,f.instant,f.instant);
+
+  initNotificationSchema(f.db);
+  const old = f.db.prepare('SELECT * FROM checkin_challenges ORDER BY id').all();
+  assert.ok(old.every(row=>row.protocol_version===1));
+  assert.ok(old.find(row=>row.id==='legacy-unused').revoked_at);
+  assert.equal(old.find(row=>row.id==='legacy-used').revoked_at,null);
+  assert.ok(f.db.prepare("SELECT revoked_at FROM checkin_recovery_codes WHERE code_hash='legacy-unused-recovery'").get().revoked_at);
+  assert.equal(f.db.prepare("SELECT revoked_at FROM checkin_recovery_codes WHERE code_hash='legacy-used-recovery'").get().revoked_at,null);
+  assert.equal(f.db.prepare('SELECT status FROM notification_outbox WHERE id=?').get(pending.id).status,'cancelled');
+  assert.equal(f.db.prepare('SELECT status FROM notification_outbox WHERE id=?').get(sent.id).status,'sent_to_server');
+  assert.deepEqual({user:f.user(),config:f.config(),access:f.beneficiaries(),settings:f.service.settings(1)},before);
+
+  const current = f.issueReminder();
+  assert.equal(current.challenge.protocol_version,2);
+  initNotificationSchema(f.db);
+  assert.equal(f.db.prepare('SELECT revoked_at FROM checkin_challenges WHERE id=?').get(current.challenge.id).revoked_at,null);
+  assert.equal(f.db.prepare('SELECT status FROM notification_outbox WHERE id=?').get(current.job.id).status,'queued');
+});
 
 test('actual database upgrade preserves existing ciphertext, HomeBank snapshots, document mappings and token hashes', () => {
   // Run getDb() in a separate process so its singleton and constructor redirect

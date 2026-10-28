@@ -1,11 +1,46 @@
 'use strict';
 
 const { simpleParser } = require('mailparser');
+const { compile } = require('html-to-text');
 
 const MAX_MESSAGE_BYTES = 65536;
 const MAX_BODY_BYTES = 16384;
 const ADDRESS = /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9.-]*[A-Z0-9])?\.[A-Z]{2,63}$/i;
 const MESSAGE_ID = /^<[^<>\s\x00-\x1f\x7f]{1,240}@[^<>\s\x00-\x1f\x7f]{1,240}>$/;
+const BUTTON_REPLY_SUBJECT = "Wolf's Legacy check-in confirmation";
+const HTML_LIMIT_MARKER = 'UNSUPPORTED_HTML_REPLY_LIMIT';
+const HTML_BLOCKS = new Set(['address', 'article', 'aside', 'div', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'tr', 'ul']);
+const HTML_IGNORED = new Set(['head', 'title', 'script', 'style', 'template', 'noscript', 'img', 'svg', 'math', 'iframe', 'object', 'embed', 'video', 'audio', 'canvas', 'form', 'input', 'button', 'select', 'textarea']);
+// This converter only reads the bounded MIME body. It neither loads resources
+// nor follows links. Quote/signature boundaries stop command extraction just
+// as the corresponding plain-text boundaries do.
+const htmlReplyText = compile({
+  wordwrap: false, preserveNewlines: true,
+  baseElements: { selectors: [], returnDomByDefault: true },
+  limits: { maxInputLength: MAX_BODY_BYTES, maxDepth: 32, maxChildNodes: 1024, ellipsis: `\n${HTML_LIMIT_MARKER}\n` },
+  selectors: [...new Set(['*', ...HTML_BLOCKS, ...HTML_IGNORED, 'a', 'blockquote', 'br', 'hr', 'wbr'])]
+    .map(selector => ({ selector, format: 'replyElement' })),
+  formatters: {
+    replyElement(element, walk, builder) {
+      const tag = element.name.toLowerCase();
+      const attrs = element.attribs || {};
+      const markers = `${attrs.id || ''} ${attrs.class || ''}`.toLowerCase().split(/\s+/);
+      if (tag === 'blockquote' || markers.some(marker => /^(?:gmail_quote|gmail_signature|yahoo_quoted|moz-cite-prefix|moz-signature|applemailsignature|appleoriginalcontents|divrplyfwdmsg|signature)$/.test(marker))) {
+        builder.openBlock({ leadingLineBreaks: 1 });
+        builder.addInline('--');
+        builder.closeBlock({ trailingLineBreaks: 1 });
+        return;
+      }
+      if (HTML_IGNORED.has(tag) || Object.hasOwn(attrs, 'hidden') || attrs['aria-hidden'] === 'true' ||
+          /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b/i.test(attrs.style || '')) return;
+      if (tag === 'br' || tag === 'hr') { builder.addLineBreak(); return; }
+      const block = HTML_BLOCKS.has(tag);
+      if (block) builder.openBlock({ leadingLineBreaks: 1 });
+      walk(element.children, builder);
+      if (block) builder.closeBlock({ trailingLineBreaks: 1 });
+    },
+  },
+});
 
 function normalizeAddress(value) {
   if (typeof value !== 'string' || value.length > 254 || !ADDRESS.test(value)) return null;
@@ -25,10 +60,13 @@ function headerStrings(mail, key) {
     .map(header => header.line.slice(header.line.indexOf(':') + 1).replace(/\r?\n[ \t]+/g, ' ').trim());
 }
 
-function extractIds(value) {
-  const values = Array.isArray(value) ? value : [value];
-  return values.filter(item => typeof item === 'string').flatMap(item => item.match(/<[^<>\s]+>/g) || [])
-    .filter(item => MESSAGE_ID.test(item));
+function extractHeaderIds(mail, key) {
+  const fields = headerStrings(mail, key);
+  if (!fields.length) return [];
+  if (fields.length !== 1 || !fields[0]) return null;
+  const ids = fields[0].match(/<[^<>\s]+>/g) || [];
+  if (!ids.length || ids.some(id => !MESSAGE_ID.test(id)) || fields[0].replace(/<[^<>\s]+>/g, '').trim()) return null;
+  return ids;
 }
 
 function authenticationResults(mail, trustedAuthservIds = []) {
@@ -54,10 +92,19 @@ function validateReplyMetadata(reply, policy = {}) {
   if (!reply || !reply.ok) return rejected('invalid_reply');
   if (policy.expectedFrom && normalizeAddress(policy.expectedFrom) !== reply.from) return rejected('origin_mismatch');
   if (policy.replyMailbox && !reply.to.includes(normalizeAddress(policy.replyMailbox))) return rejected('recipient_mismatch');
+  const buttonReply = policy.allowButtonReply === true && reply.subject === BUTTON_REPLY_SUBJECT &&
+    reply.inReplyTo === null && reply.references.length === 0;
+  if (!reply.inReplyTo && !buttonReply) return rejected('thread_mismatch');
   if (policy.expectedMessageId) {
-    // Require a direct reply, not merely a copied identifier buried in a thread.
-    if (reply.inReplyTo !== policy.expectedMessageId || !MESSAGE_ID.test(policy.expectedMessageId)) return rejected('thread_mismatch');
-    if (reply.references.length && !reply.references.includes(policy.expectedMessageId)) return rejected('thread_mismatch');
+    if (!MESSAGE_ID.test(policy.expectedMessageId)) return rejected('thread_mismatch');
+    // A mailto button creates a new message. The service must bind its opaque
+    // challenge to the verified sender before applying this exception.
+    if (buttonReply) {
+      if (!policy.expectedFrom || !policy.replyMailbox) return rejected('thread_mismatch');
+    } else {
+      if (reply.inReplyTo !== policy.expectedMessageId) return rejected('thread_mismatch');
+      if (reply.references.length && !reply.references.includes(policy.expectedMessageId)) return rejected('thread_mismatch');
+    }
   }
   return { ok: true };
 }
@@ -89,16 +136,23 @@ async function parseReply(raw, policy = {}) {
     /(?:^|\s)(?:fw|fwd)\s*:/i.test(mail.subject || '')) return rejected('forwarded_message');
   if (mail.attachments.some(attachment => /^message\//i.test(attachment.contentType))) return rejected('forwarded_message');
   if (headerStrings(mail, 'message-id').length !== 1 || !MESSAGE_ID.test(mail.messageId || '')) return rejected('invalid_message_id');
-  if (headerStrings(mail, 'in-reply-to').length > 1 || headerStrings(mail, 'references').length > 1) return rejected('invalid_thread');
-  const parentIds = extractIds(mail.inReplyTo);
-  const references = extractIds(mail.references);
-  if (parentIds.length !== 1) return rejected('invalid_thread');
+  if (headerStrings(mail, 'subject').length !== 1) return rejected('invalid_subject');
+  const parentIds = extractHeaderIds(mail, 'in-reply-to');
+  const references = extractHeaderIds(mail, 'references');
+  if (!parentIds || !references || parentIds.length > 1 || (!parentIds.length && references.length)) return rejected('invalid_thread');
+  if (!parentIds.length && !(policy.allowButtonReply === true && mail.subject === BUTTON_REPLY_SUBJECT)) return rejected('invalid_thread');
   const authentication = authenticationResults(mail, policy.trustedAuthservIds);
   if (authentication.status === 'failed') return rejected('authentication_failed');
-  if (!mail.text || Buffer.byteLength(mail.text, 'utf8') > MAX_BODY_BYTES) return rejected('plain_text_required');
+  let body = mail.text;
+  if (typeof body !== 'string' || !body.trim()) {
+    if (typeof mail.html !== 'string' || !mail.html.trim() || Buffer.byteLength(mail.html, 'utf8') > MAX_BODY_BYTES) return rejected('unsupported_mime');
+    try { body = htmlReplyText(mail.html); } catch (_) { return rejected('unsupported_mime'); }
+    if (body.includes(HTML_LIMIT_MARKER)) return rejected('unsupported_mime');
+  }
+  if (Buffer.byteLength(body, 'utf8') > MAX_BODY_BYTES) return rejected('body_size');
 
   const lines = [];
-  for (const line of mail.text.replace(/\r\n?/g, '\n').split('\n')) {
+  for (const line of body.replace(/\r\n?/g, '\n').split('\n')) {
     if (/^\s*(?:-{2,}\s*(?:original|forwarded) message\s*-*|begin forwarded message:)/i.test(line)) return rejected('forwarded_message');
     if (/^\s*(?:On .{1,300}wrote:|Le .{1,300}écrit\s*:|Am .{1,300}schrieb.{0,100}:)/i.test(line)) break;
     if (/^--\s*$/.test(line) || /^\s*Sent from my\b/i.test(line)) break;
@@ -108,14 +162,14 @@ async function parseReply(raw, policy = {}) {
   }
   if (!lines.length) return rejected('confirmation_missing');
   if (lines.length !== 1) return rejected('confirmation_ambiguous');
-  const match = /^CONFIRM (WL-[A-Z0-9-]{8,96}) (RC-[A-Z0-9-]{8,96})$/.exec(lines[0]);
-  if (!match || /--/.test(match[1]) || /--/.test(match[2])) return rejected('confirmation_format');
+  const match = /^CONFIRM (WL-[A-Z0-9-]{8,96})$/.exec(lines[0]);
+  if (!match || /--/.test(match[1])) return rejected('confirmation_format');
   const reply = {
-    ok: true, challenge: match[1], recoveryCode: match[2], from: from[0], to,
-    messageId: mail.messageId, inReplyTo: parentIds[0], references, authentication,
+    ok: true, challenge: match[1], from: from[0], to,
+    messageId: mail.messageId, inReplyTo: parentIds[0] || null, references, subject: mail.subject, authentication,
   };
   const metadata = validateReplyMetadata(reply, policy);
   return metadata.ok ? reply : metadata;
 }
 
-module.exports = { parseReply, validateReplyMetadata, normalizeAddress, MAX_MESSAGE_BYTES };
+module.exports = { parseReply, validateReplyMetadata, normalizeAddress, MAX_MESSAGE_BYTES, BUTTON_REPLY_SUBJECT };

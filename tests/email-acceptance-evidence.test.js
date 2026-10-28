@@ -21,7 +21,6 @@ function stage(t){
 
 async function acceptedFixture(t){
   const f=stage(t);f.setNow(new Date(Date.parse(START)+32*DAY-5000).toISOString());
-  const batch=f.service.rotateRecoveryCodes(1);
   f.service.configureNotifications(1,{replyEnabled:true,timezone:'Africa/Johannesburg',reminderClock:null});
   const runStart=f.source.instant,oldId=f.config().notification_cycle_id;
   f.db.prepare('UPDATE beneficiaries SET emergency_waiting_days=90,emergency_access_requested_at=? WHERE id=1').run(runStart);
@@ -33,12 +32,12 @@ async function acceptedFixture(t){
   const attempt=f.db.prepare("INSERT INTO notification_attempts(outbox_id,attempt_number,outcome,created_at) VALUES(?,1,'sent_to_server',?)");
   attempt.run(reminder.job.id,f.source.instant);
   f.setNow(new Date(Date.parse(f.source.instant)+60000).toISOString());
-  const parsed=await parseReply(rawReply({challenge:reminder.value,recovery:batch.codes[0],thread:reminderId}),{trustedAuthservIds:'mx.example.test'});
+  const parsed=await parseReply(rawReply({challenge:reminder.value,thread:reminderId}),{trustedAuthservIds:'mx.example.test'});
   assert.equal(f.service.processParsedReply('synthetic-inbound-identity',parsed).outcome,'accepted');
   const ack=f.jobs('checkin_confirmed')[0];const ackId='<wl-acknowledgement-1@example.test>';
   f.db.prepare("UPDATE notification_outbox SET status='sent_to_server',message_id=?,attempts=1,sent_at=? WHERE id=?").run(ackId,f.source.instant,ack.id);
   attempt.run(ack.id,f.source.instant);
-  return {...f,reminderId,ackId,reminder,ack,oldId,newId:f.config().notification_cycle_id,offlineCode:batch.codes[0]};
+  return {...f,reminderId,ackId,reminder,ack,oldId,newId:f.config().notification_cycle_id};
 }
 
 function mailboxFixture(ids,{missing=false,wrongHeader=false}={}){
@@ -71,12 +70,12 @@ test('actual verifier transaction proves database state; exact read-only mailbox
   const before=f.db.prepare('SELECT status FROM notification_outbox WHERE id=?').get(f.ack.id).status;
   const report=await collectEvidence({sessionFile:f.sessionFile,checkMailbox:true,...fixture});
   assert.equal(report.outcome,'verified');assert.equal(report.round_trip_verified,true);assert.ok(Object.values(report.invariants).every(Boolean));
-  assert.deepEqual(report.counts,{acceptance_runs:1,accepted_replies:1,consumed_codes:1,used_challenges:1});
+  assert.deepEqual(report.counts,{acceptance_runs:1,accepted_replies:1,consumed_confirmations:1,used_challenges:1});
   assert.equal(report.timestamps.accepted_at,f.source.instant);
   assert.equal(f.db.prepare('SELECT status FROM notification_outbox WHERE id=?').get(f.ack.id).status,before);
   assert.equal(fixture.calls.at(-1),'logout');
   const serialized=JSON.stringify(report);
-  for(const secret of [f.offlineCode,f.reminder.value,f.reminder.challenge.code_hash,'owner@example.test','private-mail-password',f.reminderId,'synthetic-inbound-identity'])assert.equal(serialized.includes(secret),false);
+  for(const secret of [f.reminder.value,f.reminder.challenge.code_hash,'owner@example.test','private-mail-password',f.reminderId,'synthetic-inbound-identity'])assert.equal(serialized.includes(secret),false);
   f.db.prepare("UPDATE notification_outbox SET status='queued' WHERE id=?").run(f.ack.id);
   const awaiting=await collectEvidence({sessionFile:f.sessionFile});
   assert.equal(awaiting.outcome,'pending');assert.equal(awaiting.reason,'awaiting_acknowledgement_submission');

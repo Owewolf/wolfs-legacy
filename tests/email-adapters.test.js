@@ -8,10 +8,11 @@ const { renderTemplate, localDate } = require('../server/notifications/templates
 const { createSmtpTransport, createImapReceiver, safeTransportError } = require('../server/notifications/transport');
 
 const challenge = 'WL-7K9P-4Q2R-Z6TM';
-const offline = 'RC-8FQ2-V9KB-7L5D';
-const policy = { expectedFrom: 'owner@example.com', replyMailbox: 'reply@example.net', expectedMessageId: '<reminder@example.net>', trustedAuthservIds: ['mx.example.net'] };
+const obsoleteCode = 'RC-8FQ2-V9KB-7L5D';
+const { BUTTON_REPLY_SUBJECT } = require('../server/notifications/parser');
+const policy = { expectedFrom: 'owner@example.com', replyMailbox: 'reply@example.net', expectedMessageId: '<reminder@example.net>', trustedAuthservIds: ['mx.example.net'], allowButtonReply: true };
 
-function mime(body = `CONFIRM ${challenge} ${offline}`, extra = {}, encoding = '8bit') {
+function mime(body = `CONFIRM ${challenge}`, extra = {}, encoding = '8bit') {
   const headers = {
     From: 'Vault Owner <owner@example.com>', To: 'reply@example.net',
     'Message-ID': '<reply@example.com>', 'In-Reply-To': '<reminder@example.net>',
@@ -23,56 +24,113 @@ function mime(body = `CONFIRM ${challenge} ${offline}`, extra = {}, encoding = '
     .map(([key, value]) => `${key}: ${value}`).join('\r\n') + '\r\n\r\n' + body);
 }
 
-test('MIME reply accepts two factors with harmless case/whitespace and ignores quotes/signature', async () => {
-  const parsed = await parseReply(mime(`  confirm  ${challenge.toLowerCase()}\t${offline.toLowerCase()} \n\n> CONFIRM BAD BAD\n-- \nCONFIRM not-a-code not-a-code`), policy);
+function buttonMime(body, extra = {}) {
+  return mime(body, { 'In-Reply-To': null, References: null, Subject: BUTTON_REPLY_SUBJECT, ...extra });
+}
+
+test('MIME reply accepts one opaque challenge with harmless case/whitespace and ignores quotes/signature', async () => {
+  const parsed = await parseReply(mime(`  confirm  ${challenge.toLowerCase()} \n\n> CONFIRM BAD\n-- \nCONFIRM not-a-code`), policy);
   assert.equal(parsed.ok, true);
   assert.equal(parsed.challenge, challenge);
-  assert.equal(parsed.recoveryCode, offline);
+  assert.equal(Object.hasOwn(parsed, 'recoveryCode'), false);
   assert.equal(parsed.from, 'owner@example.com');
   assert.equal(parsed.authentication.status, 'unavailable');
-  const encoded = Buffer.from(`CONFIRM ${challenge} ${offline}`).toString('base64');
+  const encoded = Buffer.from(`CONFIRM ${challenge}`).toString('base64');
   assert.equal((await parseReply(mime(encoded, {}, 'base64'), policy)).ok, true);
 });
 
-test('MIME parser rejects missing, ambiguous, quoted, automated and forwarded confirmations', async () => {
+test('prepared button messages require the exact subject and verified owner binding without invented thread IDs', async () => {
+  const parsed = await parseReply(buttonMime(), policy);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.inReplyTo, null);
+  assert.deepEqual(parsed.references, []);
+  assert.equal(parsed.subject, BUTTON_REPLY_SUBJECT);
+  assert.deepEqual(validateReplyMetadata(parsed, policy), { ok: true });
+  assert.deepEqual(validateReplyMetadata(parsed, { ...policy, allowButtonReply: false }), { ok: false, reason: 'thread_mismatch' });
+  assert.deepEqual(validateReplyMetadata(parsed, { ...policy, expectedFrom: undefined }), { ok: false, reason: 'thread_mismatch' });
+  assert.deepEqual(validateReplyMetadata(parsed, { ...policy, expectedFrom: 'different@example.com' }), { ok: false, reason: 'origin_mismatch' });
+  assert.deepEqual(await parseReply(buttonMime(undefined, { Subject: `Re: ${BUTTON_REPLY_SUBJECT}` }), policy), { ok: false, reason: 'invalid_thread' });
+  assert.deepEqual(await parseReply(buttonMime(undefined, { References: '<reminder@example.net>' }), policy), { ok: false, reason: 'invalid_thread' });
+  assert.deepEqual(await parseReply(buttonMime(), { ...policy, allowButtonReply: false }), { ok: false, reason: 'invalid_thread' });
+  assert.deepEqual(await parseReply(buttonMime(undefined, { 'In-Reply-To': '<other@example.net>' }), policy), { ok: false, reason: 'thread_mismatch' });
+});
+
+test('MIME parser rejects malformed, ambiguous, quoted, automated and forwarded confirmations', async () => {
   const cases = [
     [mime('CONFIRM'), 'confirmation_format'],
-    [mime(`CONFIRM ${challenge}`), 'confirmation_format'],
-    [mime(`CONFIRM ${challenge} ${offline}\nCONFIRM ${challenge} RC-OTHER-CODE-1234`), 'confirmation_ambiguous'],
-    [mime(`> CONFIRM ${challenge} ${offline}`), 'confirmation_missing'],
-    [mime(`On Tuesday Someone wrote:\nCONFIRM ${challenge} ${offline}`), 'confirmation_missing'],
+    [mime(`CONFIRM ${challenge} ${obsoleteCode}`), 'confirmation_format'],
+    [mime(`CONFIRM ${challenge}\nCONFIRM WL-OTHER-CODE-1234`), 'confirmation_ambiguous'],
+    [mime(`> CONFIRM ${challenge}`), 'confirmation_missing'],
+    [mime(`On Tuesday Someone wrote:\nCONFIRM ${challenge}`), 'confirmation_missing'],
     [mime(undefined, { 'Auto-Submitted': 'auto-replied' }), 'automatic_message'],
     [mime(undefined, { Precedence: 'bulk' }), 'automatic_message'],
+    [buttonMime(undefined, { 'Auto-Submitted': 'auto-generated' }), 'automatic_message'],
     [mime(undefined, { Subject: 'Fwd: reminder' }), 'forwarded_message'],
     [mime(undefined, { 'Resent-From': 'owner@example.com' }), 'forwarded_message'],
-    [mime(`---------- Forwarded message ---------\nCONFIRM ${challenge} ${offline}`), 'forwarded_message'],
+    [mime(`---------- Forwarded message ---------\nCONFIRM ${challenge}`), 'forwarded_message'],
     [mime(undefined, { From: 'Display Owner <attacker@example.org>' }), 'origin_mismatch'],
     [mime(undefined, { From: 'owner@example.com, attacker@example.org' }), 'invalid_origin'],
     [mime(undefined, { 'Reply-To': 'attacker@example.org' }), 'invalid_origin'],
     [mime(undefined, { To: 'other@example.net' }), 'recipient_mismatch'],
     [mime(undefined, { 'In-Reply-To': '<other@example.net>' }), 'thread_mismatch'],
     [mime(undefined, { 'In-Reply-To': null }), 'invalid_thread'],
+    [mime(undefined, { 'In-Reply-To': 'junk <reminder@example.net>' }), 'invalid_thread'],
+    [mime(undefined, { References: '<reminder@example.net> junk' }), 'invalid_thread'],
     [mime(undefined, { 'Message-ID': null }), 'invalid_message_id'],
-    [mime(undefined, { 'Content-Type': 'text/html' }), 'plain_text_required'],
+    [mime('No confirmation here.'), 'confirmation_missing'],
   ];
   for (const [source, reason] of cases) {
     const parsed = await parseReply(source, policy);
     assert.deepEqual(parsed, { ok: false, reason }, reason);
-    assert.equal(JSON.stringify(parsed).includes(offline), false);
+    assert.equal(JSON.stringify(parsed).includes(challenge), false);
   }
 });
 
 test('bounded MIME processing never examines oversized raw input or confirmation attachments', async () => {
   assert.deepEqual(await parseReply(Buffer.alloc(65537), policy), { ok: false, reason: 'message_size' });
+  assert.deepEqual(await parseReply(mime('x'.repeat(16385)), policy), { ok: false, reason: 'body_size' });
   const multipart = mime([
     '--parts', 'Content-Type: text/plain', '', 'No confirmation here.',
     '--parts', 'Content-Type: text/plain', 'Content-Disposition: attachment; filename="codes.txt"', '',
-    `CONFIRM ${challenge} ${offline}`, '--parts--', '',
+    `CONFIRM ${challenge}`, '--parts--', '',
   ].join('\r\n'), { 'Content-Type': 'multipart/mixed; boundary=parts' });
   assert.equal((await parseReply(multipart, policy)).reason, 'confirmation_missing');
+  const signatureImage = mime([
+    '--parts', 'Content-Type: text/html; charset=utf-8', '', `<div>CONFIRM ${challenge}</div><img src="cid:signature">`,
+    '--parts', 'Content-Type: image/png', 'Content-Disposition: inline; filename="signature.png"',
+    'Content-ID: <signature>', 'Content-Transfer-Encoding: base64', '', 'aWdub3JlZA==', '--parts--', '',
+  ].join('\r\n'), { 'Content-Type': 'multipart/related; boundary=parts' });
+  assert.equal((await parseReply(signatureImage, policy)).ok, true, 'a harmless inline signature image is ignored');
 });
 
-test('duplicate identity/thread headers, mismatched sender and signature-only codes fail closed', async () => {
+test('simple HTML-only button messages work without reading quoted, hidden, signature or external content', async () => {
+  const html = '<html><body><div><span>CONFIRM</span>&nbsp;' + challenge + '</div>' +
+    '<div style="display: none">CONFIRM WL-HIDDEN-1234</div>' +
+    '<img src="https://external.invalid/tracker"><a href="https://external.invalid/CONFIRM-WL-OTHER-1234">Link</a>' +
+    '<blockquote>CONFIRM WL-QUOTED-1234</blockquote><div>CONFIRM WL-AFTER-QUOTE-1234</div></body></html>';
+  const parsed = await parseReply(buttonMime(html, { 'Content-Type': 'text/html; charset=utf-8' }), policy);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.challenge, challenge);
+  const ignored = [
+    `<blockquote>CONFIRM ${challenge}</blockquote>`,
+    `<div class="gmail_quote">CONFIRM ${challenge}</div>`,
+    `<div class="gmail_signature">CONFIRM ${challenge}</div>`,
+    `<div id="AppleMailSignature">CONFIRM ${challenge}</div>`,
+    `<div hidden>CONFIRM ${challenge}</div>`,
+    `<div style="display : none">CONFIRM ${challenge}</div>`,
+    `<script>CONFIRM ${challenge}</script>`,
+    `<a href="mailto:reply@example.net?body=CONFIRM%20${challenge}">Prepared message</a>`,
+    `<div>On Tuesday Someone wrote:</div><div>CONFIRM ${challenge}</div>`,
+  ];
+  for (const content of ignored) {
+    assert.deepEqual(await parseReply(buttonMime(content, { 'Content-Type': 'text/html' }), policy), { ok: false, reason: 'confirmation_missing' }, content);
+  }
+  assert.deepEqual(await parseReply(buttonMime(`<p>CONFIRM ${challenge}</p><p>CONFIRM WL-OTHER-1234</p>`, { 'Content-Type': 'text/html' }), policy), { ok: false, reason: 'confirmation_ambiguous' });
+  assert.deepEqual(await parseReply(buttonMime('x'.repeat(16385), { 'Content-Type': 'text/html' }), policy), { ok: false, reason: 'unsupported_mime' });
+  assert.deepEqual(await parseReply(buttonMime('<div>'.repeat(100) + `CONFIRM ${challenge}` + '</div>'.repeat(100), { 'Content-Type': 'text/html' }), policy), { ok: false, reason: 'unsupported_mime' });
+});
+
+test('duplicate identity/thread headers, mismatched sender and signature-only commands fail closed', async () => {
   const duplicate = (name, value) => {
     const source = mime().toString();
     return source.replace('\r\n\r\n', `\r\n${name}: ${value}\r\n\r\n`);
@@ -82,10 +140,11 @@ test('duplicate identity/thread headers, mismatched sender and signature-only co
     [duplicate('Message-ID', '<other@example.com>'), 'invalid_message_id'],
     [duplicate('In-Reply-To', '<other@example.net>'), 'invalid_thread'],
     [duplicate('References', '<other@example.net>'), 'invalid_thread'],
+    [duplicate('Subject', BUTTON_REPLY_SUBJECT), 'invalid_subject'],
     [mime(undefined, { Sender: 'attacker@example.org' }), 'invalid_origin'],
-    [mime(`Thank you.\n-- \nCONFIRM ${challenge} ${offline}`), 'confirmation_missing'],
-    [mime(`Sent from my phone\nCONFIRM ${challenge} ${offline}`), 'confirmation_missing'],
-    [mime(`On 28 October Owner wrote:\n> CONFIRM ${challenge} ${offline}`), 'confirmation_missing'],
+    [mime(`Thank you.\n-- \nCONFIRM ${challenge}`), 'confirmation_missing'],
+    [mime(`Sent from my phone\nCONFIRM ${challenge}`), 'confirmation_missing'],
+    [mime(`On 28 October Owner wrote:\n> CONFIRM ${challenge}`), 'confirmation_missing'],
   ];
   for (const [source, reason] of cases) assert.deepEqual(await parseReply(source, policy), { ok: false, reason });
 });
@@ -104,20 +163,33 @@ test('trusted receiver authentication failure rejects; untrusted Authentication-
   assert.deepEqual(await parseReply(conflicting, policy), { ok: false, reason: 'authentication_failed' });
 });
 
-test('templates present South Africa deadlines, both factors and supersession without private payload leakage', () => {
+test('reminder presents one prepared-email button with South Africa deadlines and no manual code entry', () => {
   const rendered = renderTemplate('reminder', {
     releaseAt: '2026-11-01T22:30:00Z', challengeExpiresAt: '2026-10-28T22:30:00Z',
-    daysRemaining: 5, reminderNumber: 1, challenge, offlineCode: offline,
+    daysRemaining: 5, reminderNumber: 1, challenge, confirmationMailbox: 'reply@example.net', obsoleteCode,
     accessToken: 'private-access-token', accountBalance: 'private-balance', smtpPassword: 'private-password',
   });
   assert.match(rendered.text, /2 November 2026.*00:30/);
   assert.match(rendered.text, /24 hours/);
   assert.match(rendered.text, /newer reminder invalidates/);
-  assert.match(rendered.text, /CONFIRM WL-7K9P-4Q2R-Z6TM <YOUR-NEXT-UNUSED-OFFLINE-CODE>/);
-  assert.match(rendered.html, /&lt;YOUR-NEXT-UNUSED-OFFLINE-CODE&gt;/);
+  assert.match(rendered.text, /Confirm I’m here/);
+  assert.match(rendered.html, />Confirm I’m here<\/a>/);
+  assert.match(rendered.text, /does not open your vault or grant access/);
+  const mailto = rendered.text.match(/mailto:\S+/)[0];
+  const link = new URL(mailto);
+  assert.equal(link.pathname, 'reply@example.net');
+  assert.equal(link.searchParams.get('subject'), BUTTON_REPLY_SUBJECT);
+  assert.equal(link.searchParams.get('body'), `CONFIRM ${challenge}`);
+  assert.match(rendered.html, /&amp;body=CONFIRM%20WL-/);
   assert.equal(/<img|https?:\/\//.test(rendered.html), false);
-  for (const secret of [offline, 'private-access-token', 'private-balance', 'private-password']) assert.equal(JSON.stringify(rendered).includes(secret), false);
-  assert.match(renderTemplate('reminder', { releaseAt: '2026-11-01T00:00:00Z', challengeExpiresAt: '2026-10-31T00:00:00Z', daysRemaining: 1, reminderNumber: 5, challenge }).subject, /1 day before/);
+  assert.equal(/offline|recovery code|YOUR-NEXT|exactly one line/i.test(JSON.stringify(rendered)), false);
+  for (const secret of [obsoleteCode, 'private-access-token', 'private-balance', 'private-password']) assert.equal(JSON.stringify(rendered).includes(secret), false);
+  assert.match(renderTemplate('reminder', { releaseAt: '2026-11-01T00:00:00Z', challengeExpiresAt: '2026-10-31T00:00:00Z', daysRemaining: 1, reminderNumber: 5, challenge, confirmationMailbox: 'reply@example.net' }).subject, /1 day before/);
+  assert.throws(() => renderTemplate('reminder', { releaseAt: '2026-11-01T00:00:00Z', challengeExpiresAt: '2026-10-31T00:00:00Z', daysRemaining: 1, reminderNumber: 5, challenge, confirmationMailbox: 'reply@example.net\r\nBcc: other@example.net' }));
+  const unusualMailbox=renderTemplate('reminder', { releaseAt: '2026-11-01T00:00:00Z', challengeExpiresAt: '2026-10-31T00:00:00Z', daysRemaining: 1, reminderNumber: 5, challenge, confirmationMailbox: 'reply?body=other@example.net' });
+  const unusualLink=new URL(unusualMailbox.text.match(/mailto:\S+/)[0]);
+  assert.equal(decodeURIComponent(unusualLink.pathname),'reply?body=other@example.net');
+  assert.equal(unusualLink.searchParams.get('body'),`CONFIRM ${challenge}`);
 });
 
 test('template interpolation escapes markup and strips control characters; all required variants render', () => {
@@ -136,6 +208,7 @@ test('template interpolation escapes markup and strips control characters; all r
   for (const [event, payload] of Object.entries(variants)) {
     const output = renderTemplate(event, payload);
     assert.ok(output.subject && output.text && output.html, event);
+    assert.equal(/offline|recovery code|two.factor|2FA/i.test(JSON.stringify(output)), false, event);
   }
   assert.equal(localDate('2026-10-28 12:00:00'), localDate(common.eventAt));
   assert.throws(() => renderTemplate('unknown', {}));
