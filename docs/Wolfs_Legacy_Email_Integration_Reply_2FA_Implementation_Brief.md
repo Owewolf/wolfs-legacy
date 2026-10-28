@@ -1,6 +1,7 @@
 # Wolf's Legacy — Complete Email Integration, Five-Day Reminders and Simple Email Check-In
 
 **Status:** Updated to the owner's 28 October 2026 instruction: verify the notification email once, then confirm reminders with one **Confirm I’m here** button and send the prepared reply. Offline codes and reply 2FA are removed. This instruction supersedes the original two-code protocol. See [test evidence](email-test-report.md), [baseline audit](email-baseline-audit.md), [threat model](email-threat-model.md) and [operations](email-operations.md).
+**Acceptance:** Two real simplified email round trips passed on 28 October 2026, at 11:24 and 11:31 SAST. The repeat used the owner's replacement verified recipient. Each captured report passed all 22 database/mailbox checks, including independently observed acknowledgement. Automated validation passed 134 Node and 4 Python tests. Review remains required before merge or production deployment; the owner settings change and retest are recorded in the test evidence.
 **Repository:** `Owewolf/wolfs-legacy`\
 **Starting branch:** current approved development head\
 **Suggested new branch:** `feature/email-notifications-reply-2fa`\
