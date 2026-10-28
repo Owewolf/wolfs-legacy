@@ -5,7 +5,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "dev": "node --watch server/index.js",
+    "test": "node --test tests/*.test.js && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_homebank_parser.py"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -14,7 +15,10 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2",
     "helmet": "^8.1.0",
+    "imapflow": "^2.9.1",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.0.2"
+    "mailparser": "^3.12.4",
+    "multer": "^2.0.2",
+    "nodemailer": "^10.2.1"
   }
 }

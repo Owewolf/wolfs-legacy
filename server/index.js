@@ -6,11 +6,11 @@ const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const { getDb, audit } = require('./db');
+const { getDb } = require('./db');
 const log = require('./logger');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4444;
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -73,30 +73,13 @@ app.use('/api/documents', require('./routes/documents'));
 app.use('/api/beneficiaries', require('./routes/beneficiaries'));
 app.use('/api/deadswitch', require('./routes/deadswitch'));
 app.use('/api/homebank', require('./routes/homebank'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // Dead man's switch background check — runs every hour
 function checkDeadSwitches() {
   try {
     const db = getDb();
-    const triggerSwitch = db.transaction(() => {
-      const configs = db.prepare(
-        `SELECT dsc.*, u.last_check_in FROM dead_switch_config dsc
-         JOIN users u ON dsc.user_id = u.id
-         WHERE dsc.is_active = 1 AND dsc.switch_triggered = 0`
-      ).all();
-
-      for (const c of configs) {
-        const deadline = new Date(c.last_check_in);
-        deadline.setDate(deadline.getDate() + c.check_in_interval_days + c.grace_period_days);
-        if (new Date() > deadline) {
-          db.prepare('UPDATE dead_switch_config SET switch_triggered = 1, switch_triggered_at = CURRENT_TIMESTAMP WHERE id = ?').run(c.id);
-          db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = CURRENT_TIMESTAMP WHERE user_id = ? AND access_granted = 0').run(c.user_id);
-          audit(c.user_id, 'deadswitch_triggered', 'dead_switch', c.id, null, null);
-          log.warn('Dead man\'s switch triggered', { user_id: c.user_id, switch_id: c.id });
-        }
-      }
-    });
-    triggerSwitch();
+    require('./notifications/service').createNotificationService({ db }).releaseDue();
   } catch (err) {
     log.error('Dead switch check error', { error: err.message });
   }
@@ -109,8 +92,11 @@ app.get('{*path}', (req, res) => {
 });
 
 getDb();
-app.listen(PORT, () => {
+app.listen(PORT, process.env.LISTEN_HOST || '0.0.0.0', () => {
   log.info('Legacy Vault started', { port: PORT });
   checkDeadSwitches();
   require('./homebank-service').startWatcher();
+  const mailWorker = require('./notifications/worker').createNotificationWorker({ db: getDb() });
+  mailWorker.start();
+  process.once('SIGTERM', () => { mailWorker.stop(); process.exit(0); });
 });

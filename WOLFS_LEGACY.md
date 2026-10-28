@@ -17,8 +17,8 @@ An independent private development repository based on [slavhate/legacy-vault](h
 ## Deployment assumptions
 
 - Ubuntu/Fedora/Ultramarine; Node.js 20+ and Python 3 required.
-- Service name: `legacy-vault.service`, port `4444`.
-- Runtime checkout: `/home/wolf/Projects/legacy-vault`.
+- Service name: `wolfs-legacy.service`, port `4444`.
+- Runtime checkout: `/home/wolf/Projects/wolfs-legacy`.
 - Managed files: `/srv/data/files/legacy-vault-managed-documents`.
 - HomeBank reads only, from `/home/wolf/Documents/Money` (configurable in the UI).
 - The financial numbers are based on HomeBank XML and HomeBank's transaction-status rules; **they are not independently verified bank balances**.
@@ -31,8 +31,8 @@ The supplied sample contained 38 accounts, 21,541 transactions, 4 closed account
 ## Build from GitHub
 
 ```bash
-git clone --branch feature/homebank-managed-documents https://github.com/Owewolf/wolfs-legacy.git /home/wolf/Projects/legacy-vault
-cd /home/wolf/Projects/legacy-vault
+git clone --branch feature/homebank-managed-documents https://github.com/Owewolf/wolfs-legacy.git /home/wolf/Projects/wolfs-legacy
+cd /home/wolf/Projects/wolfs-legacy
 cp .env.example .env
 # edit .env and confirm the storage path and secrets before launching
 npm install
@@ -40,10 +40,16 @@ python3 -m unittest discover -s tests -p test_homebank_parser.py
 node tests/document-store.test.js
 node --test tests/homebank-vault-visibility.test.js
 node --test tests/homebank-vault-cleanup.test.js tests/homebank-service.test.js tests/homebank-vault-live.test.js
-bash scripts/setup-systemd.sh
+bash scripts/setup-systemd.sh --check
+bash scripts/setup-systemd.sh > /tmp/wolfs-legacy.service
+# Review the generated unit, configuration and acceptance evidence first.
+# Installation (does not enable or start the service):
+sudo bash scripts/setup-systemd.sh --install --user wolf --node "$(command -v node)"
 ```
 
-For an existing installation, **stop the service, back up `data/` and `.env` and any managed documents externally, then rename the old app directory before cloning**. Do not delete old data or rely on renaming as a backup. The existing systemd setup script will point to the checkout above.
+For an existing installation, **stop the service and back up `data/`, `.env` and managed documents externally before changing code**. Retain the previous checkout and unit until acceptance passes. If the old `legacy-vault.service` exists, stop and disable it during the reviewed cutover so two processes cannot use the same database or port. The setup script resolves the current checkout and Node executable and refuses to overwrite an existing unit. Review local unit restrictions when updating an installation.
+
+Email deployment, owner verification, independent offline code provisioning, restore quarantine and rollback are documented in [Email operations](docs/email-operations.md). Email remains opt-in and real-provider acceptance must be recorded before enabling it for routine use.
 
 ## Limitations / further development
 

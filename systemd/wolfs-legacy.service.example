@@ -1,0 +1,32 @@
+[Unit]
+Description=Wolf's Legacy encrypted vault and email workers
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=wolf
+Group=wolf
+WorkingDirectory=/home/wolf/Projects/wolfs-legacy
+Environment=NODE_ENV=production
+Environment=PORT=4444
+Environment=TZ=Africa/Johannesburg
+EnvironmentFile=/home/wolf/Projects/wolfs-legacy/.env
+# Resolve the installed Node path with scripts/setup-systemd.sh on this host.
+ExecStart=/usr/bin/node /home/wolf/Projects/wolfs-legacy/server/index.js
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+RestrictSUIDSGID=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
