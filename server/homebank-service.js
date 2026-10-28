@@ -7,6 +7,8 @@ const { spawn } = require('node:child_process');
 const { getDb, audit } = require('./db');
 const { encrypt, decrypt } = require('./crypto');
 const MAX_BYTES = 50 * 1024 * 1024;
+// Keep in step with homebank_parse.py; reparse old snapshots on parser upgrades.
+const SNAPSHOT_SCHEMA_VERSION = 2;
 const ROOT = path.resolve(process.env.HOMEBANK_ALLOWED_ROOT || '/home/wolf/Documents');
 const DEFAULT_DIRECTORY = process.env.HOMEBANK_DIRECTORY || '/home/wolf/Documents/Money';
 const inflight = new Map();
@@ -106,7 +108,7 @@ async function syncUser(userId, force = false) {
       if (!file) throw new Error('No HomeBank .xhb file found in the selected directory');
       const existing = decodedSnapshot(current);
       if (!force && current.fingerprint === file.fingerprint && current.snapshot_encrypted && !current.last_error &&
-          existing?.exported_date === localDay()) return current;
+          existing?.snapshot_schema_version === SNAPSHOT_SCHEMA_VERSION && existing?.exported_date === localDay()) return current;
       // Validate file again after parsing, so incomplete atomic saves never replace a good snapshot.
       const snap = await parseXhb(file.full);
       const after = await fs.stat(file.full);

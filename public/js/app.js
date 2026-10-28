@@ -3,6 +3,9 @@
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 let state = { user: null, section: null, entries: [], counts: {}, beneficiaries: [], switchStatus: null, newToken: null };
+let editingHomebankEntry = null;
+let displayedSearchResults = [];
+let liveVaultRefreshBusy = false;
 
 // ── Helpers ──
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
@@ -60,6 +63,7 @@ function hideLoading(target) {
 async function navigate(route) { window.location.hash = route; }
 
 async function handleRoute() {
+  editingHomebankEntry = null;
   const hash = window.location.hash.slice(1) || 'login';
   const [route, p1, p2] = hash.split('/');
 
@@ -221,12 +225,15 @@ function bindSidebar() {
 }
 
 // ── Dashboard ──
-async function renderDashboard() {
+async function renderDashboard(refreshedSummary, shouldRender = () => true) {
+  const expectedHash = window.location.hash;
+  let counts = {};
   try {
-    const summary = await API.getSummary();
-    state.counts = {};
-    summary.forEach(s => state.counts[s.section] = s.count);
-  } catch { state.counts = {}; }
+    const summary = refreshedSummary || await API.getSummary();
+    summary.forEach(s => counts[s.section] = s.count);
+  } catch { counts = {}; }
+  if (window.location.hash !== expectedHash || !shouldRender()) return;
+  state.counts = counts;
 
   const totalEntries = Object.values(state.counts).reduce((a, b) => a + b, 0);
 
@@ -323,12 +330,15 @@ function showExportView(data) {
 }
 
 // ── Search results ──
-async function renderSearchResults(query) {
+async function renderSearchResults(query, refreshedResults, shouldRender = () => true) {
+  const expectedHash = window.location.hash;
   const q = decodeURIComponent(query || '');
   if (q.length < 2) return navigate('vault');
 
   let results;
-  try { results = await API.search(q); } catch (err) { return showError(err.message); }
+  try { results = refreshedResults || await API.search(q); } catch (err) { return showError(err.message); }
+  if (window.location.hash !== expectedHash || !shouldRender()) return;
+  displayedSearchResults = results;
 
   const resultsHTML = results.length ? results.map(e => {
     const sec = SECTIONS[e.section];
@@ -350,25 +360,29 @@ async function renderSearchResults(query) {
   bindSidebar();
   const si = $('#global-search');
   if (si) si.value = q;
+  return true;
 }
 
 // ── Section view ──
-async function renderSection(key) {
+async function renderSection(key, refreshedData, shouldRender = () => true) {
+  const expectedHash = window.location.hash;
   const sec = SECTIONS[key];
   if (!sec) return navigate('vault');
 
   let data;
+  let counts = {};
   try {
-    data = await API.getEntries(key);
-    state.entries = data.entries || data;
+    data = refreshedData || await API.getEntries(key);
     const summary = await API.getSummary();
-    state.counts = {};
-    summary.forEach(s => state.counts[s.section] = s.count);
+    summary.forEach(s => counts[s.section] = s.count);
   } catch (err) { return showError(err.message); }
 
-  const entries = Array.isArray(state.entries) ? state.entries : [];
+  const entries = Array.isArray(data.entries || data) ? (data.entries || data) : [];
   let docCounts = {};
   try { docCounts = await Docs.counts(key); } catch (err) { console.warn('Document counts unavailable', err); }
+  if (window.location.hash !== expectedHash || !shouldRender()) return;
+  state.entries = entries;
+  state.counts = counts;
   const entriesHTML = entries.length ? entries.map(e => {
     const fieldsHTML = sec.fields.filter(f => e.fields[f.key]).map(f => `
       <div class="field-item">
@@ -412,10 +426,12 @@ async function renderSection(key) {
       try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); renderSection(key); } catch (err) { showError(err.message); }
     };
   });
+  return true;
 }
 
 // ── Entry form (add/edit) ──
 async function renderEntryForm(sectionKey, entryId) {
+  const expectedHash = window.location.hash;
   const sec = SECTIONS[sectionKey];
   if (!sec) return navigate('vault');
 
@@ -423,11 +439,16 @@ async function renderEntryForm(sectionKey, entryId) {
   if (entryId) {
     try { existing = await API.getEntry(entryId); } catch { return navigate('section/' + sectionKey); }
   }
+  if (window.location.hash !== expectedHash) return;
+  editingHomebankEntry = existing?.homebank_account_id != null ? existing : null;
+  const managedFields = new Set(existing?.homebank_managed_fields || []);
 
   const fieldsHTML = sec.fields.map(f => {
     const val = existing ? (existing.fields[f.key] || '') : '';
     let input;
-    if (f.type === 'textarea') {
+    if (managedFields.has(f.key)) {
+      input = `<input type="text" name="${f.key}" value="${esc(val)}" readonly aria-readonly="true">`;
+    } else if (f.type === 'textarea') {
       input = `<textarea name="${f.key}">${esc(val)}</textarea>`;
     } else if (f.type === 'select') {
       const opts = f.options.map(o => `<option value="${esc(o)}" ${val === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
@@ -448,8 +469,9 @@ async function renderEntryForm(sectionKey, entryId) {
     <div class="card">
       <form id="entry-form">
         <div class="form-group"><label>Title / Label</label><input type="text" name="title" value="${esc(existing?.title || '')}" required placeholder="e.g. HDFC Savings, Main Gmail..."></div>
+        ${editingHomebankEntry ? '<p style="color:var(--text-muted);margin-bottom:16px">HomeBank fields update automatically.</p>' : ''}
         ${fieldsHTML}
-        <div class="form-group"><label>Notes</label><textarea name="notes" placeholder="Any additional notes...">${esc(existing?.notes || '')}</textarea></div>
+        ${editingHomebankEntry ? '' : `<div class="form-group"><label>Notes</label><textarea name="notes" placeholder="Any additional notes...">${esc(existing?.notes || '')}</textarea></div>`}
         ${Docs.panel()}
         <button type="submit" class="btn btn-primary">${existing ? 'Save Changes' : 'Add Entry & Copy Documents'}</button>
       </form>
@@ -472,7 +494,10 @@ async function renderEntryForm(sectionKey, entryId) {
     button.disabled = true;
     const f = new FormData(e.target);
     const fields = {};
-    sec.fields.forEach(fd => { const v = f.get(fd.key); if (v) fields[fd.key] = v; });
+    sec.fields.forEach(fd => {
+      if (editingHomebankEntry?.homebank_managed_fields?.includes(fd.key)) return;
+      const v = f.get(fd.key); if (v) fields[fd.key] = v;
+    });
     try {
       const payload = { section: sectionKey, title: f.get('title'), fields, notes: f.get('notes') };
       if (existing) {
@@ -851,4 +876,60 @@ function renderVaultReadonly(data, token) {
 }
 
 // ── Init ──
+async function refreshLiveVault() {
+  if (liveVaultRefreshBusy || document.hidden || !state.user || !API.token) return;
+  const expectedHash = window.location.hash;
+  const [route, key, entryId] = expectedHash.slice(1).split('/');
+  const canRender = () => window.location.hash === expectedHash && !document.hidden &&
+    !document.activeElement?.matches('input,textarea,select') && !window.getSelection()?.toString();
+  if (!['vault', 'section', 'edit', 'search'].includes(route)) return;
+  // Refresh only source-managed controls while editing. Other views can be
+  // redrawn when their data changes, without interrupting typing or selection.
+  if (route !== 'edit' && !canRender()) return;
+  liveVaultRefreshBusy = true;
+  try {
+    if (route === 'edit') {
+      if (!editingHomebankEntry || String(editingHomebankEntry.id) !== entryId) return;
+      let fresh;
+      try { fresh = await API.getEntry(entryId); }
+      catch (err) {
+        if (window.location.hash === expectedHash && err.message === 'Not found') navigate('section/' + key);
+        return;
+      }
+      if (window.location.hash !== expectedHash) return;
+      const previous = new Set(editingHomebankEntry.homebank_managed_fields || []);
+      const managed = new Set(fresh.homebank_managed_fields || []);
+      for (const field of new Set([...previous, ...managed])) {
+        const control = document.querySelector(`#entry-form [name="${field}"]`);
+        if (!control) continue;
+        control.value = fresh.fields[field] || '';
+        control.readOnly = managed.has(field);
+        control.setAttribute('aria-readonly', String(control.readOnly));
+      }
+      editingHomebankEntry = fresh;
+    } else if (route === 'section') {
+      const fresh = await API.getEntries(key);
+      if (canRender() && JSON.stringify(fresh.entries || fresh) !== JSON.stringify(state.entries)) {
+        const scroll = window.scrollY;
+        const rendered = await renderSection(key, fresh, canRender);
+        if (rendered && window.location.hash === expectedHash) window.scrollTo(0, scroll);
+      }
+    } else if (route === 'search') {
+      const fresh = await API.search(decodeURIComponent(key || ''));
+      if (canRender() && JSON.stringify(fresh) !== JSON.stringify(displayedSearchResults)) {
+        const scroll = window.scrollY;
+        const rendered = await renderSearchResults(key, fresh, canRender);
+        if (rendered && window.location.hash === expectedHash) window.scrollTo(0, scroll);
+      }
+    } else {
+      const fresh = await API.getSummary();
+      const counts = Object.fromEntries(fresh.map(row => [row.section, row.count]));
+      if (canRender() && JSON.stringify(counts) !== JSON.stringify(state.counts)) await renderDashboard(fresh, canRender);
+    }
+  } catch (err) { console.warn('HomeBank refresh unavailable', err); }
+  finally { liveVaultRefreshBusy = false; }
+}
+
+setInterval(refreshLiveVault, 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLiveVault(); });
 handleRoute();

@@ -3,11 +3,25 @@ const { getDb, audit } = require('../db');
 const { encrypt, decrypt } = require('../crypto');
 const { authenticateToken } = require('../middleware/auth');
 const { validateSection, validateString, validationError } = require('../validate');
+const { getVaultVisibility, homebankAccountIdFromNotes } = require('../vault-visibility');
+const { projectHomebankEntry, sanitizeHomebankEntry } = require('../homebank-vault');
+const homebank = require('../homebank-service');
 
 const router = express.Router();
 router.use(authenticateToken);
+router.use(async (req, res, next) => {
+  const email = (process.env.HOMEBANK_OWNER_EMAIL || '').trim().toLowerCase();
+  const owner = email && getDb().prepare('SELECT id FROM users WHERE lower(trim(email)) = ?').get(email);
+  if (owner && owner.id === req.user.id && req.method !== 'DELETE') {
+    // Read the latest fully saved file before deriving this response. The
+    // service retains its validated snapshot if the source is temporarily bad.
+    try { await homebank.syncUser(req.user.id); } catch { /* use last valid snapshot */ }
+  }
+  req.vaultVisibility = getVaultVisibility(req.user.id);
+  next();
+});
 
-function decryptEntry(e) {
+function decryptEntry(e, visibility) {
   let fields;
   try {
     const raw = decrypt(e.fields_encrypted);
@@ -15,12 +29,27 @@ function decryptEntry(e) {
   } catch {
     fields = { _error: 'Could not decrypt fields' };
   }
-  return {
+  return projectHomebankEntry({
     id: e.id, user_id: e.user_id, section: e.section, title: e.title,
     fields,
     notes: e.notes_encrypted ? decrypt(e.notes_encrypted) : '',
+    homebank_account_id: e.homebank_account_id ?? null,
     created_at: e.created_at, updated_at: e.updated_at
-  };
+  }, visibility);
+}
+
+function visibleEntries(db, userId, section, visibility) {
+  const rows = section
+    ? db.prepare('SELECT * FROM vault_entries WHERE user_id = ? AND section = ? ORDER BY updated_at DESC, id DESC').all(userId, section)
+    : db.prepare('SELECT * FROM vault_entries WHERE user_id = ? ORDER BY section, updated_at DESC, id DESC').all(userId);
+  return (visibility || getVaultVisibility(userId)).filter(rows);
+}
+
+function sourceAccountId(db, userId, explicitId, notes) {
+  const ownerEmail = (process.env.HOMEBANK_OWNER_EMAIL || '').trim().toLowerCase();
+  const user = db.prepare('SELECT email FROM users WHERE id = ?').get(userId);
+  if (!ownerEmail || !user || user.email.trim().toLowerCase() !== ownerEmail) return null;
+  return Number.isSafeInteger(explicitId) && explicitId > 0 ? explicitId : homebankAccountIdFromNotes(notes);
 }
 
 router.get('/entries', (req, res) => {
@@ -32,26 +61,18 @@ router.get('/entries', (req, res) => {
   const pageSize = Math.min(100, Math.max(1, parseInt(limit) || 50));
   const offset = (pageNum - 1) * pageSize;
 
-  const countSql = section
-    ? 'SELECT COUNT(*) as total FROM vault_entries WHERE user_id = ? AND section = ?'
-    : 'SELECT COUNT(*) as total FROM vault_entries WHERE user_id = ?';
-  const countParams = section ? [req.user.id, section] : [req.user.id];
-  const { total } = db.prepare(countSql).get(...countParams);
-
-  const sql = section
-    ? 'SELECT * FROM vault_entries WHERE user_id = ? AND section = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?'
-    : 'SELECT * FROM vault_entries WHERE user_id = ? ORDER BY section, updated_at DESC LIMIT ? OFFSET ?';
-  const params = section ? [req.user.id, section, pageSize, offset] : [req.user.id, pageSize, offset];
-
-  const entries = db.prepare(sql).all(...params).map(decryptEntry);
+  // Filter before pagination so counts and pages describe the visible vault.
+  const visible = visibleEntries(db, req.user.id, section, req.vaultVisibility);
+  const total = visible.length;
+  const entries = visible.slice(offset, offset + pageSize).map(e => decryptEntry(e, req.vaultVisibility));
   res.json({ entries, total, page: pageNum, pages: Math.ceil(total / pageSize) });
 });
 
 router.get('/entries/:id', (req, res) => {
   const db = getDb();
   const e = db.prepare('SELECT * FROM vault_entries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
-  if (!e) return res.status(404).json({ error: 'Not found' });
-  res.json(decryptEntry(e));
+  if (!e || !req.vaultVisibility.isVisible(e)) return res.status(404).json({ error: 'Not found' });
+  res.json(decryptEntry(e, req.vaultVisibility));
 });
 
 router.post('/entries', (req, res) => {
@@ -63,12 +84,14 @@ router.post('/entries', (req, res) => {
   if (notes && !validateString(notes, 0, 10000)) return validationError(res, 'Notes too long (max 10000 chars)');
 
   const db = getDb();
+  const homebankAccountId = sourceAccountId(db, req.user.id, req.body.homebank_account_id, notes);
+  const stored = sanitizeHomebankEntry({ user_id: req.user.id, section, fields, notes, homebank_account_id: homebankAccountId }, req.vaultVisibility);
   const result = db.prepare(
-    'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted) VALUES (?, ?, ?, ?, ?)'
-  ).run(req.user.id, section, title.trim(), encrypt(JSON.stringify(fields)), notes ? encrypt(notes) : null);
+    'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted, homebank_account_id) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(req.user.id, section, title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, homebankAccountId);
 
   audit(req.user.id, 'create_entry', 'vault_entry', result.lastInsertRowid, section, req.ip);
-  res.json({ id: result.lastInsertRowid, section, title: title.trim(), fields, notes });
+  res.json(decryptEntry(db.prepare('SELECT * FROM vault_entries WHERE id=? AND user_id=?').get(result.lastInsertRowid, req.user.id), req.vaultVisibility));
 });
 
 router.put('/entries/:id', (req, res) => {
@@ -79,14 +102,15 @@ router.put('/entries/:id', (req, res) => {
   if (typeof fields !== 'object') return validationError(res, 'Fields must be an object');
 
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM vault_entries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
+  const existing = db.prepare('SELECT * FROM vault_entries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!existing || !req.vaultVisibility.isVisible(existing)) return res.status(404).json({ error: 'Not found' });
+  const stored = sanitizeHomebankEntry({ ...existing, section, fields, notes }, req.vaultVisibility);
   db.prepare(
     'UPDATE vault_entries SET section=?, title=?, fields_encrypted=?, notes_encrypted=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?'
-  ).run(section, title.trim(), encrypt(JSON.stringify(fields)), notes ? encrypt(notes) : null, req.params.id, req.user.id);
+  ).run(section, title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, req.params.id, req.user.id);
 
   audit(req.user.id, 'update_entry', 'vault_entry', +req.params.id, section, req.ip);
-  res.json({ id: +req.params.id, section, title: title.trim(), fields, notes });
+  res.json(decryptEntry(db.prepare('SELECT * FROM vault_entries WHERE id=? AND user_id=?').get(req.params.id, req.user.id), req.vaultVisibility));
 });
 
 router.delete('/entries/:id', (req, res) => {
@@ -99,7 +123,9 @@ router.delete('/entries/:id', (req, res) => {
 
 router.get('/summary', (req, res) => {
   const db = getDb();
-  res.json(db.prepare('SELECT section, COUNT(*) as count FROM vault_entries WHERE user_id = ? GROUP BY section').all(req.user.id));
+  const counts = new Map();
+  for (const entry of visibleEntries(db, req.user.id, null, req.vaultVisibility)) counts.set(entry.section, (counts.get(entry.section) || 0) + 1);
+  res.json([...counts].map(([section, count]) => ({ section, count })));
 });
 
 router.get('/search', (req, res) => {
@@ -107,12 +133,12 @@ router.get('/search', (req, res) => {
   if (!q || q.trim().length < 2) return validationError(res, 'Search query must be at least 2 characters');
 
   const db = getDb();
-  const all = db.prepare('SELECT * FROM vault_entries WHERE user_id = ? ORDER BY section, updated_at DESC').all(req.user.id);
+  const all = visibleEntries(db, req.user.id, null, req.vaultVisibility);
   const query = q.toLowerCase().trim();
   const results = [];
 
   for (const e of all) {
-    const dec = decryptEntry(e);
+    const dec = decryptEntry(e, req.vaultVisibility);
     const searchable = [dec.title, dec.notes, ...Object.values(dec.fields || {})].join(' ').toLowerCase();
     if (searchable.includes(query)) results.push(dec);
   }
@@ -121,8 +147,8 @@ router.get('/search', (req, res) => {
 
 router.get('/export', (req, res) => {
   const db = getDb();
-  const entries = db.prepare('SELECT * FROM vault_entries WHERE user_id = ? ORDER BY section, title').all(req.user.id);
-  const decrypted = entries.map(decryptEntry);
+  const entries = visibleEntries(db, req.user.id, null, req.vaultVisibility).sort((a, b) => a.section.localeCompare(b.section) || a.title.localeCompare(b.title));
+  const decrypted = entries.map(e => decryptEntry(e, req.vaultVisibility));
   const user = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.user.id);
 
   audit(req.user.id, 'export_vault', null, null, null, req.ip);
@@ -132,8 +158,8 @@ router.get('/export', (req, res) => {
 // ── Backup: download all vault data as JSON ──
 router.get('/backup', (req, res) => {
   const db = getDb();
-  const entries = db.prepare('SELECT * FROM vault_entries WHERE user_id = ? ORDER BY section, title').all(req.user.id);
-  const decrypted = entries.map(decryptEntry);
+  const entries = visibleEntries(db, req.user.id, null, req.vaultVisibility).sort((a, b) => a.section.localeCompare(b.section) || a.title.localeCompare(b.title));
+  const decrypted = entries.map(e => decryptEntry(e, req.vaultVisibility));
   const user = db.prepare('SELECT name, email FROM users WHERE id = ?').get(req.user.id);
   const beneficiaries = db.prepare(
     'SELECT name, email, phone, relationship, emergency_waiting_days FROM beneficiaries WHERE user_id = ?'
@@ -145,7 +171,7 @@ router.get('/backup', (req, res) => {
     version: 1,
     owner: user,
     backed_up_at: new Date().toISOString(),
-    entries: decrypted.map(e => ({ section: e.section, title: e.title, fields: e.fields, notes: e.notes })),
+    entries: decrypted.map(e => ({ section: e.section, title: e.title, fields: e.fields, notes: e.notes, homebank_account_id: e.homebank_account_id })),
     beneficiaries,
     dead_switch: switchConfig || null
   });
@@ -165,6 +191,7 @@ router.post('/restore', (req, res) => {
       if (!validateSection(e.section)) { skipped++; continue; }
       if (typeof e.fields !== 'object') { skipped++; continue; }
 
+      let homebankAccountId = sourceAccountId(db, req.user.id, e.homebank_account_id, e.notes);
       // In 'skip' mode, skip entries with the same section+title
       if (mode !== 'overwrite') {
         const existing = db.prepare(
@@ -172,15 +199,21 @@ router.post('/restore', (req, res) => {
         ).get(req.user.id, e.section, e.title);
         if (existing) { skipped++; continue; }
       } else {
+        // Retain a durable source link when overwriting an older backup that
+        // predates link metadata. Editing notes must not bypass source filters.
+        const existing = db.prepare('SELECT homebank_account_id FROM vault_entries WHERE user_id = ? AND section = ? AND title = ?')
+          .get(req.user.id, e.section, e.title);
+        if (existing?.homebank_account_id != null) homebankAccountId = existing.homebank_account_id;
         // In 'overwrite' mode, delete the existing entry first
         db.prepare(
           'DELETE FROM vault_entries WHERE user_id = ? AND section = ? AND title = ?'
         ).run(req.user.id, e.section, e.title);
       }
 
+      const stored = sanitizeHomebankEntry({ ...e, user_id: req.user.id, homebank_account_id: homebankAccountId }, req.vaultVisibility);
       db.prepare(
-        'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted) VALUES (?, ?, ?, ?, ?)'
-      ).run(req.user.id, e.section, e.title.trim(), encrypt(JSON.stringify(e.fields)), e.notes ? encrypt(e.notes) : null);
+        'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted, homebank_account_id) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(req.user.id, e.section, e.title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, homebankAccountId);
       added++;
     }
     return { added, skipped };

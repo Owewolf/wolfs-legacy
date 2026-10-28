@@ -10,7 +10,9 @@ An independent private development repository based on [slavhate/legacy-vault](h
 
 1. **Managed documents:** on each vault record, drag in files or choose multiple files, save a *copy* to `/srv/data/files/legacy-vault-managed-documents`, preview PDFs/images and download documents. Original source files are never moved or deleted. Shared document associations and read-only beneficiary file access are supported through authenticated endpoints.
 2. **HomeBank (read-only):** monitor `/home/wolf/Documents/Money` for saved `.xhb` files; change directory/file from the HomeBank page within `/home/wolf/Documents`. A new snapshot is read after save changes, without modifying HomeBank. Default dashboard displays open accounts included in HomeBank's summary, grouped by the original HomeBank account type. Open accounts excluded from HomeBank's summary may be toggled on; closed accounts stay hidden.
-3. **Safety:** paths and filenames never exposed as unauthenticated static files; HomeBank snapshots are encrypted in SQLite. Do not add `.xhb` or private user documents to Git. Keep `.env`, `data/` and managed document folders outside Git.
+3. **HomeBank-linked vault entries:** imported records retain their source account ID independently of editable titles and notes. Vault views, counts, search, exports, application backups, beneficiary views and linked documents always use the initial HomeBank filters: the account must still exist, be open, and be included in the HomeBank summary. Closing, excluding or removing an account in the next valid HomeBank snapshot hides its vault record without deleting stored details or documents. Manual vault entries are unaffected. HomeBank refreshes never recreate a deleted vault entry. Backup/restore preserves source links.
+   Linked balances are derived from the current validated HomeBank snapshot on every read, rather than copied into vault records. Vehicles use Loan Balance, properties use Current Value, bank accounts use Approximate Balance, investments/retirement use Approximate Value, and debts use Outstanding Amount. Source signs and currencies are preserved. Imported notes are empty. Supported institution/account metadata populates the appropriate fields; vehicle or property lenders require explicit source details. Vault reads check for a saved source change, and open vault views refresh every 20 seconds without overwriting owner edits. Saving or restoring a record strips generated balances and notes; startup removes earlier copied values while retaining the source link and other details.
+4. **Safety:** paths and filenames never exposed as unauthenticated static files; HomeBank snapshots are encrypted in SQLite. Do not add `.xhb` or private user documents to Git. Keep `.env`, `data/` and managed document folders outside Git.
 
 ## Deployment assumptions
 
@@ -36,6 +38,8 @@ cp .env.example .env
 npm install
 python3 -m unittest discover -s tests -p test_homebank_parser.py
 node tests/document-store.test.js
+node --test tests/homebank-vault-visibility.test.js
+node --test tests/homebank-vault-cleanup.test.js tests/homebank-service.test.js tests/homebank-vault-live.test.js
 bash scripts/setup-systemd.sh
 ```
 

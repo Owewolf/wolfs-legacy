@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { encrypt, decrypt } = require('./crypto');
+const { getVaultVisibility } = require('./vault-visibility');
 
 const TYPES = {
   '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
@@ -115,8 +116,9 @@ function listForEntry(db, userId, entryId) {
     ORDER BY a.created_at DESC, d.created_at DESC`).all(entryId, userId, userId).map(toView);
 }
 function ownedEntry(db, userId, entryId) {
-  return Number.isSafeInteger(Number(entryId)) && Number(entryId)>0 &&
-    db.prepare('SELECT id FROM vault_entries WHERE id=? AND user_id=?').get(entryId, userId);
+  if (!Number.isSafeInteger(Number(entryId)) || Number(entryId)<=0) return false;
+  const entry = db.prepare('SELECT * FROM vault_entries WHERE id=? AND user_id=?').get(entryId, userId);
+  return entry && getVaultVisibility(userId).isVisible(entry) ? entry : false;
 }
 function ownedDoc(db, userId, id) {
   return db.prepare('SELECT * FROM managed_documents WHERE id=? AND user_id=?').get(id, userId);

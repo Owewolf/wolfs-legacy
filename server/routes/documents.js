@@ -7,6 +7,7 @@ const multer = require('multer');
 const { getDb, audit } = require('../db');
 const { authenticateToken } = require('../middleware/auth');
 const { hashToken } = require('../crypto');
+const { getVaultVisibility } = require('../vault-visibility');
 const store = require('../document-store');
 const router = express.Router();
 const upload = multer({
@@ -47,7 +48,10 @@ router.post('/beneficiary/content', express.json(), (req,res)=>{
   const ben=db.prepare('SELECT * FROM beneficiaries WHERE access_token=?').get(hashToken(accessToken));
   if (!ben||!ben.access_granted||(ben.token_expires_at&&new Date()>new Date(ben.token_expires_at))) return fail(res,'Access not granted',403);
   const doc=store.ownedDoc(db,ben.user_id,documentId);
-  if(!doc||!db.prepare('SELECT 1 FROM document_associations a JOIN vault_entries e ON e.id=a.entry_id WHERE a.document_id=? AND e.user_id=? LIMIT 1').get(documentId,ben.user_id)) return fail(res,'Not found',404);
+  if(!doc) return fail(res,'Not found',404);
+  const associations=db.prepare('SELECT e.* FROM document_associations a JOIN vault_entries e ON e.id=a.entry_id WHERE a.document_id=? AND e.user_id=?').all(documentId,ben.user_id);
+  const visibility=getVaultVisibility(ben.user_id);
+  if(!associations.some(entry=>visibility.isVisible(entry))) return fail(res,'Not found',404);
   audit(null,'beneficiary_document_view','managed_document',null,doc.id,req.ip);
   return sendDocument(req,res,doc,mode);
 });
@@ -55,10 +59,10 @@ router.use(authenticateToken);
 router.get('/counts',(req,res)=>{
   const db=getDb();
   const section=req.query.section;
-  const rows=db.prepare(`SELECT e.id AS entry_id, COUNT(a.document_id) AS count FROM vault_entries e
+  const rows=db.prepare(`SELECT e.*, COUNT(a.document_id) AS count FROM vault_entries e
     LEFT JOIN document_associations a ON a.entry_id=e.id WHERE e.user_id=? AND (? IS NULL OR e.section=?) GROUP BY e.id`)
     .all(req.user.id,section||null,section||null);
-  return res.json(rows);
+  return res.json(getVaultVisibility(req.user.id).filter(rows).map(entry=>({entry_id:entry.id,count:entry.count})));
 });
 router.get('/',(req,res)=>{
   const db=getDb();

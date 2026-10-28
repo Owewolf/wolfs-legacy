@@ -36,6 +36,23 @@ class HomebankParserTest(unittest.TestCase):
         original=Path(self.f.name).read_bytes()
         hb.parse(self.f.name,today=dt.date(2026,10,25))
         self.assertEqual(original,Path(self.f.name).read_bytes())
+    def test_source_account_metadata_and_schema_version(self):
+        Path(self.f.name).write_text('''<homebank v="1.6">
+        <account key="1" name="Fixture account" bankname="Fixture Bank"
+          number="001234567890" website="https://bank.example.test/"/>
+        <account key="2" name="Fixture legacy" bankname="(null)" number=""/>
+        </homebank>''')
+        data=hb.parse(self.f.name,today=dt.date(2026,10,25))
+        self.assertEqual(data['snapshot_schema_version'],2)
+        account,legacy=data['accounts']
+        self.assertEqual(account['bank_name'],'Fixture Bank')
+        self.assertEqual(account['account_number'],'001234567890')
+        self.assertEqual(account['website'],'https://bank.example.test/')
+        for field in ('bank_name','account_number','website'):
+            self.assertIsNone(legacy[field])
+        # An account institution is not an asset-to-loan association.
+        self.assertNotIn('loan_provider',account)
+        self.assertNotIn('loan_balance',account)
     def test_invalid_file(self):
         Path(self.f.name).write_text('<bad/>')
         with self.assertRaises(ValueError): hb.parse(self.f.name)

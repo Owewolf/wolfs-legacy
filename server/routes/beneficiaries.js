@@ -4,6 +4,9 @@ const { generateAccessToken, hashToken, decrypt } = require('../crypto');
 const { authenticateToken } = require('../middleware/auth');
 const { listForEntry } = require('../document-store');
 const { validateString, validateEmail, validateInt, validationError } = require('../validate');
+const { getVaultVisibility } = require('../vault-visibility');
+const { projectHomebankEntry } = require('../homebank-vault');
+const homebank = require('../homebank-service');
 
 const router = express.Router();
 
@@ -111,7 +114,7 @@ router.post('/emergency-access', (req, res) => {
   res.json({ status: 'requested', waiting_days: b.emergency_waiting_days });
 });
 
-router.post('/access', (req, res) => {
+router.post('/access', async (req, res) => {
   const { accessToken } = req.body;
   if (!accessToken) return validationError(res, 'Access token required');
 
@@ -160,14 +163,20 @@ router.post('/access', (req, res) => {
 
   // Access granted — return full vault
   const owner = db.prepare('SELECT name, email FROM users WHERE id = ?').get(b.user_id);
-  const entries = db.prepare('SELECT * FROM vault_entries WHERE user_id = ? ORDER BY section, updated_at DESC').all(b.user_id).map(e => {
+  if (owner?.email.trim().toLowerCase() === (process.env.HOMEBANK_OWNER_EMAIL || '').trim().toLowerCase()) {
+    try { await homebank.syncUser(b.user_id); } catch { /* use last valid snapshot */ }
+  }
+  const visibility = getVaultVisibility(b.user_id);
+  const rows = db.prepare('SELECT * FROM vault_entries WHERE user_id = ? ORDER BY section, updated_at DESC').all(b.user_id);
+  const entries = visibility.filter(rows).map(e => {
     let fields;
     try { fields = JSON.parse(decrypt(e.fields_encrypted)); } catch { fields = { _error: 'Decryption failed' }; }
-    return {
-      id: e.id, section: e.section, title: e.title, fields,
+    return projectHomebankEntry({
+      id: e.id, user_id: e.user_id, homebank_account_id: e.homebank_account_id,
+      section: e.section, title: e.title, fields,
       notes: e.notes_encrypted ? decrypt(e.notes_encrypted) : '',
       created_at: e.created_at, updated_at: e.updated_at
-    };
+    }, visibility);
   });
 
   audit(null, 'vault_accessed', 'beneficiary', b.id, `${b.name} viewed vault of user ${b.user_id}`, req.ip);

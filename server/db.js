@@ -63,6 +63,7 @@ function initTables() {
       title TEXT NOT NULL,
       fields_encrypted TEXT NOT NULL,
       notes_encrypted TEXT,
+      homebank_account_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -130,6 +131,16 @@ function initTables() {
     db.exec('ALTER TABLE users ADD COLUMN totp_secret TEXT');
     db.exec('ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0');
   }
+  const vaultCols = db.prepare('PRAGMA table_info(vault_entries)').all().map(c => c.name);
+  if (!vaultCols.includes('homebank_account_id')) {
+    db.exec('ALTER TABLE vault_entries ADD COLUMN homebank_account_id INTEGER');
+  }
+  // Secrets are loaded before getDb() at startup. Record the existing HomeBank
+  // provenance before dropping copied ledger fields and notes. The source link,
+  // owner-supplied details, documents and timestamps stay intact; financial
+  // values are projected from the current snapshot on every read.
+  require('./vault-visibility').backfillHomeBankLinks(db);
+  require('./homebank-vault').clearStoredHomebankLedger(db);
 }
 
 function audit(userId, action, targetType, targetId, detail, ip) {

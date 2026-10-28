@@ -14,6 +14,7 @@ CLOSED = 1 << 1
 NO_SUMMARY = 1 << 4
 REMINDER = 1 << 5
 PENDING_IMPORT = (1 << 9) | (1 << 10)
+SNAPSHOT_SCHEMA_VERSION = 2
 
 def integer(value, default=0):
     try:
@@ -34,6 +35,11 @@ def iso_date(value):
         return dt.date.fromordinal(num).isoformat() if num else None
     except ValueError:
         return None
+
+def account_text(account, attribute):
+    """HomeBank treats an absent attribute and its legacy '(null)' as empty."""
+    value = account.get(attribute)
+    return value if value and value != '(null)' else None
 
 def parse(filepath, today=None):
     if os.stat(filepath).st_size > 50 * 1024 * 1024:
@@ -60,6 +66,10 @@ def parse(filepath, today=None):
             'id': key, 'name': a.get('name', ''), 'type_id': integer(a.get('type')),
             'type': TYPES.get(integer(a.get('type')), 'Other'),
             'currency': currencies.get(integer(a.get('curr')), 'ZAR'),
+            # Attribute names follow HomeBank's hb-xml.c account reader/writer.
+            'bank_name': account_text(a, 'bankname'),
+            'account_number': account_text(a, 'number'),
+            'website': account_text(a, 'website'),
             'closed': bool(flags & CLOSED), 'excluded_from_summary': bool(flags & NO_SUMMARY),
             'flags': flags, 'initial': initial,
             'reconciled': initial, 'cleared': initial, 'today': initial, 'future': initial,
@@ -96,7 +106,8 @@ def parse(filepath, today=None):
         acc['transactions'].sort(key=lambda t: t['date'] or '', reverse=True)
         acc['transactions'] = acc['transactions'][:100]  # explicitly labelled latest 100 in UI
     results = sorted(accounts.values(), key=lambda a: (a['type_id'], a['name'].casefold()))
-    return {'format_version': root.get('v'), 'exported_date': str(today),
+    return {'snapshot_schema_version': SNAPSHOT_SCHEMA_VERSION,
+            'format_version': root.get('v'), 'exported_date': str(today),
             'accounts': results, 'total_transactions': len(root.findall('ope')),
             'counts': {'all': len(results), 'closed': sum(a['closed'] for a in results),
                        'excluded_open': sum(a['excluded_from_summary'] and not a['closed'] for a in results),
