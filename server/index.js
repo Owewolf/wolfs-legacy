@@ -21,6 +21,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       frameSrc: ["'self'", "blob:"],
+      mediaSrc: ["'self'", "blob:"],
       connectSrc: ["'self'"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
@@ -70,6 +71,8 @@ app.get('/api/audit', authenticateToken, (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/vault', require('./routes/vault'));
 app.use('/api/documents', require('./routes/documents'));
+app.use('/api/final-wishes', require('./routes/legacy').ownerRouter);
+app.use('/api/beneficiary-access', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }), require('./routes/legacy').beneficiaryRouter);
 app.use('/api/beneficiaries', require('./routes/beneficiaries'));
 app.use('/api/deadswitch', require('./routes/deadswitch'));
 app.use('/api/homebank', require('./routes/homebank'));

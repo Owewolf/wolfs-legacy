@@ -125,6 +125,13 @@ function createNotificationService({db,env=process.env,now=()=>new Date()}={}) {
         const current=db.prepare('SELECT notification_cycle_id FROM dead_switch_config WHERE user_id=?').get(c.user_id);
         db.prepare('UPDATE dead_switch_config SET switch_triggered=1,switch_triggered_at=? WHERE user_id=? AND switch_triggered=0').run(at,c.user_id);
         db.prepare('UPDATE beneficiaries SET access_granted=1,access_granted_at=? WHERE user_id=? AND access_granted=0').run(at,c.user_id);
+        // Item release belongs to the confirmed switch transition, never to a
+        // reminder, review acknowledgement or late check-in. Keep it inside the
+        // same transaction as the access grant and notification.
+        if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy_contents'").get()) {
+          require('../legacy-content').releaseForEvent(db,{userId:c.user_id,policy:'dead_switch_release',
+            eventKey:`dead-switch:${current.notification_cycle_id}`,at});
+        }
         cancelCycle(current.notification_cycle_id,at);
         db.prepare("UPDATE notification_cycles SET status='released' WHERE id=?").run(current.notification_cycle_id);
         queue('deadswitch_released',c.user_id,{grantedAt:at},{cycleId:current.notification_cycle_id,key:`release:${current.notification_cycle_id}`});

@@ -128,6 +128,15 @@ function renderTemplate(eventType, payload = {}) {
       ];
       break;
     }
+    case 'legacy_review_due':
+      subject = "Wolf's Legacy — Information review due";
+      title = 'Information review due';
+      paragraphs = [
+        `An item in Final Wishes is due for review from ${localDate(payload.nextReviewAt)}.`,
+        "Sign in to Wolf's Legacy and open Final Wishes → Information Reviews to review, reschedule or snooze it.",
+        "Reviewing information does not confirm a Dead Man's Switch check-in or change beneficiary access. Use the separate check-in process when needed.",
+      ];
+      break;
     case 'email_test':
       subject = "Wolf's Legacy — Email configuration test";
       title = 'Email configuration test';

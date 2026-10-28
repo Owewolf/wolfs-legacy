@@ -9,6 +9,7 @@ const { projectHomebankEntry } = require('../homebank-vault');
 const homebank = require('../homebank-service');
 const { recordBeneficiaryEvent } = require('../notifications/service');
 const { utc } = require('../notifications/time');
+const legacy = require('../legacy-content');
 
 const router = express.Router();
 
@@ -86,6 +87,7 @@ router.post('/:id/grant', authenticateToken, (req, res) => {
     db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = ? WHERE id = ?').run(now, b.id);
     recordBeneficiaryEvent(db, { type: 'access_granted', userId: b.user_id,
       beneficiary: { ...b, access_granted: 1, access_granted_at: now }, now, ip: req.ip });
+    if(b.emergency_access_requested) legacy.releaseForEvent(db,{userId:b.user_id,beneficiaryId:b.id,policy:'emergency_access_release',eventKey:`manual-emergency:${b.id}:${now}`,at:now});
     audit(req.user.id, 'grant_access', 'beneficiary', b.id, null, req.ip);
     return true;
   })();
@@ -98,6 +100,7 @@ router.post('/:id/revoke', authenticateToken, (req, res) => {
   const found = db.transaction(() => {
     const b = db.prepare('SELECT * FROM beneficiaries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
     if (!b) return false;
+    legacy.revokeForBeneficiary(db,{userId:b.user_id,beneficiaryId:b.id});
     if (!b.access_granted && !b.emergency_access_requested) return true;
     db.prepare('UPDATE beneficiaries SET access_granted = 0, access_granted_at = NULL, emergency_access_requested = 0, emergency_access_requested_at = NULL WHERE id = ?').run(b.id);
     recordBeneficiaryEvent(db, { type: b.access_granted ? 'access_revoked' : 'emergency_denied', userId: b.user_id,
@@ -118,6 +121,18 @@ router.post('/:id/regenerate-token', authenticateToken, (req, res) => {
   if (r.changes === 0) return res.status(404).json({ error: 'Not found' });
   audit(req.user.id, 'regenerate_token', 'beneficiary', +req.params.id, null, req.ip);
   res.json({ accessToken: token, token_expires_at: expires });
+});
+
+router.get('/:id/legacy', authenticateToken, (req,res,next) => {
+  try {
+    const db=getDb();
+    if(!db.prepare('SELECT 1 FROM beneficiaries WHERE id=? AND user_id=?').get(req.params.id,req.user.id)) return res.status(404).json({error:'Not found'});
+    legacy.event(db,{userId:req.user.id,beneficiaryId:Number(req.params.id),type:'owner_recipient_list'});
+    res.json(legacy.list(db,req.user.id,{beneficiary_id:req.params.id}).map(item=>{
+      const mapping=item.beneficiaries.find(b=>b.beneficiary_id===Number(req.params.id));
+      return {...item,released_at:mapping?.released_at,revoked_at:mapping?.revoked_at,release_scope:mapping?.release_scope};
+    }));
+  } catch(e) {next(e);}
 });
 
 // ── Beneficiary endpoints (no auth, uses access token) ──
@@ -177,6 +192,7 @@ router.post('/access', async (req, res) => {
         db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = ? WHERE id = ? AND access_granted = 0').run(now, fresh.id);
         recordBeneficiaryEvent(db, { type: 'emergency_granted', userId: fresh.user_id,
           beneficiary: { ...fresh, access_granted: 1, access_granted_at: now }, now, ip: req.ip });
+        legacy.releaseForEvent(db,{userId:fresh.user_id,beneficiaryId:fresh.id,policy:'emergency_access_release',eventKey:`emergency:${fresh.id}:${now}`,at:now});
         audit(null, 'emergency_auto_grant', 'beneficiary', fresh.id, fresh.name, req.ip);
         return true;
       }

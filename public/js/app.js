@@ -1,4 +1,4 @@
-/* global API, SECTIONS, Docs, HomeBank */
+/* global API, SECTIONS, Docs, HomeBank, Legacy */
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -412,9 +412,11 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
   app.innerHTML = layoutHTML(key, `
     <div class="page-header">
       <h1>${sec.icon} ${esc(sec.name)}</h1>
-      <div class="actions"><button class="btn btn-primary" data-nav="add/${key}">+ Add Entry</button></div>
+      <div class="actions"><button class="btn btn-primary" data-nav="add/${key}">+ Add ${key==='final_wishes'?'Final Wishes Entry':'Entry'}</button></div>
     </div>
+    ${key==='final_wishes'?'<div id="legacy-workspace" class="legacy-workspace"></div><details class="legacy-existing-wishes" open><summary>Final Wishes entries and arrangements</summary>':''}
     ${entriesHTML}
+    ${key==='final_wishes'?'</details>':''}
   `);
 
   bindSidebar();
@@ -426,6 +428,7 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
       try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); renderSection(key); } catch (err) { showError(err.message); }
     };
   });
+  if(key==='final_wishes')void Legacy.mountOwner($('#legacy-workspace'),entries);
   return true;
 }
 
@@ -546,6 +549,7 @@ async function renderBeneficiaries() {
           <button class="btn btn-danger btn-sm" data-remove="${b.id}">Remove</button>
         </div>
       </div>
+      ${Legacy.beneficiaryPanel(b)}
     </div>`;
   }).join('') : '<div class="empty-state"><div class="icon">\u{1F465}</div><h3>No beneficiaries</h3><p>Add someone you trust to receive your vault data.</p></div>';
 
@@ -569,6 +573,7 @@ async function renderBeneficiaries() {
 
   state.newToken = null;
   bindSidebar();
+  Legacy.bindBeneficiaries(app);
 
   $('#add-ben-btn').onclick = () => showAddBeneficiaryModal();
   document.querySelectorAll('[data-grant]').forEach(el => {
@@ -713,11 +718,11 @@ async function renderSettings() {
     <div class="card" style="margin-top:16px">
       <h3 style="margin-bottom:12px">Backup &amp; Restore</h3>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
-        JSON backup covers vault entries but DOES NOT include attached document files. Use scripts/backup-managed.sh on an independent disk for a full backup.
+        Download or restore ordinary vault entries as JSON. Personal messages, managed files, recipient mappings and release history require a complete recovery backup on an independent disk.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        <button class="btn btn-primary" id="backup-btn">Download Backup</button>
-        <button class="btn btn-outline" id="restore-btn">Restore from Backup</button>
+        <button class="btn btn-primary" id="backup-btn">Download vault entries (JSON)</button>
+        <button class="btn btn-outline" id="restore-btn">Restore vault entries (JSON)</button>
       </div>
       <input type="file" id="restore-file" accept=".json" style="display:none">
       <div id="restore-result"></div>
@@ -758,7 +763,7 @@ async function renderSettings() {
       a.download = 'legacy-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json';
       a.click();
       URL.revokeObjectURL(url);
-      showSuccess('Backup downloaded');
+      showSuccess('Vault entries downloaded');
     } catch (err) { showError(err.message); }
   };
 
@@ -775,7 +780,7 @@ async function renderSettings() {
         `Found ${data.entries.length} entries in backup.\n\nClick OK to skip existing entries (safe merge).\nClick Cancel to overwrite entries with same title.`
       ) ? 'skip' : 'overwrite';
       const result = await API.restoreVault(data.entries, mode);
-      const msg = `Restore complete: ${result.added} added, ${result.skipped} skipped`;
+      const msg = `Vault entry restore complete: ${result.added} added, ${result.skipped} skipped`;
       showSuccess(msg);
       $('#restore-result').innerHTML = `<div class="alert alert-success" style="margin-top:12px">${esc(msg)}</div>`;
     } catch (err) { showError(err.message); }
@@ -868,16 +873,17 @@ function renderVaultReadonly(data, token) {
       const fieldsHTML = (sec.fields || []).filter(f => e.fields[f.key]).map(f =>
         `<div class="field-item"><label>${esc(f.label)}</label><div class="value">${esc(e.fields[f.key])}</div></div>`
       ).join('');
-      html += `<div class="card"><h3 style="margin-bottom:12px">${esc(e.title)}</h3><div class="field-grid">${fieldsHTML}</div>
+      html += `<div class="card" id="beneficiary-vault-entry-${e.id}"><h3 style="margin-bottom:12px">${esc(e.title)}</h3><div class="field-grid">${fieldsHTML}</div>
         ${e.notes ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><label style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">Notes</label><div style="white-space:pre-wrap;margin-top:4px">${esc(e.notes)}</div></div>` : ''}
         ${Docs.beneficiaryCards(e.documents)}</div>`;
     }
     html += '</div>';
   }
   if (!data.entries.length) html += '<div class="empty-state"><h3>Vault is empty</h3></div>';
-  html += '<div style="text-align:center;margin-top:32px"><a href="#access">&larr; Back</a></div></div>';
+  html += '<div id="beneficiary-legacy-root" class="section-group"></div><div style="text-align:center;margin-top:32px"><a href="#access">&larr; Back</a></div></div>';
   app.innerHTML = html;
   Docs.bindBeneficiary(data, token);
+  void Legacy.mountRecipient($('#beneficiary-legacy-root'),token,data.entries);
 }
 
 // ── Init ──
@@ -888,6 +894,8 @@ async function refreshLiveVault() {
   const canRender = () => window.location.hash === expectedHash && !document.hidden &&
     !document.activeElement?.matches('input,textarea,select') && !window.getSelection()?.toString();
   if (!['vault', 'section', 'edit', 'search'].includes(route)) return;
+  // Final Wishes contains its own editor and refreshes after every content action.
+  if(route==='section' && key==='final_wishes')return;
   // Refresh only source-managed controls while editing. Other views can be
   // redrawn when their data changes, without interrupting typing or selection.
   if (route !== 'edit' && !canRender()) return;
