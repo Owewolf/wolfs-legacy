@@ -4,7 +4,7 @@ Date: 28 October 2026 (Africa/Johannesburg). Branch: `feature/email-notification
 
 ## Automated evidence
 
-`npm test` passed: **113 Node tests, 4 Python tests, zero failures/skips**. This includes a real headless Firefox run against the application's actual `index.html` and settings route. `tests/email-ui.test.js` documents the 16 browser behavior checks and explicitly skips only on machines without Firefox; this run did not skip it.
+`npm test` passed: **118 Node tests, 4 Python tests, zero failures/skips**. This includes a real headless Firefox run against the application's actual `index.html` and settings route. `tests/email-ui.test.js` documents the 16 browser behavior checks and explicitly skips only on machines without Firefox; this run did not skip it.
 
 | Brief acceptance item | Evidence |
 | --- | --- |
@@ -34,6 +34,7 @@ Campaign `58fad858-d95a-4083-be18-21bfc5aae151`:
 - **17/17** messages accepted by SMTP (`sent_to_server`).
 - **17/17** exact Message-IDs independently observed in the recipient inbox using read-only IMAP at **09:32:02 SAST**.
 - Inspected one delivered preview's headers: expected sender and Reply-To present. This mailbox response did **not** include `Authentication-Results`; no SPF/DKIM/DMARC pass is claimed from missing evidence. Apple manages DNS/signing for the `me.com` sender domain. Trusted authserv identifiers remain unconfigured until their trust boundary is verified.
+- A direct DNS check on 28 October confirmed the sender domain publishes SPF (`v=spf1 redirect=_spf.icloud.com`) and a DMARC quarantine policy for the domain and subdomains. Published policy is separate from authentication of a particular delivered message; the missing result header still prevents claiming a per-message pass.
 - Preview set: reminders for 5, 4, 3, 2 and 1 days; accepted/rejected check-in; address verification; emergency request and denial; manual grant and revoke; automatic emergency grant; switch release; configuration test; degraded and recovered transport health.
 - Every subject is marked `[PREVIEW]`, with a prominent fictional-data notice. Example codes are inactive and no offline single-use code is emailed. No production check-in, permission or deadline changed.
 
@@ -42,5 +43,7 @@ Reproduce intentionally with `node scripts/email-template-previews.js --to owner
 ## Remaining acceptance and review
 
 The full real recipient verification, independently saved offline batch, reminder reply containing both actual factors, resulting database timestamps/cycle cancellation and delivered acknowledgement must still be observed. Preview delivery alone does not prove that gate. The isolated local acceptance harness is available with `node scripts/email-acceptance-server.js --allow-real-email`, at `http://127.0.0.1:4445/#register`. It runs the copied actual application against a fresh private database, seeds an IMAP checkpoint read-only before enrollment, marks messages `[ACCEPTANCE TEST]`, and stops after two hours. Its two tests verify isolation, authentication, one-run scheduling, synthetic beneficiary fixtures and the read-only mailbox preflight. See the operations guide for enrollment and reply instructions. Production mail remains globally disabled in `.env` during review.
+
+`node scripts/email-acceptance-evidence.js --check-mailbox` verifies 22 named invariants using a read-only snapshot of the disposable database, followed by exact reminder/acknowledgement Message-ID observations in the read-only mailbox. It checks actual single-use consumption, receipt/deadline/challenge bounds, the new 30+7 cycle and queued future reminders, stopped old jobs, preserved emergency requests/grants, and matching audit/acknowledgement data. Five tests cover a real service-produced synthetic transition, tampered/missing state, queued acknowledgement, exact header matching, safe output and production-path rejection. The live run currently reports `pending`, with zero acceptance runs; neither unit tests nor previews are presented as a completed real reply exercise. No message is sent by the verifier.
 
 No merge or production deployment is authorized before review and acceptance testing. See [operations](email-operations.md) for systemd, key rotation, backup, restore quarantine and rollback steps.
