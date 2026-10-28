@@ -729,8 +729,13 @@ async function renderSettings() {
         <div class="field-item"><label>Email</label><div class="value">${esc(state.user?.email)}</div></div>
       </div>
     </div>
+    <div id="notification-settings" style="margin-top:16px"></div>
   `);
   bindSidebar();
+  if (window.Notifications) {
+    const notificationRoot = $('#notification-settings');
+    window.Notifications.mount(notificationRoot);
+  }
 
   $('#pw-form').onsubmit = async (e) => {
     e.preventDefault();

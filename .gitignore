@@ -29,3 +29,6 @@ backups/
 !*.env.example
 backup*/
 backups*/
+__pycache__/
+*.py[cod]
+wolfs-legacy-offline-checkin-codes-*.txt
