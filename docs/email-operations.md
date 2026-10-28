@@ -1,6 +1,6 @@
 # Wolf's Legacy email operations
 
-This guide covers Fedora/Ultramarine deployment on port **4444** and verified-email check-ins. The owner verifies the notification email once, then selects **Confirm I’m here** in a reminder and sends the prefilled reply. This resets only the Dead Man’s Switch timer; it grants no vault access. Read the [baseline audit](email-baseline-audit.md), [threat model](email-threat-model.md) and [implementation brief](Wolfs_Legacy_Email_Integration_Reply_2FA_Implementation_Brief.md) with the code review. Do not merge or deploy this feature until review and acceptance testing pass. The commands below are an operator runbook, not a record of deployment.
+This guide covers Fedora/Ultramarine deployment on port **4444** and verified-email check-ins. The owner verifies the notification email once, then selects **Confirm I’m here** in a reminder and sends the prefilled reply. This resets only the Dead Man’s Switch timer; it grants no vault access. Read the [baseline audit](email-baseline-audit.md), [threat model](email-threat-model.md) and [implementation brief](Wolfs_Legacy_Email_Integration_Reply_2FA_Implementation_Brief.md) with the code review. Require review and acceptance testing before merge or deployment. The commands below are an operator runbook; the owner-authorized 28 October production deployment is recorded in the [test report](email-test-report.md#production-deployment).
 
 ## Configuration and provider setup
 
