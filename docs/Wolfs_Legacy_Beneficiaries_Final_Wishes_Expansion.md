@@ -5,7 +5,7 @@
 **Suggested branch:** `feature/beneficiaries-final-wishes-legacy`
 **Runtime:** Fedora, Node.js, SQLite, `wolfs-legacy.service`, port `4444`
 **Managed document directory:** `/srv/data/files/legacy-vault-managed-documents`
-**Status:** Implemented for review on `feature/beneficiaries-final-wishes-legacy`; see [implementation evidence](beneficiaries-final-wishes-implementation.md) and [initial audit](beneficiaries-final-wishes-audit.md). Production deployment follows PR review.
+**Status:** Implemented for review on `feature/beneficiaries-final-wishes-legacy`; see [implementation evidence](beneficiaries-final-wishes-implementation.md) and [initial audit](beneficiaries-final-wishes-audit.md). Owner-authorized production deployment of `8a8be54` completed on 28 October 2026; see the [deployment record](beneficiaries-final-wishes-deployment.md).
 
 ## 1. Objective and scope
 

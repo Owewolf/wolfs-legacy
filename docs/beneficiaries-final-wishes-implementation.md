@@ -48,7 +48,7 @@ Screenshots contain synthetic examples only:
 - [Owner Final Wishes workspace](screenshots/legacy/final-wishes-owner.png)
 - [Beneficiary released-content view](screenshots/legacy/beneficiary-personal-content.png)
 
-Before production deployment:
+The owner subsequently authorized deployment; see the [production deployment record](beneficiaries-final-wishes-deployment.md). The following checklist is retained for future deployments:
 
 1. Review this PR and its baseline email dependency, audit, migration and recovery runbook.
 2. Stop every application/mail writer and capture/verify a complete pre-upgrade snapshot with the matching keys and effective unit.
@@ -57,3 +57,5 @@ Before production deployment:
 5. Recheck provider email operation under the existing email acceptance process when operational configuration changes. Keep the previous source/snapshot available for reviewed rollback.
 
 Final review identified the original working checkout as the active service working directory. The completed feature was moved into a separate worktree, and the service checkout was restored to its original `6c008a3` email baseline before publishing the PR. The service was not restarted; no live database migration, real-email send or merge was performed. Isolated tests and unit validation do not claim production deployment acceptance.
+
+The subsequent owner-authorized production cutover deployed runtime revision `8a8be54` on 28 October 2026. See the [live verification and rollback record](beneficiaries-final-wishes-deployment.md); the isolation statements above describe the preceding implementation phase.
