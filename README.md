@@ -41,7 +41,7 @@ Wolf's Vault solves this by providing a single, encrypted store for all critical
 - **Legal Documents** -- will, power of attorney, certificates
 - **Final Wishes** -- funeral, organ donation, messages to family
 - **Secure Notes** -- WiFi passwords, alarm codes, anything else
-- **Pet Care** -- vet details, dietary needs, rehoming plans
+- **Pet Care** -- pet profiles, vet contacts, food and medication needs, daily care, preferred carers and rehoming plans; supports the existing document attachments, search, export and beneficiary access. See [Pet Care](docs/pet-care.md).
 
 ### Three Handover Mechanisms
 

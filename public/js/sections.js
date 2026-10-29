@@ -182,5 +182,25 @@ const SECTIONS = {
     fields: [
       { key: 'content', label: 'Note Content', type: 'textarea' }
     ]
+  },
+  pet_care: {
+    name: 'Pet Care',
+    icon: '\u{1F43E}',
+    fields: [
+      { key: 'pet_name', label: 'Pet Name', type: 'text' },
+      { key: 'species', label: 'Animal Type', type: 'select', options: ['Dog', 'Cat', 'Bird', 'Fish', 'Reptile', 'Small Mammal', 'Horse', 'Other'] },
+      { key: 'breed', label: 'Breed / Description', type: 'text' },
+      { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
+      { key: 'microchip_number', label: 'Microchip / Identification Number', type: 'text' },
+      { key: 'vet_name', label: 'Vet / Practice Name', type: 'text' },
+      { key: 'vet_phone', label: 'Vet Phone', type: 'tel' },
+      { key: 'vet_address', label: 'Vet Address', type: 'textarea' },
+      { key: 'dietary_needs', label: 'Food, Feeding Schedule & Dietary Needs', type: 'textarea' },
+      { key: 'medications', label: 'Medications & Medical Needs', type: 'textarea' },
+      { key: 'care_instructions', label: 'Daily Routine & Care Instructions', type: 'textarea' },
+      { key: 'preferred_carer', label: 'Preferred Carer', type: 'text' },
+      { key: 'carer_phone', label: 'Carer Phone', type: 'tel' },
+      { key: 'rehoming_plan', label: 'Rehoming Plan', type: 'textarea' }
+    ]
   }
 };
