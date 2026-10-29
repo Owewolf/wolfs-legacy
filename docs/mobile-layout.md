@@ -27,3 +27,5 @@ Compatibility decisions follow [WebKit safe-area guidance](https://webkit.org/bl
 ## Deployment
 
 Only public frontend assets, browser tests and documentation change. No backend, application dependency, database, permissions, release rules, email worker, network binding or firewall setting changes are required. Static assets can be applied to the existing service without restarting it; existing clients should refresh to load the updated layout. Preserve the previous source revision for rollback and verify the public assets and `/health` after cutover.
+
+The [29 October deployment record](mobile-deployment.md) records the applied revision, live checks and rollback source archive.
