@@ -1,0 +1,2217 @@
+{
+  "phase": "after",
+  "synthetic_data_only": true,
+  "public_root": "public",
+  "engines": [
+    {
+      "name": "chromium",
+      "version": "138.0.7204.15"
+    },
+    {
+      "name": "system-webkit",
+      "version": "2.52.4"
+    }
+  ],
+  "screens": [
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-login-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-dashboard-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-bank-accounts-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-final-wishes-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-letter-editor-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-beneficiaries-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-homebank-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-settings-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-320.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-login-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-dashboard-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-bank-accounts-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-final-wishes-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-letter-editor-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-beneficiaries-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-homebank-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-settings-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-360.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-login-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-dashboard-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-bank-accounts-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-final-wishes-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-letter-editor-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-beneficiaries-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-homebank-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-settings-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-390.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "workflows",
+      "width": 390,
+      "checks": [
+        "runs at a mobile or tablet viewport",
+        "Dashboard fits the viewport",
+        "closed drawer is unavailable to keyboard and assistive navigation",
+        "opening navigation moves focus into the drawer",
+        "open drawer makes background content inert",
+        "Tab wraps from the last drawer control",
+        "Escape restores trigger focus and background interaction",
+        "backdrop closes and deactivates the drawer",
+        "browser Back dismisses navigation without leaving the current page",
+        "selecting a section closes navigation",
+        "Bank account with a long URL fits the viewport",
+        "sensitive bank fields remain concealed",
+        "tap reveals a sensitive bank field",
+        "mobile Search focuses the existing vault search input",
+        "submitting mobile search closes its drawer",
+        "Back from search returns directly to the previous section",
+        "edit/bank_accounts/13 fits the viewport",
+        "mobile entry form saves through the existing API",
+        "section/final_wishes/new?type=letter fits the viewport",
+        "mobile authoring preserves private draft defaults",
+        "mobile authoring retains native media and document selection",
+        "native file selection populates the managed copy queue",
+        "Queued media filename fits the viewport",
+        "a selected recording can be removed before saving",
+        "mobile authoring saves without releasing private content",
+        "beneficiaries fits the viewport",
+        "Beneficiary dialog fits the viewport",
+        "beneficiary dialog fits the phone",
+        "homebank fits the viewport",
+        "Expanded HomeBank account fits the viewport",
+        "HomeBank transactions keep a local scroll container",
+        "settings fits the viewport",
+        "notification settings retain verified email state",
+        "mobile text controls avoid iOS focus zoom",
+        "vault fits the viewport",
+        "mobile export offers private Open and Save links without an asynchronous popup",
+        "Export options fits the viewport",
+        "access fits the viewport",
+        "navigation closes the private export options",
+        "beneficiary view keeps private author content unavailable",
+        "beneficiary acknowledgements retain token authentication",
+        "Recording preview fits the viewport",
+        "private recording keeps native audio controls and blob URLs",
+        "PDF preview offers private native browser Open and Save actions",
+        "PDF preview fits the viewport",
+        "video preview uses private inline controls without autoplay",
+        "video preview stays within its mobile dialog",
+        "Video preview fits the viewport",
+        "login fits the viewport",
+        "navigation removes private media playback",
+        "owner navigation does not appear on login or beneficiary access",
+        "resizing an open drawer to desktop and back resets visibility and focusability"
+      ]
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-login-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-dashboard-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-bank-accounts-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-final-wishes-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-letter-editor-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-beneficiaries-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-homebank-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-settings-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-412.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-login-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-dashboard-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-bank-accounts-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-final-wishes-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-letter-editor-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-beneficiaries-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-homebank-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-settings-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-768.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-login-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-dashboard-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-bank-accounts-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-final-wishes-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-letter-editor-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-beneficiaries-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-homebank-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-settings-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-820.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "workflows",
+      "width": 820,
+      "checks": [
+        "runs at a mobile or tablet viewport",
+        "Dashboard fits the viewport",
+        "closed drawer is unavailable to keyboard and assistive navigation",
+        "opening navigation moves focus into the drawer",
+        "open drawer makes background content inert",
+        "Tab wraps from the last drawer control",
+        "Escape restores trigger focus and background interaction",
+        "backdrop closes and deactivates the drawer",
+        "browser Back dismisses navigation without leaving the current page",
+        "selecting a section closes navigation",
+        "Bank account with a long URL fits the viewport",
+        "sensitive bank fields remain concealed",
+        "tap reveals a sensitive bank field",
+        "mobile Search focuses the existing vault search input",
+        "submitting mobile search closes its drawer",
+        "Back from search returns directly to the previous section",
+        "edit/bank_accounts/13 fits the viewport",
+        "mobile entry form saves through the existing API",
+        "section/final_wishes/new?type=letter fits the viewport",
+        "mobile authoring preserves private draft defaults",
+        "mobile authoring retains native media and document selection",
+        "native file selection populates the managed copy queue",
+        "Queued media filename fits the viewport",
+        "a selected recording can be removed before saving",
+        "mobile authoring saves without releasing private content",
+        "beneficiaries fits the viewport",
+        "Beneficiary dialog fits the viewport",
+        "beneficiary dialog fits the phone",
+        "homebank fits the viewport",
+        "Expanded HomeBank account fits the viewport",
+        "HomeBank transactions keep a local scroll container",
+        "settings fits the viewport",
+        "notification settings retain verified email state",
+        "mobile text controls avoid iOS focus zoom",
+        "vault fits the viewport",
+        "mobile export offers private Open and Save links without an asynchronous popup",
+        "Export options fits the viewport",
+        "access fits the viewport",
+        "navigation closes the private export options",
+        "beneficiary view keeps private author content unavailable",
+        "beneficiary acknowledgements retain token authentication",
+        "Recording preview fits the viewport",
+        "private recording keeps native audio controls and blob URLs",
+        "PDF preview offers private native browser Open and Save actions",
+        "PDF preview fits the viewport",
+        "video preview uses private inline controls without autoplay",
+        "video preview stays within its mobile dialog",
+        "Video preview fits the viewport",
+        "login fits the viewport",
+        "navigation removes private media playback",
+        "owner navigation does not appear on login or beneficiary access",
+        "resizing an open drawer to desktop and back resets visibility and focusability"
+      ]
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-login-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-dashboard-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-bank-accounts-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-final-wishes-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-letter-editor-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-beneficiaries-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-homebank-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "drawer_hidden": "true",
+      "screenshot": "chromium-settings-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-1024.png"
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "login-email",
+        "login-password"
+      ],
+      "screenshot": "chromium-login-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "e261b8c89891395616f192b3a19beac66a04c2065c0256786e155ceca887719c",
+      "desktop_after_sha256": "e261b8c89891395616f192b3a19beac66a04c2065c0256786e155ceca887719c"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-dashboard-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "ee1556954f2c94c75ff29b3b380dfa9388f55e7e6b7572ea217402d2f59e5be2",
+      "desktop_after_sha256": "ee1556954f2c94c75ff29b3b380dfa9388f55e7e6b7572ea217402d2f59e5be2"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-bank-accounts-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "57dc8786511c4c4299124fb1baa80cdb997d2f942284ddd3c1a8ba1a7512e5d6",
+      "desktop_after_sha256": "57dc8786511c4c4299124fb1baa80cdb997d2f942284ddd3c1a8ba1a7512e5d6"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-search",
+        "legacy-filter-status"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-final-wishes-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "11bd90c1220341707e82d68a8eca8053a3ea47ca8ed68f09424e91cf3ef7ab21",
+      "desktop_after_sha256": "11bd90c1220341707e82d68a8eca8053a3ea47ca8ed68f09424e91cf3ef7ab21"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-title",
+        "legacy-type",
+        "legacy-description",
+        "legacy-introduction",
+        "legacy-body_markdown",
+        "legacy-related_legacy_content_id",
+        "legacy-status",
+        "legacy-release_policy",
+        "legacy-final_wishes_entry_id",
+        "legacy-review_interval_months",
+        "legacy-next_review_at"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-letter-editor-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "085b3af6f719bfdbfbed0d9f7bbec21e6116cdcc8c061e12128ecd842ade9af3",
+      "desktop_after_sha256": "085b3af6f719bfdbfbed0d9f7bbec21e6116cdcc8c061e12128ecd842ade9af3"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-beneficiaries-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "88215b54780ca0327ef13d0df6df0e154230a63a6596d35fdc899ccdd83628df",
+      "desktop_after_sha256": "88215b54780ca0327ef13d0df6df0e154230a63a6596d35fdc899ccdd83628df"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "hb-dir",
+        "hb-file"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-homebank-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "643ae7e43637add3ef2021637bd70079460746114e3e5935657f10c21cf64786",
+      "desktop_after_sha256": "643ae7e43637add3ef2021637bd70079460746114e3e5935657f10c21cf64786"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "current",
+        "new_password",
+        "confirm",
+        "notification-recipient",
+        "notification-verify-password",
+        "notification-reminder-clock",
+        "notification-settings-password",
+        "notification-test-password"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-settings-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "9c05a75facd9bdbe01c6d932cdc6a29b442b38385033932d7bb041b55fea1ef7",
+      "desktop_after_sha256": "9c05a75facd9bdbe01c6d932cdc6a29b442b38385033932d7bb041b55fea1ef7"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "eea729ac44d537a9be66cacd32f7256b00469586a8bb08b0ca52a5194e8ef323",
+      "desktop_after_sha256": "eea729ac44d537a9be66cacd32f7256b00469586a8bb08b0ca52a5194e8ef323"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "1a25ec703f5e0d5dc459f78b202c921ca43f3c305c14a2a5b9ede094e2f311bc",
+      "desktop_after_sha256": "1a25ec703f5e0d5dc459f78b202c921ca43f3c305c14a2a5b9ede094e2f311bc"
+    },
+    {
+      "engine": "chromium",
+      "screen": "login",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "login-email",
+        "login-password"
+      ],
+      "screenshot": "chromium-login-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "4b6553d2e9f40eb44d47d392339108862b8239362a40488e75efc04080cba912",
+      "desktop_after_sha256": "4b6553d2e9f40eb44d47d392339108862b8239362a40488e75efc04080cba912"
+    },
+    {
+      "engine": "chromium",
+      "screen": "dashboard",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-dashboard-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "8d88d428db2018fdb682aca7ec96232770008e526430de7e6f782f6349caf036",
+      "desktop_after_sha256": "8d88d428db2018fdb682aca7ec96232770008e526430de7e6f782f6349caf036"
+    },
+    {
+      "engine": "chromium",
+      "screen": "bank-accounts",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-bank-accounts-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "a0b6e549df3a3cdc8975a6cd11d7b7f0f24834d6d26e457a7bf0cc24b2f955b2",
+      "desktop_after_sha256": "a0b6e549df3a3cdc8975a6cd11d7b7f0f24834d6d26e457a7bf0cc24b2f955b2"
+    },
+    {
+      "engine": "chromium",
+      "screen": "final-wishes",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-search",
+        "legacy-filter-status"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-final-wishes-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "f10749ffb28d9b2e5412de77dc44c57c51b4265b32156abb3521c27a9c81662f",
+      "desktop_after_sha256": "f10749ffb28d9b2e5412de77dc44c57c51b4265b32156abb3521c27a9c81662f"
+    },
+    {
+      "engine": "chromium",
+      "screen": "letter-editor",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-title",
+        "legacy-type",
+        "legacy-description",
+        "legacy-introduction",
+        "legacy-body_markdown",
+        "legacy-related_legacy_content_id",
+        "legacy-status",
+        "legacy-release_policy",
+        "legacy-final_wishes_entry_id",
+        "legacy-review_interval_months",
+        "legacy-next_review_at"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-letter-editor-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "c8bd7e1a55762fa119b429760f642aa9880fb88efc2dcba9f167d1a57d320dc2",
+      "desktop_after_sha256": "c8bd7e1a55762fa119b429760f642aa9880fb88efc2dcba9f167d1a57d320dc2"
+    },
+    {
+      "engine": "chromium",
+      "screen": "beneficiaries",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-beneficiaries-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "b408a5ea2b57a57860c2f730b3c244566987b3f285666af695de70c4399c2f3c",
+      "desktop_after_sha256": "b408a5ea2b57a57860c2f730b3c244566987b3f285666af695de70c4399c2f3c"
+    },
+    {
+      "engine": "chromium",
+      "screen": "homebank",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "hb-dir",
+        "hb-file"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-homebank-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "a673891db43a7ef1386a5f880f75e51b0cc5b65b95d6e71eaaa2797c367f30dd",
+      "desktop_after_sha256": "a673891db43a7ef1386a5f880f75e51b0cc5b65b95d6e71eaaa2797c367f30dd"
+    },
+    {
+      "engine": "chromium",
+      "screen": "settings",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "current",
+        "new_password",
+        "confirm",
+        "notification-recipient",
+        "notification-verify-password",
+        "notification-reminder-clock",
+        "notification-settings-password",
+        "notification-test-password"
+      ],
+      "drawer_hidden": null,
+      "screenshot": "chromium-settings-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "4b3dd5af01e2c8dbf4bfcc80a995509f332335e77cf69a7fb1805d89814b78fa",
+      "desktop_after_sha256": "4b3dd5af01e2c8dbf4bfcc80a995509f332335e77cf69a7fb1805d89814b78fa"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recipient",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recipient-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "d7330f61bd9c2a54507254574c6d670d51e9aeb89973ba91c41273ba6dceaf11",
+      "desktop_after_sha256": "d7330f61bd9c2a54507254574c6d670d51e9aeb89973ba91c41273ba6dceaf11"
+    },
+    {
+      "engine": "chromium",
+      "screen": "recording",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "chromium-recording-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "0646f5861f3673405b437ba00f8b5e4749d9d938d96f16f5c7d8518e8f426685",
+      "desktop_after_sha256": "0646f5861f3673405b437ba00f8b5e4749d9d938d96f16f5c7d8518e8f426685"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-login-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 320,
+      "document_width": 314,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-dashboard-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-bank-accounts-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 320,
+      "document_width": 314,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-final-wishes-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 320,
+      "document_width": 314,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-letter-editor-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 320,
+      "document_width": 314,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-beneficiaries-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 320,
+      "document_width": 314,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-homebank-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 320,
+      "document_width": 314,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-settings-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 320,
+      "document_width": 320,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 320,
+      "document_width": 314,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-320.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-login-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 360,
+      "document_width": 354,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-dashboard-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-bank-accounts-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 360,
+      "document_width": 354,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-final-wishes-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 360,
+      "document_width": 354,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-letter-editor-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 360,
+      "document_width": 354,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-beneficiaries-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 360,
+      "document_width": 354,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-homebank-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 360,
+      "document_width": 354,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-settings-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 360,
+      "document_width": 360,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 360,
+      "document_width": 354,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-360.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-login-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 390,
+      "document_width": 384,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-dashboard-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-bank-accounts-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 390,
+      "document_width": 384,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-final-wishes-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 390,
+      "document_width": 384,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-letter-editor-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 390,
+      "document_width": 384,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-beneficiaries-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 390,
+      "document_width": 384,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-homebank-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 390,
+      "document_width": 384,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-settings-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 390,
+      "document_width": 390,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 390,
+      "document_width": 384,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-390.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "workflows",
+      "width": 390,
+      "checks": [
+        "runs at a mobile or tablet viewport",
+        "Dashboard fits the viewport",
+        "closed drawer is unavailable to keyboard and assistive navigation",
+        "opening navigation moves focus into the drawer",
+        "open drawer makes background content inert",
+        "Tab wraps from the last drawer control",
+        "Escape restores trigger focus and background interaction",
+        "backdrop closes and deactivates the drawer",
+        "browser Back dismisses navigation without leaving the current page",
+        "selecting a section closes navigation",
+        "Bank account with a long URL fits the viewport",
+        "sensitive bank fields remain concealed",
+        "tap reveals a sensitive bank field",
+        "mobile Search focuses the existing vault search input",
+        "submitting mobile search closes its drawer",
+        "Back from search returns directly to the previous section",
+        "edit/bank_accounts/13 fits the viewport",
+        "mobile entry form saves through the existing API",
+        "section/final_wishes/new?type=letter fits the viewport",
+        "mobile authoring preserves private draft defaults",
+        "mobile authoring retains native media and document selection",
+        "native file selection populates the managed copy queue",
+        "Queued media filename fits the viewport",
+        "a selected recording can be removed before saving",
+        "mobile authoring saves without releasing private content",
+        "beneficiaries fits the viewport",
+        "Beneficiary dialog fits the viewport",
+        "beneficiary dialog fits the phone",
+        "homebank fits the viewport",
+        "Expanded HomeBank account fits the viewport",
+        "HomeBank transactions keep a local scroll container",
+        "settings fits the viewport",
+        "notification settings retain verified email state",
+        "mobile text controls avoid iOS focus zoom",
+        "vault fits the viewport",
+        "mobile export offers private Open and Save links without an asynchronous popup",
+        "Export options fits the viewport",
+        "access fits the viewport",
+        "navigation closes the private export options",
+        "beneficiary view keeps private author content unavailable",
+        "beneficiary acknowledgements retain token authentication",
+        "Recording preview fits the viewport",
+        "private recording keeps native audio controls and blob URLs",
+        "PDF preview offers private native browser Open and Save actions",
+        "PDF preview fits the viewport",
+        "video preview uses private inline controls without autoplay",
+        "video preview stays within its mobile dialog",
+        "Video preview fits the viewport",
+        "login fits the viewport",
+        "navigation removes private media playback",
+        "owner navigation does not appear on login or beneficiary access"
+      ]
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-login-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 412,
+      "document_width": 406,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-dashboard-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-bank-accounts-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 412,
+      "document_width": 406,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-final-wishes-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 412,
+      "document_width": 406,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-letter-editor-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 412,
+      "document_width": 406,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-beneficiaries-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 412,
+      "document_width": 406,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-homebank-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 412,
+      "document_width": 406,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-settings-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 412,
+      "document_width": 412,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 412,
+      "document_width": 406,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-412.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-login-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 768,
+      "document_width": 762,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-dashboard-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-bank-accounts-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 768,
+      "document_width": 762,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-final-wishes-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 768,
+      "document_width": 762,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-letter-editor-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-beneficiaries-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-homebank-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 768,
+      "document_width": 762,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-settings-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 768,
+      "document_width": 768,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 768,
+      "document_width": 762,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-768.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-login-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 820,
+      "document_width": 814,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-dashboard-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-bank-accounts-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 820,
+      "document_width": 814,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-final-wishes-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 820,
+      "document_width": 814,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-letter-editor-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-beneficiaries-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-homebank-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 820,
+      "document_width": 814,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-settings-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 820,
+      "document_width": 820,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 820,
+      "document_width": 814,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-820.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "workflows",
+      "width": 820,
+      "checks": [
+        "runs at a mobile or tablet viewport",
+        "Dashboard fits the viewport",
+        "closed drawer is unavailable to keyboard and assistive navigation",
+        "opening navigation moves focus into the drawer",
+        "open drawer makes background content inert",
+        "Tab wraps from the last drawer control",
+        "Escape restores trigger focus and background interaction",
+        "backdrop closes and deactivates the drawer",
+        "browser Back dismisses navigation without leaving the current page",
+        "selecting a section closes navigation",
+        "Bank account with a long URL fits the viewport",
+        "sensitive bank fields remain concealed",
+        "tap reveals a sensitive bank field",
+        "mobile Search focuses the existing vault search input",
+        "submitting mobile search closes its drawer",
+        "Back from search returns directly to the previous section",
+        "edit/bank_accounts/13 fits the viewport",
+        "mobile entry form saves through the existing API",
+        "section/final_wishes/new?type=letter fits the viewport",
+        "mobile authoring preserves private draft defaults",
+        "mobile authoring retains native media and document selection",
+        "native file selection populates the managed copy queue",
+        "Queued media filename fits the viewport",
+        "a selected recording can be removed before saving",
+        "mobile authoring saves without releasing private content",
+        "beneficiaries fits the viewport",
+        "Beneficiary dialog fits the viewport",
+        "beneficiary dialog fits the phone",
+        "homebank fits the viewport",
+        "Expanded HomeBank account fits the viewport",
+        "HomeBank transactions keep a local scroll container",
+        "settings fits the viewport",
+        "notification settings retain verified email state",
+        "mobile text controls avoid iOS focus zoom",
+        "vault fits the viewport",
+        "mobile export offers private Open and Save links without an asynchronous popup",
+        "Export options fits the viewport",
+        "access fits the viewport",
+        "navigation closes the private export options",
+        "beneficiary view keeps private author content unavailable",
+        "beneficiary acknowledgements retain token authentication",
+        "Recording preview fits the viewport",
+        "private recording keeps native audio controls and blob URLs",
+        "PDF preview offers private native browser Open and Save actions",
+        "PDF preview fits the viewport",
+        "video preview uses private inline controls without autoplay",
+        "video preview stays within its mobile dialog",
+        "Video preview fits the viewport",
+        "login fits the viewport",
+        "navigation removes private media playback",
+        "owner navigation does not appear on login or beneficiary access"
+      ]
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-login-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-dashboard-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-bank-accounts-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 1024,
+      "document_width": 1018,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-final-wishes-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 1024,
+      "document_width": 1018,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-letter-editor-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-beneficiaries-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-homebank-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 1024,
+      "document_width": 1018,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-settings-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 1024,
+      "document_width": 1024,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 1024,
+      "document_width": 1018,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-1024.png"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "login-email",
+        "login-password"
+      ],
+      "screenshot": "system-webkit-login-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "78fd98ac0844d1c6639743cbede4a512da9ed23457d3a76c2d591bb22ba2ad5f",
+      "desktop_after_sha256": "78fd98ac0844d1c6639743cbede4a512da9ed23457d3a76c2d591bb22ba2ad5f"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "screenshot": "system-webkit-dashboard-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "dc231c6d4e66b30097d786fbafa58ed8094e6c5c027a2a3455e7259233d7f3ca",
+      "desktop_after_sha256": "dc231c6d4e66b30097d786fbafa58ed8094e6c5c027a2a3455e7259233d7f3ca"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "screenshot": "system-webkit-bank-accounts-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "ba5c686ee5462d6caa402a39f89ed1dd62804ef400b7e2cdce31095b23850e97",
+      "desktop_after_sha256": "ba5c686ee5462d6caa402a39f89ed1dd62804ef400b7e2cdce31095b23850e97"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 1280,
+      "document_width": 1274,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-search",
+        "legacy-filter-status"
+      ],
+      "screenshot": "system-webkit-final-wishes-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "f3133041673899acf5c403bbc879957093ae3284afecf281379eb2804191963f",
+      "desktop_after_sha256": "f3133041673899acf5c403bbc879957093ae3284afecf281379eb2804191963f"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 1280,
+      "document_width": 1274,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-title",
+        "legacy-type",
+        "legacy-description",
+        "legacy-introduction",
+        "legacy-body_markdown",
+        "legacy-related_legacy_content_id",
+        "legacy-status",
+        "legacy-release_policy",
+        "legacy-final_wishes_entry_id",
+        "legacy-review_interval_months",
+        "legacy-next_review_at"
+      ],
+      "screenshot": "system-webkit-letter-editor-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "4f7dd5fac62914102a76cd123d0b009bfe897d975ad74a80483c9b2e0f678f62",
+      "desktop_after_sha256": "4f7dd5fac62914102a76cd123d0b009bfe897d975ad74a80483c9b2e0f678f62"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "screenshot": "system-webkit-beneficiaries-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "aabdff1ff588b29114132f21e0448271dd9cdd9c8c96784a39e1882f2784acbb",
+      "desktop_after_sha256": "aabdff1ff588b29114132f21e0448271dd9cdd9c8c96784a39e1882f2784acbb"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "hb-dir",
+        "hb-file"
+      ],
+      "screenshot": "system-webkit-homebank-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "e91ff8847fa5aec2aeddf0f2af2e1163b62c0a63811a3c32651d8e1e9fe9e418",
+      "desktop_after_sha256": "e91ff8847fa5aec2aeddf0f2af2e1163b62c0a63811a3c32651d8e1e9fe9e418"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 1280,
+      "document_width": 1274,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "current",
+        "new_password",
+        "confirm",
+        "notification-recipient",
+        "notification-verify-password",
+        "notification-reminder-clock",
+        "notification-settings-password",
+        "notification-test-password"
+      ],
+      "screenshot": "system-webkit-settings-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "5f12c8f1281451fc836ee0bb229a9552b19338bbc5ce2ca18a3a10c3ec7e5fe8",
+      "desktop_after_sha256": "5f12c8f1281451fc836ee0bb229a9552b19338bbc5ce2ca18a3a10c3ec7e5fe8"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 1280,
+      "document_width": 1280,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "049db1f7e89b1da9d2f74a2ac0c423c0f3af5219d7cf8283a3bf61ae6ffc864a",
+      "desktop_after_sha256": "049db1f7e89b1da9d2f74a2ac0c423c0f3af5219d7cf8283a3bf61ae6ffc864a"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 1280,
+      "document_width": 1274,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-1280.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "d40db7e79e1796d4b613b90a579962f05569730643ce445b9d8dd76388607336",
+      "desktop_after_sha256": "d40db7e79e1796d4b613b90a579962f05569730643ce445b9d8dd76388607336"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "login",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "login-email",
+        "login-password"
+      ],
+      "screenshot": "system-webkit-login-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "fd0b891f4942addca83e2ee38e1acdef097652591a46f46c763324323597f01f",
+      "desktop_after_sha256": "fd0b891f4942addca83e2ee38e1acdef097652591a46f46c763324323597f01f"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "dashboard",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "screenshot": "system-webkit-dashboard-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "9a27f3f1d2ac39aba58375d676818e17ec3ea217d09c5f7e438587c4d95dcaed",
+      "desktop_after_sha256": "9a27f3f1d2ac39aba58375d676818e17ec3ea217d09c5f7e438587c4d95dcaed"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "bank-accounts",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "screenshot": "system-webkit-bank-accounts-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "718eb7c4b386ed1e0d131a732264fdd0937521f19457ebd8d5797698881b8f63",
+      "desktop_after_sha256": "718eb7c4b386ed1e0d131a732264fdd0937521f19457ebd8d5797698881b8f63"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "final-wishes",
+      "width": 1440,
+      "document_width": 1434,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-search",
+        "legacy-filter-status"
+      ],
+      "screenshot": "system-webkit-final-wishes-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "655d6bbe7b1b91cb2c2d743acbdeab5fa0380940ad603ec80bce14ef43791e8e",
+      "desktop_after_sha256": "655d6bbe7b1b91cb2c2d743acbdeab5fa0380940ad603ec80bce14ef43791e8e"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "letter-editor",
+      "width": 1440,
+      "document_width": 1434,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "legacy-title",
+        "legacy-type",
+        "legacy-description",
+        "legacy-introduction",
+        "legacy-body_markdown",
+        "legacy-related_legacy_content_id",
+        "legacy-status",
+        "legacy-release_policy",
+        "legacy-final_wishes_entry_id",
+        "legacy-review_interval_months",
+        "legacy-next_review_at"
+      ],
+      "screenshot": "system-webkit-letter-editor-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "74cce46d68afaf4b36d7c5238a2e2319b48e0785edf15c9aa8e40cd149ac8b37",
+      "desktop_after_sha256": "74cce46d68afaf4b36d7c5238a2e2319b48e0785edf15c9aa8e40cd149ac8b37"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "beneficiaries",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search"
+      ],
+      "screenshot": "system-webkit-beneficiaries-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "0a5335b215eb568d7f2f9223ef0fd8396e1483f03deeb8b00a16294f12741722",
+      "desktop_after_sha256": "0a5335b215eb568d7f2f9223ef0fd8396e1483f03deeb8b00a16294f12741722"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "homebank",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "hb-dir",
+        "hb-file"
+      ],
+      "screenshot": "system-webkit-homebank-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "30bce32e6416ca791a5c300dff473377a0ee1ea862be9517979ef2bea8950b74",
+      "desktop_after_sha256": "30bce32e6416ca791a5c300dff473377a0ee1ea862be9517979ef2bea8950b74"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "settings",
+      "width": 1440,
+      "document_width": 1434,
+      "overflow": false,
+      "undersized_text_inputs": [
+        "global-search",
+        "current",
+        "new_password",
+        "confirm",
+        "notification-recipient",
+        "notification-verify-password",
+        "notification-reminder-clock",
+        "notification-settings-password",
+        "notification-test-password"
+      ],
+      "screenshot": "system-webkit-settings-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "999943791a51bb5629f339e185674cc59e4390c44e64eeb1cce8466379b0f249",
+      "desktop_after_sha256": "999943791a51bb5629f339e185674cc59e4390c44e64eeb1cce8466379b0f249"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recipient",
+      "width": 1440,
+      "document_width": 1440,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recipient-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "33e55a21f873599ef4423e3a44e9f2f0ce5e04923208a2b45fcf95bec01fa527",
+      "desktop_after_sha256": "33e55a21f873599ef4423e3a44e9f2f0ce5e04923208a2b45fcf95bec01fa527"
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "recording",
+      "width": 1440,
+      "document_width": 1434,
+      "overflow": false,
+      "undersized_text_inputs": [],
+      "screenshot": "system-webkit-recording-1440.png",
+      "desktop_identical": true,
+      "desktop_baseline_sha256": "108e3d517287bfb0c1c06e730316f764554ddc6417a5f83725029e01c2e31064",
+      "desktop_after_sha256": "108e3d517287bfb0c1c06e730316f764554ddc6417a5f83725029e01c2e31064"
+    }
+  ],
+  "theme": "dark",
+  "verification_date": "2026-10-29",
+  "coverage_note": "Full matrix captured before the final compact-only native color-scheme and back/forward-cache refinements; focused dark/light reports rerun the final implementation at 390 and 820 CSS pixels."
+}

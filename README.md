@@ -4,6 +4,8 @@ Wolf's Legacy email notifications and simple email check-ins: [operations guide]
 
 Beneficiaries and Final Wishes now include personal letters, audio/video messages, family history, practical instructions and information reviews inside the existing sections. New records default private; recipients need both authorized beneficiary access and an explicitly released item. Existing Final Wishes fields and legacy vault sharing remain compatible. See the [implementation audit](docs/beneficiaries-final-wishes-audit.md) and [deployment, migration and complete recovery guide](docs/legacy-recovery.md).
 
+Phone and tablet browsers use compact touch navigation, readable forms and mobile document/media controls while the desktop layout stays unchanged. See the [iOS/Android layout and browser evidence](docs/mobile-layout.md).
+
 A self-hosted, encrypted personal data vault designed for estate planning and family continuity. Store your financial accounts, legal documents, insurance policies, and final wishes in one secure place -- and ensure your family can access it when the time comes.
 
 ![Node.js](https://img.shields.io/badge/Node.js-22-green)
