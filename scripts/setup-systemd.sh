@@ -56,7 +56,7 @@ done
 render_unit() {
   cat <<UNIT
 [Unit]
-Description=Wolf's Legacy encrypted vault and email workers
+Description=Wolf's Vault encrypted vault and email workers
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=300

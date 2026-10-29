@@ -1,5 +1,5 @@
 #!/bin/sh
-# Legacy Vault - SQLite Backup Script
+# Wolf's Vault - SQLite Backup Script
 # Creates timestamped backups with configurable retention.
 # Usage: ./backup.sh [backup_dir] [retain_count]
 #   backup_dir   - where to store backups (default: /app/backups)

@@ -1,7 +1,7 @@
 services:
-  legacy-vault:
+  wolfs-vault:
     build: .
-    container_name: legacy-vault
+    container_name: wolfs-vault
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     volumes:

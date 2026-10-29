@@ -99,7 +99,7 @@ window.addEventListener('hashchange', handleRoute);
 function renderLogin() {
   app.innerHTML = `
     <div class="auth-container"><div class="auth-box">
-      <h1>\u{1F512} Legacy Vault</h1>
+      <h1>\u{1F512} Wolf's Vault</h1>
       <p class="subtitle">Secure data vault for your family's future</p>
       <form id="login-form">
         <div class="form-group"><label for="login-email">Email</label><input id="login-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
@@ -160,7 +160,7 @@ function sidebarHTML(activeKey) {
     <div class="sidebar" id="mobile-navigation">
       <button type="button" id="mobile-navigation-close" class="mobile-navigation-close" aria-label="Close navigation" hidden>Close <span aria-hidden="true">×</span></button>
       <div class="sidebar-header">
-        <h2 class="sidebar-brand">\u{1F512} Legacy Vault</h2>
+        <h2 class="sidebar-brand">\u{1F512} Wolf's Vault</h2>
         <div class="sidebar-owner">${esc(state.user?.name)}</div>
         <div class="sidebar-actions">
           <button class="header-action-btn" id="home-btn" title="Home" data-nav="vault"><span class="action-icon">\u{2302}</span> Home</button>
@@ -201,7 +201,7 @@ function sidebarHTML(activeKey) {
 function layoutHTML(activeKey, content) {
   return `<header class="mobile-header" hidden>
     <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" aria-controls="mobile-navigation" aria-expanded="false"><span class="mobile-menu-icon" aria-hidden="true">☰</span><span>Menu</span></button>
-    <span class="mobile-brand">Wolf’s Legacy</span>
+    <span class="mobile-brand">Wolf’s Vault</span>
     <button type="button" id="mobile-search-toggle" class="mobile-search-toggle" aria-label="Search vault"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
   </header><div class="mobile-nav-backdrop" aria-hidden="true" hidden></div>
   <div class="app-layout">${sidebarHTML(activeKey)}<div class="main-content" id="main-content">${content}</div></div>`;
@@ -249,7 +249,7 @@ async function renderDashboard(refreshedSummary, shouldRender = () => true) {
   const isNew = totalEntries === 0;
   const onboardingHTML = isNew ? `
     <div class="card" style="border-color:var(--primary);margin-bottom:24px">
-      <h3 style="margin-bottom:12px">Welcome to Legacy Vault</h3>
+      <h3 style="margin-bottom:12px">Welcome to Wolf's Vault</h3>
       <p style="color:var(--text-muted);margin-bottom:16px">
         This vault stores your personal and financial information so your family can access it when needed.
         Here's how to get started:
@@ -302,7 +302,7 @@ function showExportView(data) {
     grouped[e.section].push(e);
   });
 
-  let html = `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Legacy Vault Export - ${esc(data.owner.name)}</title>
+  let html = `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Wolf's Vault Export - ${esc(data.owner.name)}</title>
     <style>body{font-family:sans-serif;max-width:800px;margin:40px auto;color:#222;line-height:1.5}
     h1{border-bottom:2px solid #333;padding-bottom:8px}h2{margin-top:32px;color:#444;border-bottom:1px solid #ccc;padding-bottom:4px}
     .entry{margin:16px 0;padding:12px;border:1px solid #ddd;border-radius:6px}
@@ -311,7 +311,7 @@ function showExportView(data) {
     .notes{margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:13px;color:#555}
     @media(max-width:700px){body{margin:20px 16px;overflow-wrap:anywhere}.fields{grid-template-columns:1fr}}
     @media print{body{margin:20px}}</style></head><body>
-    <h1>Legacy Vault - ${esc(data.owner.name)}</h1>
+    <h1>Wolf's Vault - ${esc(data.owner.name)}</h1>
     <p>Exported: ${new Date(data.exported_at).toLocaleString()}</p>
     <p><strong>CONFIDENTIAL</strong> - This document contains sensitive personal and financial information.</p>`;
 
@@ -415,7 +415,7 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
   }).join('') : `<div class="empty-state">
     <div class="icon">${sec.icon}</div>
     <h3>No ${sec.name} entries yet</h3>
-    <p>Add your first entry to start building your legacy vault.</p>
+    <p>Add your first entry to start building your Wolf's Vault.</p>
     <button class="btn btn-primary" data-nav="add/${key}">Add Entry</button>
   </div>`;
 
@@ -770,7 +770,7 @@ async function renderSettings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'legacy-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.download = 'wolfs-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json';
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
       showSuccess('Vault entries downloaded');
@@ -829,7 +829,7 @@ async function renderAuditLog() {
 async function renderAccessPortal() {
   app.innerHTML = `
     <div class="access-portal">
-      <h1>\u{1F512} Legacy Vault -- Beneficiary Access</h1>
+      <h1>\u{1F512} Wolf's Vault -- Beneficiary Access</h1>
       <p class="subtitle">Enter the access token you received from the vault owner.</p>
       <div class="card">
         <form id="access-form">

@@ -1,8 +1,10 @@
-# Wolf's Legacy
+# Wolf's Vault
 
-Wolf's Legacy email notifications and simple email check-ins: [operations guide](docs/email-operations.md). Verify your email once, then select **Confirm I’m here** in a reminder and send the prefilled reply to reset the Dead Man’s Switch timer. This grants no vault access. Run `npm test` for the isolated regression suite. The email feature requires review and a real provider reply acceptance test before deployment.
+Application branding and compatibility details: [branding notes](docs/branding.md).
 
-Beneficiaries and Final Wishes now include personal letters, audio/video messages, family history, practical instructions and information reviews inside the existing sections. New records default private; recipients need both authorized beneficiary access and an explicitly released item. Existing Final Wishes fields and legacy vault sharing remain compatible. See the [implementation audit](docs/beneficiaries-final-wishes-audit.md) and [deployment, migration and complete recovery guide](docs/legacy-recovery.md).
+Wolf's Vault email notifications and simple email check-ins: [operations guide](docs/email-operations.md). Verify your email once, then select **Confirm I’m here** in a reminder and send the prefilled reply to reset the Dead Man’s Switch timer. This grants no vault access. Run `npm test` for the isolated regression suite. The email feature requires review and a real provider reply acceptance test before deployment.
+
+Beneficiaries and Final Wishes now include personal letters, audio/video messages, family history, practical instructions and information reviews inside the existing sections. New records default private; recipients need both authorized beneficiary access and an explicitly released item. Existing Final Wishes fields and Wolf's Vault sharing remain compatible. See the [implementation audit](docs/beneficiaries-final-wishes-audit.md) and [deployment, migration and complete recovery guide](docs/legacy-recovery.md).
 
 Phone and tablet browsers use compact touch navigation, readable forms and mobile document/media controls while the desktop layout stays unchanged. See the [iOS/Android layout and browser evidence](docs/mobile-layout.md).
 
@@ -12,16 +14,15 @@ A self-hosted, encrypted personal data vault designed for estate planning and fa
 ![Express](https://img.shields.io/badge/Express-5-blue)
 ![SQLite](https://img.shields.io/badge/SQLite-WAL-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
-![Docker](https://img.shields.io/docker/v/shri32msi/legacy-vault?label=Docker%20Hub&color=blue)
 ![Vibe Coded](https://img.shields.io/badge/Vibe%20Coded-with%20Claude-blueviolet)
 
-![Legacy Vault Screenshot](docs/screenshot.png)
+![Wolf's Vault Screenshot](docs/screenshot.png)
 
-## Why Legacy Vault?
+## Why Wolf's Vault?
 
 When someone passes away unexpectedly, their family often faces a painful scavenger hunt: which banks had accounts? Where are the insurance policies? What are the login credentials? Who is the lawyer?
 
-Legacy Vault solves this by providing a single, encrypted store for all critical personal and financial information, with three secure mechanisms for your family to access it when needed.
+Wolf's Vault solves this by providing a single, encrypted store for all critical personal and financial information, with three secure mechanisms for your family to access it when needed.
 
 ## Features
 
@@ -132,7 +133,7 @@ curl -s -X POST http://localhost:4444/api/auth/register \
 ## Project Structure
 
 ```
-legacy-vault/
+wolfs-legacy/
 ├── server/
 │   ├── index.js              # Express app, middleware, dead switch scheduler
 │   ├── config.js             # Auto-generates and persists secrets
@@ -254,7 +255,7 @@ Run `node scripts/maintenance-legacy-storage.js --database /absolute/app/data/va
 ./backup.sh
 
 # Or schedule via cron (daily at 2 AM, keep 30 backups)
-0 2 * * * /path/to/legacy-vault/backup.sh /path/to/backups 30
+0 2 * * * /path/to/wolfs-legacy/backup.sh /path/to/backups 30
 ```
 
 The script uses SQLite's `.backup` command for safe, consistent copies even with WAL mode active, verifies integrity, and prunes old backups beyond the retention count.
@@ -299,4 +300,4 @@ See [SECURITY.md](SECURITY.md) for security-related guidelines.
 
 ---
 
-> **Disclaimer**: Legacy Vault is a personal project. It is not a substitute for professional estate planning, legal counsel, or financial advice. Use at your own risk. All sample data in this repository is entirely fictional.
+> **Disclaimer**: Wolf's Vault is a personal project. It is not a substitute for professional estate planning, legal counsel, or financial advice. Use at your own risk. All sample data in this repository is entirely fictional.

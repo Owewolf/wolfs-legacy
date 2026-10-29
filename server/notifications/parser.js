@@ -7,7 +7,12 @@ const MAX_MESSAGE_BYTES = 65536;
 const MAX_BODY_BYTES = 16384;
 const ADDRESS = /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9.-]*[A-Z0-9])?\.[A-Z]{2,63}$/i;
 const MESSAGE_ID = /^<[^<>\s\x00-\x1f\x7f]{1,240}@[^<>\s\x00-\x1f\x7f]{1,240}>$/;
-const BUTTON_REPLY_SUBJECT = "Wolf's Legacy check-in confirmation";
+const BUTTON_REPLY_SUBJECT = "Wolf's Vault check-in confirmation";
+// Already-sent reminders remain usable until their bound challenge expires.
+// Keep this an exact allowlist: prefixed/forwarded subjects gain no exception.
+function isButtonReplySubject(subject) {
+  return subject === BUTTON_REPLY_SUBJECT || subject === "Wolf's Legacy check-in confirmation";
+}
 const HTML_LIMIT_MARKER = 'UNSUPPORTED_HTML_REPLY_LIMIT';
 const HTML_BLOCKS = new Set(['address', 'article', 'aside', 'div', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'tr', 'ul']);
 const HTML_IGNORED = new Set(['head', 'title', 'script', 'style', 'template', 'noscript', 'img', 'svg', 'math', 'iframe', 'object', 'embed', 'video', 'audio', 'canvas', 'form', 'input', 'button', 'select', 'textarea']);
@@ -92,7 +97,7 @@ function validateReplyMetadata(reply, policy = {}) {
   if (!reply || !reply.ok) return rejected('invalid_reply');
   if (policy.expectedFrom && normalizeAddress(policy.expectedFrom) !== reply.from) return rejected('origin_mismatch');
   if (policy.replyMailbox && !reply.to.includes(normalizeAddress(policy.replyMailbox))) return rejected('recipient_mismatch');
-  const buttonReply = policy.allowButtonReply === true && reply.subject === BUTTON_REPLY_SUBJECT &&
+  const buttonReply = policy.allowButtonReply === true && isButtonReplySubject(reply.subject) &&
     reply.inReplyTo === null && reply.references.length === 0;
   if (!reply.inReplyTo && !buttonReply) return rejected('thread_mismatch');
   if (policy.expectedMessageId) {
@@ -140,7 +145,7 @@ async function parseReply(raw, policy = {}) {
   const parentIds = extractHeaderIds(mail, 'in-reply-to');
   const references = extractHeaderIds(mail, 'references');
   if (!parentIds || !references || parentIds.length > 1 || (!parentIds.length && references.length)) return rejected('invalid_thread');
-  if (!parentIds.length && !(policy.allowButtonReply === true && mail.subject === BUTTON_REPLY_SUBJECT)) return rejected('invalid_thread');
+  if (!parentIds.length && !(policy.allowButtonReply === true && isButtonReplySubject(mail.subject))) return rejected('invalid_thread');
   const authentication = authenticationResults(mail, policy.trustedAuthservIds);
   if (authentication.status === 'failed') return rejected('authentication_failed');
   let body = mail.text;

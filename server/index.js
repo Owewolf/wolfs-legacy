@@ -101,7 +101,7 @@ app.get('{*path}', (req, res) => {
 
 getDb();
 app.listen(PORT, process.env.LISTEN_HOST || '0.0.0.0', () => {
-  log.info('Legacy Vault started', { port: PORT });
+  log.info("Wolf's Vault started", { port: PORT });
   checkDeadSwitches();
   require('./homebank-service').startWatcher();
   const mailWorker = require('./notifications/worker').createNotificationWorker({ db: getDb() });

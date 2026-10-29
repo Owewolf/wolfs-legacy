@@ -147,7 +147,7 @@ const Mobile = (() => {
     const url=URL.createObjectURL(blob),overlay=document.createElement('div');
     const previous=document.activeElement;
     overlay.className='modal-overlay mobile-export-overlay';
-    overlay.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mobile-export-title"><h2 id="mobile-export-title">Your export is ready</h2><p>Open a printable copy or save the HTML file using your browser. Keep it private: it contains your vault information.</p><div class="modal-actions"><a class="btn btn-primary" data-export-open target="_blank" rel="noopener">Open export</a><a class="btn btn-outline" data-export-save download="wolfs-legacy-export.html">Save file</a><button type="button" class="btn btn-outline" data-export-close>Close</button></div></div>';
+    overlay.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mobile-export-title"><h2 id="mobile-export-title">Your export is ready</h2><p>Open a printable copy or save the HTML file using your browser. Keep it private: it contains your vault information.</p><div class="modal-actions"><a class="btn btn-primary" data-export-open target="_blank" rel="noopener">Open export</a><a class="btn btn-outline" data-export-save download="wolfs-vault-export.html">Save file</a><button type="button" class="btn btn-outline" data-export-close>Close</button></div></div>';
     overlay.querySelectorAll('a').forEach(link=>link.href=url);
     const dispose=()=>{
       overlay.remove();document.removeEventListener('keydown',key);

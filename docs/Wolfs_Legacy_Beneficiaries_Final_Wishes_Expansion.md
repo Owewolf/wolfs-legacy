@@ -1,4 +1,4 @@
-# Wolf's Legacy — Beneficiaries & Final Wishes Expansion
+# Wolf's Vault — Beneficiaries & Final Wishes Expansion
 
 **Developer implementation specification · Proposed next feature**
 **Repository:** `Owewolf/wolfs-legacy`
@@ -9,7 +9,7 @@
 
 ## 1. Objective and scope
 
-**Extend the two existing Wolf's Legacy sections, `Beneficiaries` and `Final Wishes`. Do not create a new top-level Personal Legacy section or a parallel beneficiary system.** Reuse the existing owner account, beneficiary IDs and access tokens, document uploader, encrypted records, audit log, Dead Man's Switch and email/2FA framework wherever safe.
+**Extend the two existing Wolf's Vault sections, `Beneficiaries` and `Final Wishes`. Do not create a new top-level Personal Legacy section or a parallel beneficiary system.** Reuse the existing owner account, beneficiary IDs and access tokens, document uploader, encrypted records, audit log, Dead Man's Switch and email/2FA framework wherever safe.
 
 Implement five capabilities **inside these existing sections**:
 
@@ -23,7 +23,7 @@ Do not redesign ordinary owner sign-in, the separate beneficiary token-entry pag
 
 ## 2. Mandatory initial audit
 
-Before coding, audit the **actual current** branch; do not assume upstream `slavhate/legacy-vault` matches Wolf's Legacy. Inspect:
+Before coding, audit the **actual current** branch; do not assume upstream `slavhate/legacy-vault` matches Wolf's Vault. Inspect:
 
 - `public/js/sections.js`, `public/js/app.js`, `public/js/api.js` and the current beneficiary/Final Wishes rendering.
 - `server/routes/beneficiaries.js`, `server/routes/vault.js`, `server/db.js` and encryption helpers.
@@ -202,7 +202,7 @@ The last route must use the existing token-authentication mechanism, including t
 
 ## 10. Implementation plan
 
-1. Finish and commit the current email/2FA development work; branch from the tested Wolf's Legacy baseline.
+1. Finish and commit the current email/2FA development work; branch from the tested Wolf's Vault baseline.
 2. Audit all current beneficiary access and Final Wishes code; document actual schema and potential information leaks.
 3. Design item-level permissions, migration, lifecycle and content models; write negative authorisation tests first.
 4. Implement new typed records within the Final Wishes domain and beneficiary associations using existing IDs.

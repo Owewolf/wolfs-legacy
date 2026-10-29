@@ -1,4 +1,4 @@
-# Wolf's Legacy — Complete Email Integration, Five-Day Reminders and Simple Email Check-In
+# Wolf's Vault — Complete Email Integration, Five-Day Reminders and Simple Email Check-In
 
 **Status:** Updated to the owner's 28 October 2026 instruction: verify the notification email once, then confirm reminders with one **Confirm I’m here** button and send the prepared reply. Offline codes and reply 2FA are removed. This instruction supersedes the original two-code protocol. See [test evidence](email-test-report.md), [baseline audit](email-baseline-audit.md), [threat model](email-threat-model.md) and [operations](email-operations.md).
 **Acceptance:** Two real simplified email round trips passed on 28 October 2026, at 11:24 and 11:31 SAST. The repeat used the owner's replacement verified recipient. Each captured report passed all 22 database/mailbox checks, including independently observed acknowledgement. Automated validation passed 134 Node and 4 Python tests. Review and acceptance are required before merge or production deployment; the owner settings change and retest are recorded in the test evidence.
@@ -13,7 +13,7 @@
 
 ## 1. Objective and non-negotiable schedule
 
-Build a complete, reliable two-way email system for Wolf's Legacy. The owner receives automated notifications for beneficiary access events and Dead Man's Switch events, and can confirm continued activity **by selecting Confirm I’m here in the reminder and sending the prepared email**. A successful authenticated reply resets the check-in clock; it does **not** disable the Dead Man's Switch, and it does **not** cancel independent beneficiary emergency requests.
+Build a complete, reliable two-way email system for Wolf's Vault. The owner receives automated notifications for beneficiary access events and Dead Man's Switch events, and can confirm continued activity **by selecting Confirm I’m here in the reminder and sending the prepared email**. A successful authenticated reply resets the check-in clock; it does **not** disable the Dead Man's Switch, and it does **not** cancel independent beneficiary emergency requests.
 
 **Exactly ONE scheduled check-in reminder per day for FIVE consecutive days immediately before the final Dead Man's Switch expiry/release deadline:** `T-5 days`, `T-4`, `T-3`, `T-2`, `T-1`. No additional recurring daily reminders for that cycle. Event-driven confirmations, security warnings and release notices are separate from the five reminder emails.
 
@@ -25,7 +25,7 @@ If a cycle is configured or re-enabled with fewer than five days remaining, send
 
 ## 2. Read-only audit of current behaviour — before coding
 
-Audit the **actual** current Wolf's Legacy branch, not only the upstream `slavhate/legacy-vault` implementation. In the upstream baseline examined, the relevant components are:
+Audit the **actual** current Wolf's Vault branch, not only the upstream `slavhate/legacy-vault` implementation. In the upstream baseline examined, the relevant components are:
 
 - `server/routes/beneficiaries.js`: add/remove beneficiary, grant/revoke, emergency-access request and token-based access; automatic emergency granting may occur when the beneficiary requests access again.
 - `server/routes/deadswitch.js`: configuration, check-in, due and grace deadline calculations.
@@ -52,7 +52,7 @@ The owner rejected the two-code workflow as too complicated. The chosen workflow
 2. Each reminder has one prominent **Confirm I’m here** button. It opens the owner's email app with the destination, subject and confirmation text already filled in.
 3. The owner presses **Send**. No offline code, second factor, code copying or code typing is required. Opening the reminder or scanning its button is not a check-in; receiving and validating the sent confirmation is.
 
-The button uses a `mailto:` action, not an HTTP link that changes state. Its prepared message has the subject `Wolf's Legacy check-in confirmation` and contains one opaque, high-entropy single-use email confirmation. The owner does not manage this token. Plain-text email includes the same prepared-mail action.
+The button uses a `mailto:` action, not an HTTP link that changes state. Its prepared message has the subject `Wolf's Vault check-in confirmation` and contains one opaque, high-entropy single-use email confirmation. The owner does not manage this token. Plain-text email includes the same prepared-mail action.
 
 ### Validation and state transition
 
@@ -106,20 +106,20 @@ Use an idempotent scheduler with **database uniqueness constraints**, not merely
 
 ## 7. Email templates — exact content and presentation
 
-Templates must be responsive, legible on phones and desktops, have an accessible plain-text version, and use subdued Wolf's Legacy branding: a simple dark-blue/teal header, white or dark-mode-friendly content area, prominent deadline information, readable monospace code examples, and a small security footer. No tracker pixels or external images. Escape all interpolated values. Avoid beneficiary tokens, account balances and document contents in email.
+Templates must be responsive, legible on phones and desktops, have an accessible plain-text version, and use subdued Wolf's Vault branding: a simple dark-blue/teal header, white or dark-mode-friendly content area, prominent deadline information, readable monospace code examples, and a small security footer. No tracker pixels or external images. Escape all interpolated values. Avoid beneficiary tokens, account balances and document contents in email.
 
 ### Template A — Daily reminder (days 5 through 1)
 
-**Subject:** `Wolf's Legacy — Check-in required: {days_remaining} day(s) before access release`
+**Subject:** `Wolf's Vault — Check-in required: {days_remaining} day(s) before access release`
 
-**From:** `Wolf's Legacy <{smtp_from}>`
+**From:** `Wolf's Vault <{smtp_from}>`
 **Reply-To:** `{dedicated_reply_mailbox}`
 
 The reminder prominently shows the final South Africa release deadline, days remaining, reminder number of five and the consequences of no check-in. Its sole primary action is **Confirm I’m here**, opening a prepared confirmation email. State **Send the prepared email to confirm. No code entry or vault sign-in is needed.** Include the expiry time, newest-reminder supersession policy and a concise automated-security footer. The plain-text variant includes an equivalent mailto action. No offline-code placeholder or manual CONFIRM instructions are shown.
 
 ### Template B — Successful reply acknowledgement
 
-**Subject:** `Wolf's Legacy — Check-in confirmed`
+**Subject:** `Wolf's Vault — Check-in confirmed`
 
 > **Your check-in was accepted.**
 >
@@ -133,7 +133,7 @@ The reminder prominently shows the final South Africa release deadline, days rem
 
 ### Template C — Unsuccessful reply (controlled)
 
-**Subject:** `Wolf's Legacy — Check-in could not be verified`
+**Subject:** `Wolf's Vault — Check-in could not be verified`
 
 > We received a check-in attempt, but it could not be verified.
 >
@@ -147,18 +147,18 @@ Limit this template to avoid flood/abuse and prevent reflecting responses to arb
 
 ### Template D — Beneficiary emergency-access request
 
-**Subject:** `Wolf's Legacy — Emergency access requested`
+**Subject:** `Wolf's Vault — Emergency access requested`
 
 > A registered beneficiary, **{beneficiary_name}**, requested emergency access at **{requested_at_local}**.
 >
 > Waiting period: **{waiting_days} days**\
 > Earliest release time under the existing rules: **{eligible_at_local}**
 >
-> If this request is unexpected, sign in to Wolf's Legacy to review or deny it. Do not reply with access tokens or account credentials.
+> If this request is unexpected, sign in to Wolf's Vault to review or deny it. Do not reply with access tokens or account credentials.
 
 ### Template E — Dead Man's Switch released
 
-**Subject:** `Wolf's Legacy — Automatic beneficiary access activated`
+**Subject:** `Wolf's Vault — Automatic beneficiary access activated`
 
 > The configured Dead Man's Switch release deadline passed, and beneficiary access was granted at **{granted_at_local}** under the vault's current policy.
 >
@@ -170,9 +170,9 @@ Use concise variants with event type, beneficiary name, timestamp and whether ac
 
 ### Template G — Test email and transport health
 
-**Subject:** `Wolf's Legacy — Email configuration test`
+**Subject:** `Wolf's Vault — Email configuration test`
 
-> This confirms that Wolf's Legacy handed a test message to your configured SMTP provider at **{timestamp_local}**. It does not establish that future delivery is guaranteed.
+> This confirms that Wolf's Vault handed a test message to your configured SMTP provider at **{timestamp_local}**. It does not establish that future delivery is guaranteed.
 
 ## 8. Operational configuration — Fedora and systemd
 
@@ -222,4 +222,4 @@ Support STARTTLS verification for port 587 or implicit TLS for port 465. Require
 6. Document setup, SMTP/IMAP provider configuration, one-time owner email verification, key rotation, backups, recovery and safe rollback.
 7. Provide a pull request with a test report, deployment notes and evidence of a real end-to-end email reply.
 
-**Definition of done:** Wolf's Legacy sends exactly one reminder per day on the five days before final expiry, supports one-time owner email verification and the Confirm I’m here prepared-reply workflow, resets the next cycle only on successful verification, and sends/logs key beneficiary and release notifications reliably. No code is to be merged or deployed before review and acceptance testing.
+**Definition of done:** Wolf's Vault sends exactly one reminder per day on the five days before final expiry, supports one-time owner email verification and the Confirm I’m here prepared-reply workflow, resets the next cycle only on successful verification, and sends/logs key beneficiary and release notifications reliably. No code is to be merged or deployed before review and acceptance testing.

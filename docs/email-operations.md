@@ -1,4 +1,4 @@
-# Wolf's Legacy email operations
+# Wolf's Vault email operations
 
 This guide covers Fedora/Ultramarine deployment on port **4444** and verified-email check-ins. The owner verifies the notification email once, then selects **Confirm I’m here** in a reminder and sends the prefilled reply. This resets only the Dead Man’s Switch timer; it grants no vault access. Read the [baseline audit](email-baseline-audit.md), [threat model](email-threat-model.md) and [implementation brief](Wolfs_Legacy_Email_Integration_Reply_2FA_Implementation_Brief.md) with the code review. Require review and acceptance testing before merge or deployment. The commands below are an operator runbook; the owner-authorized 28 October production deployment is recorded in the [test report](email-test-report.md#production-deployment).
 
@@ -129,7 +129,7 @@ The additive migration preserves verified recipients and owner settings. Existin
 
 For a 30-day interval and seven-day grace, final release is day 37 after the last successful check-in. Reminders are on days 32–36, exactly once on each of the five local dates. By default each uses the release deadline's Johannesburg clock time. Scheduling and templates currently support `Africa/Johannesburg` only; a different timezone is rejected so the five dates and displayed South Africa time remain consistent. A shorter remaining window schedules only upcoming dates, with no historical backfill. Event-driven acknowledgements and access/security notices are separate from these five reminders.
 
-Select **Confirm I’m here** in the **newest reminder** and send the prepared email from the verified address. The action is a `mailto:` link that fills in the reply mailbox, the fixed subject `Wolf's Legacy check-in confirmation` and an opaque confirmation value. The owner does not type or manage that value. The plain-text reminder includes the same prepared-mail action.
+Select **Confirm I’m here** in the **newest reminder** and send the prepared email from the verified address. The action is a `mailto:` link that fills in the reply mailbox, the fixed subject `Wolf's Vault check-in confirmation` and an opaque confirmation value. The owner does not type or manage that value. The plain-text reminder includes the same prepared-mail action.
 
 Opening a message or selecting its button does not reset the timer; the application must receive and validate the sent email. There is no state-changing HTTP GET link, so link scanners and email image previews cannot check in on the owner's behalf. A direct reply may also be processed when it contains the current confirmation and matching reminder thread metadata. A button-created message may omit that thread metadata only with the exact fixed subject, expected mailbox, verified sender and valid bound confirmation.
 

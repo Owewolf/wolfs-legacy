@@ -21,6 +21,8 @@ These are real browser engine checks on Linux, rather than physical iOS or Andro
 
 ## Selected screenshots
 
+The selected PNGs were recaptured with the current Wolf's Vault branding on 29 October 2026 using synthetic fixtures. The “before” samples retain the pre-mobile layout with only the display name refreshed. The JSON reports and their desktop comparisons record the original mobile-layout validation and predate this branding refresh. During the refresh, the Firefox authoring/recipient test and all 55 WebKit mobile workflow checks passed again at 390 CSS pixels in both dark and light themes; the current export title and download filename were also checked.
+
 | View | Before | After |
 | --- | --- | --- |
 | Phone dashboard | [390px](before-dashboard-390.png) | [390px](after-dashboard-390.png) |

@@ -10,7 +10,7 @@ backups/
 *.db-wal
 .secrets
 
-# Wolf's Legacy: NEVER commit financial files or data/secret backups.
+# Wolf's Vault: NEVER commit financial files or data/secret backups.
 *.xhb
 *.xhb~
 *.xhb.bak
