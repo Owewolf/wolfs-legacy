@@ -1,4 +1,4 @@
-# Wolf's Legacy
+# Wolf's Vault
 
 An independent private development repository based on [slavhate/legacy-vault](https://github.com/slavhate/legacy-vault) (MIT License), maintained for Owen Wolf. Base commit: `dca6f305c534207155b772734d47a6b1288fd3a1`.
 
@@ -22,7 +22,7 @@ An independent private development repository based on [slavhate/legacy-vault](h
 - Managed files: `/srv/data/files/legacy-vault-managed-documents`.
 - HomeBank reads only, from `/home/wolf/Documents/Money` (configurable in the UI).
 - The financial numbers are based on HomeBank XML and HomeBank's transaction-status rules; **they are not independently verified bank balances**.
-- A source file must be fully saved before reflected in Legacy Vault. Source monitor polls every 20 seconds and retains the last valid snapshot on parse errors.
+- A source file must be fully saved before reflected in Wolf's Vault. Source monitor polls every 20 seconds and retains the last valid snapshot on parse errors.
 
 ## Initial reference file checks (performed 25 October 2026)
 

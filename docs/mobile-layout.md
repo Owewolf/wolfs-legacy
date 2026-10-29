@@ -1,6 +1,6 @@
 # iOS and Android browser layout
 
-The mobile layout adapts the existing Wolf's Legacy browser app for phone and tablet screens on the same local network. It uses the same URL, accounts, beneficiary tokens and APIs. It does not require installing a native app or publishing personal information to another service.
+The mobile layout adapts the existing Wolf's Vault browser app for phone and tablet screens on the same local network. It uses the same URL, accounts, beneficiary tokens and APIs. It does not require installing a native app or publishing personal information to another service.
 
 ## Scope
 

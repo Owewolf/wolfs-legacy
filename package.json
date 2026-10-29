@@ -1,5 +1,5 @@
 {
-  "name": "legacy-vault",
+  "name": "wolfs-vault",
   "version": "1.0.0",
   "description": "Secure personal data vault for legacy planning and estate handover",
   "main": "server/index.js",

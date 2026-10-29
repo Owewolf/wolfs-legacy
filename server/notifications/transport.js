@@ -67,7 +67,7 @@ function createSmtpTransport(env = process.env, dependencies = {}) {
       const to = normalizeAddress(message && message.to);
       if (!to || typeof message.text !== 'string' || typeof message.html !== 'string') throw configurationError();
       const outgoing = {
-        from: { name: "Wolf's Legacy", address: from }, replyTo, to,
+        from: { name: "Wolf's Vault", address: from }, replyTo, to,
         subject: header(message.subject, 240), messageId: header(message.messageId, 500),
         text: message.text, html: message.html,
         priority: message.priority === 'high' ? 'high' : 'normal',

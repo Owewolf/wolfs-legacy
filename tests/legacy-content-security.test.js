@@ -58,7 +58,7 @@ async function release(item, ids = [a]) {
 async function beneficiaryList(token = TOKEN_A, suffix = '') {
   return request('/api/beneficiary-access/legacy' + suffix, { beneficiary: token });
 }
-async function legacyVault(token = TOKEN_A) {
+async function existingVault(token = TOKEN_A) {
   return request('/api/beneficiaries/access', { method: 'POST', body: { accessToken: token }, beneficiary: null });
 }
 function grant(id) { db.prepare('UPDATE beneficiaries SET access_granted=1,access_granted_at=? WHERE id=?').run(new Date().toISOString(), id); }
@@ -123,7 +123,7 @@ test('every new content group defaults private and stays outside the full-vault 
     denied(await beneficiaryList(TOKEN_A, '/' + item.id));
   }
   assert.deepEqual(successful(await beneficiaryList()), []);
-  const old = successful(await legacyVault());
+  const old = successful(await existingVault());
   assert.equal(old.status, 'granted'); assert.equal(old.entries.length, 1);
   assert.equal(old.entries[0].fields.details, 'Preserved legacy details');
   assert.ok(!JSON.stringify(old).includes('PRIVATE_'));
@@ -184,7 +184,7 @@ test('new item revocation survives the baseline triggered-switch automatic regra
   successful(await release(item));
   db.prepare('UPDATE dead_switch_config SET switch_triggered=1,switch_triggered_at=? WHERE user_id=?').run(new Date().toISOString(), OWNER);
   successful(await request(`/api/beneficiaries/${a}/revoke`, { method: 'POST', body: {} }));
-  assert.equal(successful(await legacyVault()).status, 'granted', 'old vault grant behavior stays compatible');
+  assert.equal(successful(await existingVault()).status, 'granted', 'old vault grant behavior stays compatible');
   assert.equal(db.prepare('SELECT access_granted FROM beneficiaries WHERE id=?').get(a).access_granted, 1);
   denied(await beneficiaryList(TOKEN_A, '/' + item.id));
   assert.deepEqual(successful(await beneficiaryList()), []);
@@ -299,10 +299,10 @@ test('emergency requests never release early and the actual elapsed grant releas
   const switchItem = await create({ status: 'ready', release_policy: 'dead_switch_release', beneficiary_ids: [a] });
   const draft = await create({ release_policy: 'emergency_access_release', beneficiary_ids: [a] });
   successful(await request('/api/beneficiaries/emergency-access', { method: 'POST', body: { accessToken: TOKEN_A }, beneficiary: null }));
-  assert.equal(successful(await legacyVault()).status, 'waiting');
+  assert.equal(successful(await existingVault()).status, 'waiting');
   denied(await beneficiaryList(TOKEN_A, '/' + emergency.id));
   db.prepare('UPDATE beneficiaries SET emergency_access_requested_at=? WHERE id=?').run(new Date(Date.now() - 8 * 86400000).toISOString(), a);
-  assert.equal(successful(await legacyVault()).status, 'granted');
+  assert.equal(successful(await existingVault()).status, 'granted');
   assert.equal(successful(await beneficiaryList(TOKEN_A, '/' + emergency.id)).id, emergency.id);
   denied(await beneficiaryList(TOKEN_A, '/' + switchItem.id));
   denied(await beneficiaryList(TOKEN_A, '/' + draft.id));
@@ -359,7 +359,7 @@ test('restricted files cannot escape through old vault document metadata or the 
   // Defense in depth: even a preexisting broad association cannot turn a
   // restricted attachment into a globally readable legacy document.
   db.prepare('INSERT INTO document_associations(document_id,entry_id) VALUES(?,?)').run(documentId, oldEntry);
-  const old = successful(await legacyVault());
+  const old = successful(await existingVault());
   assert.ok(!JSON.stringify(old).includes(documentId));
   denied(await request('/api/documents/beneficiary/content', { method: 'POST', beneficiary: null,
     body: { accessToken: TOKEN_A, documentId, mode: 'preview' } }));

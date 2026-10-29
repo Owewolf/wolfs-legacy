@@ -16,7 +16,7 @@ function mime(body = `CONFIRM ${challenge}`, extra = {}, encoding = '8bit') {
   const headers = {
     From: 'Vault Owner <owner@example.com>', To: 'reply@example.net',
     'Message-ID': '<reply@example.com>', 'In-Reply-To': '<reminder@example.net>',
-    References: '<reminder@example.net>', Subject: "Re: Wolf's Legacy check-in",
+    References: '<reminder@example.net>', Subject: "Re: Wolf's Vault check-in",
     'Content-Type': 'text/plain; charset=utf-8', 'Content-Transfer-Encoding': encoding,
     ...extra,
   };
@@ -53,6 +53,25 @@ test('prepared button messages require the exact subject and verified owner bind
   assert.deepEqual(await parseReply(buttonMime(undefined, { References: '<reminder@example.net>' }), policy), { ok: false, reason: 'invalid_thread' });
   assert.deepEqual(await parseReply(buttonMime(), { ...policy, allowButtonReply: false }), { ok: false, reason: 'invalid_thread' });
   assert.deepEqual(await parseReply(buttonMime(undefined, { 'In-Reply-To': '<other@example.net>' }), policy), { ok: false, reason: 'thread_mismatch' });
+});
+
+test('already-sent reminder buttons retain the exact previous subject with unchanged owner and thread checks', async () => {
+  const previousSubject = "Wolf's Legacy check-in confirmation";
+  const parsed = await parseReply(buttonMime(undefined, { Subject: previousSubject }), policy);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.subject, previousSubject);
+  assert.equal(parsed.inReplyTo, null);
+  assert.deepEqual(validateReplyMetadata(parsed, policy), { ok: true });
+  assert.deepEqual(validateReplyMetadata(parsed, { ...policy, allowButtonReply: false }), { ok: false, reason: 'thread_mismatch' });
+  assert.deepEqual(validateReplyMetadata(parsed, { ...policy, expectedFrom: undefined }), { ok: false, reason: 'thread_mismatch' });
+  assert.deepEqual(validateReplyMetadata(parsed, { ...policy, expectedFrom: 'other@example.com' }), { ok: false, reason: 'origin_mismatch' });
+  assert.deepEqual(validateReplyMetadata(parsed, { ...policy, replyMailbox: 'other@example.net' }), { ok: false, reason: 'recipient_mismatch' });
+  for (const subject of [`Re: ${previousSubject}`, previousSubject.toLowerCase(), `${previousSubject}!`]) {
+    assert.deepEqual(await parseReply(buttonMime(undefined, { Subject: subject }), policy), { ok: false, reason: 'invalid_thread' });
+  }
+  assert.deepEqual(await parseReply(buttonMime(undefined, { Subject: `Fwd: ${previousSubject}` }), policy), { ok: false, reason: 'forwarded_message' });
+  assert.deepEqual(await parseReply(buttonMime(undefined, { Subject: previousSubject, From: 'other@example.com' }), policy), { ok: false, reason: 'origin_mismatch' });
+  assert.deepEqual(await parseReply(buttonMime(undefined, { Subject: previousSubject, To: 'other@example.net' }), policy), { ok: false, reason: 'recipient_mismatch' });
 });
 
 test('MIME parser rejects malformed, ambiguous, quoted, automated and forwarded confirmations', async () => {
@@ -169,6 +188,8 @@ test('reminder presents one prepared-email button with South Africa deadlines an
     daysRemaining: 5, reminderNumber: 1, challenge, confirmationMailbox: 'reply@example.net', obsoleteCode,
     accessToken: 'private-access-token', accountBalance: 'private-balance', smtpPassword: 'private-password',
   });
+  assert.match(rendered.subject, /^Wolf's Vault — Check-in required:/);
+  assert.match(rendered.html, />WOLF'S VAULT<\/div>/);
   assert.match(rendered.text, /2 November 2026.*00:30/);
   assert.match(rendered.text, /24 hours/);
   assert.match(rendered.text, /newer reminder invalidates/);
@@ -208,6 +229,9 @@ test('template interpolation escapes markup and strips control characters; all r
   for (const [event, payload] of Object.entries(variants)) {
     const output = renderTemplate(event, payload);
     assert.ok(output.subject && output.text && output.html, event);
+    assert.match(output.subject, /^Wolf's Vault — /, event);
+    assert.match(output.html, />WOLF'S VAULT<\/div>/, event);
+    assert.equal(/Wolf's Legacy|WOLF'S LEGACY/.test(JSON.stringify(output)), false, event);
     assert.equal(/offline|recovery code|two.factor|2FA/i.test(JSON.stringify(output)), false, event);
   }
   assert.equal(localDate('2026-10-28 12:00:00'), localDate(common.eventAt));
@@ -237,6 +261,7 @@ test('SMTP requires authenticated verified TLS and whitelists content and sender
   const result = await transport.sendMail(mail);
   assert.equal(result.status, 'sent_to_server');
   assert.equal(result.acceptedCount, 1);
+  assert.equal(outgoing.from.name, "Wolf's Vault");
   assert.equal(outgoing.from.address, 'vault@example.net');
   assert.equal(outgoing.replyTo, 'reply@example.net');
   assert.equal(outgoing.attachments, undefined);

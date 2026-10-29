@@ -211,7 +211,7 @@ test('mailbox replies process before outgoing reminders and persist monotonic UI
   await worker(t,f,{imap,smtp}).tick();
   assert.equal(f.user().last_check_in,f.instant);
   assert.equal(messages.length,1);
-  assert.equal(messages[0].subject,"Wolf's Legacy — Check-in confirmed");
+  assert.equal(messages[0].subject,"Wolf's Vault — Check-in confirmed");
   assert.ok(f.jobs().filter(row=>row.cycle_id===issued.job.cycle_id).every(row=>row.status==='cancelled'));
   await worker(t,f,{imap,smtp}).tick();
   assert.equal(messages.length,1);

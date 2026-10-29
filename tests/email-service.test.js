@@ -98,13 +98,26 @@ test('verified raw email consumes its challenge once and starts a new cycle with
 
 test('prefilled button email confirms activity without direct-reply headers or offline codes', async t => {
   const f=createFixture(t),issued=provision(f),access=f.beneficiaries();
-  const parsed=await parse(f,issued,{thread:null,subject:"Wolf's Legacy check-in confirmation"});
+  const parsed=await parse(f,issued,{thread:null,subject:"Wolf's Vault check-in confirmation"});
   assert.equal(parsed.ok,true);
   assert.equal(parsed.inReplyTo,null);
   assert.equal(f.service.processParsedReply('button-confirmation',parsed).outcome,'accepted');
   assert.equal(f.config().is_active,1);
   assert.deepEqual(f.beneficiaries(),access);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_recovery_codes').get().n,0);
+});
+
+test('an outstanding reminder using the previous brand still confirms only its bound verified owner', async t => {
+  for (const sender of ['owner@example.test', 'attacker@example.test']) await t.test(sender, async tt => {
+    const f=createFixture(tt),issued=provision(f),access=f.beneficiaries(),before=f.user().last_check_in;
+    const parsed=await parse(f,issued,{thread:null,subject:"Wolf's Legacy check-in confirmation",from:sender});
+    assert.equal(parsed.ok,true,'sender binding occurs against the stored challenge in the service');
+    const result=f.service.processParsedReply('previous-brand-button',parsed);
+    assert.equal(result.outcome,sender==='owner@example.test'?'accepted':'rejected');
+    assert.equal(f.user().last_check_in,sender==='owner@example.test'?f.instant:before);
+    assert.deepEqual(f.beneficiaries(),access);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM checkin_challenges WHERE used_at IS NOT NULL').get().n,sender==='owner@example.test'?1:0);
+  });
 });
 
 test('trusted mail authentication review is retained in the inbound audit record', async t => {

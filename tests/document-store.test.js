@@ -4,7 +4,7 @@ const os=require('node:os');
 const path=require('node:path');
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
-const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'legacy-vault-managed-doc-test-'));
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'wolfs-vault-managed-doc-test-'));
 fs.chmodSync(tmp,0o700);
 process.env.DOCUMENT_STORAGE_ROOT=tmp;
 const store=require('../server/document-store');
