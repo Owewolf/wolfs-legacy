@@ -1,0 +1,241 @@
+/* Component layouts for phones and tablets. Desktop styles remain in their
+   original stylesheets; every override here is limited to the mobile shell. */
+@media (max-width: 1024px) {
+  .legacy-workspace,
+  .legacy-workspace > *,
+  .legacy-detail,
+  .legacy-item,
+  .legacy-card-heading > *,
+  .legacy-card-footer > *,
+  .legacy-form-grid > *,
+  .legacy-metadata > *,
+  .legacy-recipient-row > *,
+  .beneficiary-info,
+  .beneficiary-actions,
+  .doc-section,
+  .doc-row > *,
+  .doc-modal-head > *,
+  .hb-group,
+  .hb-account,
+  .hb-settings,
+  .hb-settings form,
+  .hb-settings label,
+  .hb-balances > *,
+  .notification-settings,
+  .notification-card,
+  .notification-summary > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .legacy-workspace { margin-top: 24px; padding-top: 20px; }
+
+  .legacy-heading,
+  .legacy-card-heading,
+  .legacy-card-footer,
+  .legacy-recipient-row {
+    gap: 12px;
+  }
+
+  .legacy-heading .actions,
+  .legacy-detail .actions,
+  .legacy-recipient-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .legacy-heading .btn,
+  .legacy-tabs .btn,
+  .legacy-detail .btn,
+  .legacy-recipient-actions .btn {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .legacy-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .legacy-metadata { grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+  .legacy-metadata dd { margin-left: 0; }
+  .legacy-fieldset { min-inline-size: 0; }
+  .legacy-fieldset legend { max-width: 100%; overflow-wrap: anywhere; }
+
+  .legacy-check,
+  .legacy-checklist label,
+  .notification-check {
+    min-height: 44px;
+    align-items: flex-start;
+  }
+
+  .legacy-check > span,
+  .legacy-checklist label > span,
+  .notification-check > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .legacy-linked-options {
+    padding-right: 4px;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .legacy-markdown,
+  .legacy-introduction,
+  .legacy-help,
+  .legacy-recipients li,
+  .legacy-history li,
+  .legacy-history-entry,
+  .legacy-recipient-row,
+  .legacy-checklist li,
+  .legacy-subsection summary,
+  .legacy-beneficiary-panel > summary,
+  .beneficiary-info,
+  .notification-card,
+  .hb-group h2,
+  .hb-counts,
+  .hb-settings > summary {
+    overflow-wrap: anywhere;
+  }
+
+  .legacy-markdown pre,
+  .legacy-history-entry pre {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .legacy-recipient-row > div:first-child { flex: 1 1 220px; }
+  .legacy-beneficiary-panel > summary,
+  .legacy-existing-wishes > summary,
+  .legacy-subsection summary,
+  .notification-card summary,
+  .hb-settings > summary {
+    min-height: 44px;
+    padding-block: 10px;
+  }
+
+  .beneficiary-card { align-items: flex-start; }
+  .beneficiary-info { flex: 1 1 240px; }
+  .beneficiary-info .name { line-height: 1.6; }
+  .beneficiary-info .meta { line-height: 1.7; }
+  .beneficiary-actions { gap: 8px; }
+  .beneficiary-actions .btn { white-space: normal; }
+
+  .doc-drop,
+  .doc-row,
+  .doc-file-name,
+  .doc-progress,
+  .doc-empty { overflow-wrap: anywhere; }
+  .doc-drop > div { max-width: 100%; }
+  .doc-row { align-items: flex-start; gap: 10px; }
+  .doc-row > span:not(.doc-actions) { flex: 1 1 180px; }
+  .doc-actions { gap: 8px; }
+  .doc-actions .btn { min-width: 0; white-space: normal; }
+  .doc-modal-head { align-items: flex-start; }
+  .doc-modal-head h3 { flex: 1; line-height: 1.5; }
+  .doc-modal-head > .btn { flex-shrink: 0; }
+  .doc-preview-body { min-width: 0; min-height: 0; max-width: 100%; }
+  .doc-preview-body iframe,
+  .doc-preview-body img,
+  .doc-preview-body video,
+  .doc-preview-body audio {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .doc-preview-body video { height: auto; object-fit: contain; }
+  .doc-preview-body audio { display: block; width: 100%; }
+
+  .hb-group,
+  .hb-settings[open] { padding: 14px; }
+  .hb-account { padding: 12px; }
+  .hb-account summary {
+    min-height: 44px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    line-height: 1.5;
+  }
+  .hb-account summary strong { min-width: 0; flex: 1 1 180px; overflow-wrap: anywhere; }
+  .hb-account summary span { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .hb-balances { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hb-balances b { overflow-wrap: anywhere; }
+  .hb-account > p,
+  .hb-account h4 { overflow-wrap: anywhere; }
+  .hb-settings input,
+  .hb-settings select { width: 100%; min-width: 0; max-width: 100%; }
+  #hb-folder-browser .btn { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  .hb-toggle { min-height: 44px; align-items: flex-start; line-height: 1.6; }
+  .hb-toggle input { flex: 0 0 auto; margin-top: 5px; }
+
+  .hb-table-wrap,
+  .notification-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .hb-table { min-width: 540px; }
+  .hb-table th,
+  .hb-table td { padding: 10px 8px; vertical-align: top; }
+  .hb-table th:first-child,
+  .hb-table td:first-child,
+  .hb-table th:nth-child(3),
+  .hb-table td:nth-child(3) { white-space: nowrap; }
+  .hb-table th:nth-child(2),
+  .hb-table td:nth-child(2) { min-width: 180px; overflow-wrap: anywhere; }
+  .audit-table { min-width: 580px; }
+  .audit-table th,
+  .audit-table td { vertical-align: top; }
+  .audit-table td { overflow-wrap: anywhere; }
+  .notification-card form { width: 100%; min-width: 0; }
+  .notification-heading > * { min-width: 0; max-width: 100%; }
+  .notification-summary { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+
+  #access-form > div:not(.form-group),
+  #switch-form > div:not(.form-group) {
+    flex-wrap: wrap;
+  }
+  #access-form > div > .btn,
+  #switch-form > div > .btn {
+    flex: 1 1 140px;
+    min-width: 0;
+    white-space: normal;
+  }
+  .switch-status > span:not(.status-dot) { min-width: 0; overflow-wrap: anywhere; }
+  #backup-btn,
+  #restore-btn { min-width: 0; max-width: 100%; white-space: normal; }
+}
+
+@media (max-width: 600px) {
+  .legacy-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .legacy-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .legacy-tabs .btn { justify-content: center; text-align: center; }
+  .legacy-heading .actions { width: 100%; }
+  .legacy-heading .actions .btn { flex: 1 1 140px; justify-content: center; }
+  .legacy-detail-actions .btn { flex: 1 1 140px; justify-content: center; }
+  .legacy-fieldset { padding: 12px; }
+  .legacy-editor-preview { padding: 12px; }
+  .legacy-recipient-actions .btn { flex: 1 1 140px; justify-content: center; }
+  .legacy-timeline { padding-left: 12px; }
+  .legacy-timeline-item:before { left: -20px; }
+  .legacy-timeline .legacy-item { padding: 12px; }
+
+  .beneficiary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .beneficiary-actions .btn { justify-content: center; }
+  .doc-row > span:not(.doc-actions) { flex-basis: 100%; }
+  .doc-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .doc-actions .btn { justify-content: center; }
+  .doc-row > .btn { flex: 1 1 120px; justify-content: center; }
+  .doc-drop > .btn { width: 100%; justify-content: center; }
+  .notification-heading > .btn { width: 100%; justify-content: center; }
+  #backup-btn,
+  #restore-btn { flex: 1 1 100%; justify-content: center; }
+}

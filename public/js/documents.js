@@ -30,6 +30,7 @@ const Docs = (() => {
   }
   function viewModal(blob,filename,mime){
     const url=URL.createObjectURL(blob);
+    let handedToBrowser=false;
     const overlay=document.createElement('div'); overlay.className='modal-overlay doc-preview-overlay';
     overlay.innerHTML=`<div class="modal doc-preview-modal" role="dialog" aria-modal="true" aria-label="Document preview">
       <div class="doc-modal-head"><h3>${escape(filename)}</h3><button type="button" class="btn btn-outline btn-sm" id="close-doc-modal">Close</button></div>
@@ -39,13 +40,22 @@ const Docs = (() => {
       const img=document.createElement('img');img.src=url;img.alt=filename;content.append(img);
     }else if(/^(audio|video)\//.test(mime)){
       const player=document.createElement(mime.startsWith('audio/')?'audio':'video');
-      player.controls=true;player.preload='metadata';player.src=url;player.setAttribute('aria-label',filename);content.append(player);
+      player.controls=true;player.preload='metadata';player.src=url;player.setAttribute('aria-label',filename);
+      if(mime.startsWith('video/'))player.playsInline=true;
+      content.append(player);
       const help=document.createElement('p');help.className='doc-empty';help.textContent='If this format is not supported by your browser, download the file to play it.';content.append(help);
       const save=document.createElement('a');save.className='btn btn-outline btn-sm';save.href=url;save.download=filename;save.textContent='Download recording';content.append(save);
     }else{
+      if(mime==='application/pdf' && typeof Mobile!=='undefined' && Mobile.isCompact()){
+        const actions=document.createElement('div');actions.className='doc-mobile-pdf-actions';
+        const open=document.createElement('a');open.className='btn btn-outline btn-sm';open.href=url;open.target='_blank';open.rel='noopener';open.textContent='Open PDF in browser';
+        const save=document.createElement('a');save.className='btn btn-outline btn-sm';save.href=url;save.download=filename;save.textContent='Save PDF';
+        open.onclick=save.onclick=()=>{handedToBrowser=true;};
+        actions.append(open,save);content.append(actions);content.classList.add('doc-mobile-pdf');
+      }
       const frame=document.createElement('iframe');frame.src=url;frame.title=filename;content.append(frame);
     }
-    const close=()=>{overlay.querySelectorAll('audio,video').forEach(player=>{player.pause();player.removeAttribute('src');player.load();});overlay.remove();URL.revokeObjectURL(url);document.removeEventListener('keydown',onKey);window.removeEventListener('hashchange',close);window.removeEventListener('pagehide',close)};
+    const close=()=>{overlay.querySelectorAll('audio,video').forEach(player=>{player.pause();player.removeAttribute('src');player.load();});overlay.remove();if(handedToBrowser)setTimeout(()=>URL.revokeObjectURL(url),30000);else URL.revokeObjectURL(url);document.removeEventListener('keydown',onKey);window.removeEventListener('hashchange',close);window.removeEventListener('pagehide',close)};
     const onKey=e=>{if(e.key==='Escape')close()};
     overlay.querySelector('#close-doc-modal').addEventListener('click',close);
     overlay.addEventListener('click',e=>{if(e.target===overlay)close()});

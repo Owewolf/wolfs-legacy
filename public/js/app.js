@@ -1,4 +1,4 @@
-/* global API, SECTIONS, Docs, HomeBank, Legacy */
+/* global API, SECTIONS, Docs, HomeBank, Legacy, Mobile */
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -63,6 +63,7 @@ function hideLoading(target) {
 async function navigate(route) { window.location.hash = route; }
 
 async function handleRoute() {
+  if (typeof Mobile !== 'undefined') Mobile.reset();
   editingHomebankEntry = null;
   const hash = window.location.hash.slice(1) || 'login';
   const [route, p1, p2] = hash.split('/');
@@ -101,8 +102,8 @@ function renderLogin() {
       <h1>\u{1F512} Legacy Vault</h1>
       <p class="subtitle">Secure data vault for your family's future</p>
       <form id="login-form">
-        <div class="form-group"><label>Email</label><input type="email" name="email" required></div>
-        <div class="form-group"><label>Password</label><input type="password" name="password" required></div>
+        <div class="form-group"><label for="login-email">Email</label><input id="login-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
+        <div class="form-group"><label for="login-password">Password</label><input id="login-password" type="password" name="password" autocomplete="current-password" required></div>
         <button type="submit" class="btn btn-primary btn-block">Sign In</button>
       </form>
       <div class="link-row">
@@ -127,9 +128,9 @@ function renderRegister() {
       <h1>Create Account</h1>
       <p class="subtitle">Start securing your legacy data</p>
       <form id="reg-form">
-        <div class="form-group"><label>Full Name</label><input type="text" name="name" required></div>
-        <div class="form-group"><label>Email</label><input type="email" name="email" required></div>
-        <div class="form-group"><label>Password (min 8 chars)</label><input type="password" name="password" required minlength="8"></div>
+        <div class="form-group"><label for="register-name">Full Name</label><input id="register-name" type="text" name="name" autocomplete="name" required></div>
+        <div class="form-group"><label for="register-email">Email</label><input id="register-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
+        <div class="form-group"><label for="register-password">Password (min 8 chars)</label><input id="register-password" type="password" name="password" autocomplete="new-password" required minlength="8"></div>
         <button type="submit" class="btn btn-primary btn-block">Create Vault</button>
       </form>
       <div class="link-row">Already have an account? <a href="#login">Sign in</a></div>
@@ -156,7 +157,8 @@ function sidebarHTML(activeKey) {
   }).join('');
 
   return `
-    <div class="sidebar">
+    <div class="sidebar" id="mobile-navigation">
+      <button type="button" id="mobile-navigation-close" class="mobile-navigation-close" aria-label="Close navigation" hidden>Close <span aria-hidden="true">×</span></button>
       <div class="sidebar-header">
         <h2 class="sidebar-brand">\u{1F512} Legacy Vault</h2>
         <div class="sidebar-owner">${esc(state.user?.name)}</div>
@@ -197,7 +199,12 @@ function sidebarHTML(activeKey) {
 }
 
 function layoutHTML(activeKey, content) {
-  return `<div class="app-layout">${sidebarHTML(activeKey)}<div class="main-content">${content}</div></div>`;
+  return `<header class="mobile-header" hidden>
+    <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" aria-controls="mobile-navigation" aria-expanded="false"><span class="mobile-menu-icon" aria-hidden="true">☰</span><span>Menu</span></button>
+    <span class="mobile-brand">Wolf’s Legacy</span>
+    <button type="button" id="mobile-search-toggle" class="mobile-search-toggle" aria-label="Search vault"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
+  </header><div class="mobile-nav-backdrop" aria-hidden="true" hidden></div>
+  <div class="app-layout">${sidebarHTML(activeKey)}<div class="main-content" id="main-content">${content}</div></div>`;
 }
 
 function bindSidebar() {
@@ -222,6 +229,7 @@ function bindSidebar() {
       }
     };
   }
+  if (typeof Mobile !== 'undefined') Mobile.mount();
 }
 
 // ── Dashboard ──
@@ -294,13 +302,14 @@ function showExportView(data) {
     grouped[e.section].push(e);
   });
 
-  let html = `<html><head><meta charset="utf-8"><title>Legacy Vault Export - ${esc(data.owner.name)}</title>
+  let html = `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Legacy Vault Export - ${esc(data.owner.name)}</title>
     <style>body{font-family:sans-serif;max-width:800px;margin:40px auto;color:#222;line-height:1.5}
     h1{border-bottom:2px solid #333;padding-bottom:8px}h2{margin-top:32px;color:#444;border-bottom:1px solid #ccc;padding-bottom:4px}
     .entry{margin:16px 0;padding:12px;border:1px solid #ddd;border-radius:6px}
     .entry h3{margin:0 0 8px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
     .field label{font-size:11px;text-transform:uppercase;color:#888}.field .val{font-size:14px}
     .notes{margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:13px;color:#555}
+    @media(max-width:700px){body{margin:20px 16px;overflow-wrap:anywhere}.fields{grid-template-columns:1fr}}
     @media print{body{margin:20px}}</style></head><body>
     <h1>Legacy Vault - ${esc(data.owner.name)}</h1>
     <p>Exported: ${new Date(data.exported_at).toLocaleString()}</p>
@@ -323,6 +332,7 @@ function showExportView(data) {
   html += '</body></html>';
 
   const blob = new Blob([html], { type: 'text/html' });
+  if (typeof Mobile !== 'undefined' && Mobile.isCompact()) return Mobile.showExport(blob);
   const url = URL.createObjectURL(blob);
   const win = window.open(url, '_blank');
   if (win) { showSuccess('Export opened in new tab. Use Ctrl+P to print/save as PDF.'); }
@@ -762,7 +772,7 @@ async function renderSettings() {
       a.href = url;
       a.download = 'legacy-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json';
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
       showSuccess('Vault entries downloaded');
     } catch (err) { showError(err.message); }
   };
