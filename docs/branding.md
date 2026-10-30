@@ -8,6 +8,16 @@ The repository and service names, configured document directories, storage exclu
 
 Verification on 29 October 2026: **202 Node tests and 4 Python tests pass**, including the existing phone/tablet Firefox workflows and new previous-subject compatibility checks. CSS and the database/storage/cryptography implementations are unchanged. The updated screenshots use synthetic records rather than the live vault. Historical mobile-layout reports retain their original measurements; their sample PNGs are refreshed separately to display the current name.
 
+## Browser bookmarks and home-screen icons
+
+Browser tabs and bookmarks use `/favicon.png`, copied unchanged from `Wolfs-Legacy-Icon-Package/brand/favicon.png` (256 × 256). iPhone/iPad home-screen bookmarks and Android shortcuts use `/apple-touch-icon.png`, copied unchanged from the full square `brand/app-icon-primary-1024.png` (1024 × 1024). Both assets are served from `public/`; the source brand folder is not exposed by the server. Keep these public copies in sync when changing the supplied artwork.
+
+The page links the favicon, Apple touch icon, and `/site.webmanifest`. The manifest uses the name **Wolf's Vault**, opens `/`, and keeps the normal browser display. The icon has purpose `any`, allowing the platform to fit the complete artwork into its shortcut shape. The supplied artwork is not marked `maskable`, which could crop its outer details. [Apple's touch-icon guidance](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html) allows larger icons to be scaled down; [Google's manifest guidance](https://web.dev/learn/pwa/web-app-manifest) describes icon sizes and purposes.
+
+Open `http://asus.local:4444` and refresh before saving a bookmark or choosing **Add to Home Screen**. Existing bookmarks or shortcuts may retain a cached icon; remove and recreate them to pick up the new artwork. This adds bookmark/shortcut metadata and does not enable offline vault storage.
+
+Verified on **30 October 2026**: both public PNGs match their supplied originals byte for byte; loopback and hostname requests serve the images and manifest with the correct content types. Chromium desktop, Android emulation and iPhone viewport checks decode both images, parse the manifest without errors, and render the page without script errors or horizontal overflow. These checks do not replace testing a saved shortcut on a physical phone. The static assets are live without a service restart; the app body, scripts and styles are unchanged.
+
 ## Applied deployment
 
 The running app at `http://asus.local:4444` was updated on **29 October 2026 at 15:16 SAST** from `edf23cbfcd3c24656bfc57bff2992ce34555796f` to `a47de78185d4af3333d1f7b6da52f4ffc0122c19`. The service was stopped through Fedora administrator authentication, a fresh complete snapshot verified database integrity/decryption and managed-file hashes, and the service restarted successfully with PID `3015476`. No database restore or migration was performed.
