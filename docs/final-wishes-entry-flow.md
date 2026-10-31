@@ -55,3 +55,18 @@ explicitly. No storage, backend, permission or release migration was introduced.
   during verification. Native devices and screen-reader applications were not run.
 
 [Screenshots](screenshots/final-wishes-entry/README.md)
+
+## Applied deployment
+
+Verified on **31 October 2026 at 15:00:16 SAST** at
+`http://asus.local:4444`. Runtime revision `94f93f3f6aeffbd592b2460d50e7c1833f4d0dbf`
+follows `5878bd70fd8834e12eacc7dd7e03f907515f1cb2`. HTML and app/legacy/section scripts
+match the source byte for byte through loopback and the hostname; health returns
+`ok`, unauthenticated vault access returns 401, and the service remains
+active/running with PID `2005`.
+
+Express serves these frontend files directly, so no restart, backend update,
+database operation or migration was needed. Refresh existing browsers to load
+the combined form. The previous public source archive and private verification
+record are retained at `/home/wolf/backups/wolfs-legacy/pre-final-wishes-entry-20261031T130016Z/`. This is a source-only rollback archive,
+not a database backup. Later documentation commits do not change runtime assets.
