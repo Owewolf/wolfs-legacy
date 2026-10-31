@@ -56,7 +56,7 @@ The HomeBank page refreshes navigation counts after sync and ignores responses
 that arrive after navigating away. No new import button or separate workflow is
 required.
 
-Current sync verification (31 October 2026): **290 JavaScript and 7 Python tests
+Current sync verification (31 October 2026): **291 JavaScript and 7 Python tests
 pass**. Synthetic tests cover first connection, legacy saved connections,
 unconnected default discovery across repeated reads, new accounts on later sync,
 unchanged-file reconciliation, owner isolation, closed/excluded accounts,
@@ -64,3 +64,28 @@ transaction rollback and concurrent/repeated sync. Frontend tests cover counts
 and navigation during pending responses. Chromium checks pass for 30 screens at
 390/820/1440px and mobile workflows at 390px and 820px. All fixtures use invented
 financial records; no external source file is modified by the tests.
+
+## Connected-source deployment and allocation verification
+
+The connected-file sync fix was activated on **31 October 2026 at 18:26 SAST**,
+running revision `5107087e8f8daf1c7eff452fcdb9764891df0287`. Health checks and
+authenticated live verification passed, with final page checks at 18:38 SAST.
+All 23 active, included source accounts have unique linked vault cards. Repeated
+syncs preserve those links and project the current source balances without
+creating duplicates.
+
+Six generic Asset accounts were restored to Vehicles and four to Real Estate
+using their previous owner allocations. These source accounts have no recognized
+purpose group, so their corrected existing sections remain authoritative on later
+syncs. The correction changed only their section; record identities, owner fields,
+notes, timestamps and document associations were retained. Source valuations use
+Current Value, separately from any owner-entered loan or mortgage details.
+
+The verified linked-card distribution is 8 Bank Accounts, 2 Debts & Liabilities,
+4 Real Estate, 3 Retirement Accounts and 6 Vehicles. Manual records, beneficiaries
+and other protected owner data remain intact, and the source HomeBank file is
+byte-for-byte unchanged. Live Chromium checks show all six vehicle cards and four
+property cards at 390px and 1440px without horizontal overflow or script errors.
+The synthetic regression also checks vehicle placement through fresh and cached
+syncs, preservation of owner loan details and attachments, and duplicate prevention.
+Subsequent test/documentation commits do not change the deployed runtime code.

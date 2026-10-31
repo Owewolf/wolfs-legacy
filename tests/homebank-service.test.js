@@ -281,6 +281,48 @@ test('a saved source adds new active accounts while preserving existing owner ed
   assert.deepEqual(await fsp.readFile(f.source), sourceBefore);
 });
 
+test('an explicitly allocated vehicle survives fresh and cached sync with its source valuation and owner loan separate', async t => {
+  const f = await fixture(t, 3);
+  const { projectHomebankEntry } = require('../server/homebank-vault');
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  const fields = { registration: 'EXAMPLE-123', loan_balance: 'ZAR 900.00',
+    loan_provider: 'Example owner lender', owner_reference: 'Keep this vehicle detail' };
+  f.db.prepare(`INSERT INTO vault_entries
+    (id,user_id,section,title,fields_encrypted,notes_encrypted,homebank_account_id,updated_at)
+    VALUES (1,?,'vehicles','Owner vehicle title',?,?,1,'2020-01-01')`)
+    .run(USER_ID, vaultCrypto.encrypt(JSON.stringify(fields)), vaultCrypto.encrypt('Retained historical notes'));
+  f.db.exec('CREATE TABLE document_associations (document_id TEXT, entry_id INTEGER)');
+  f.db.prepare('INSERT INTO document_associations VALUES (?,1)').run('synthetic-vehicle-document');
+  const original = f.db.prepare('SELECT * FROM vault_entries WHERE id=1').get();
+  const documents = f.db.prepare('SELECT * FROM document_associations').all();
+  await fsp.writeFile(f.source, `<homebank v="1.6"><grp key="7" name="Household"/>
+    <account key="1" type="3" name="Synthetic source asset" grp="7" initial="250"/>
+    <account key="2" type="3" name="New synthetic asset" grp="7" initial="75"/></homebank>`);
+  const sourceBefore = await fsp.readFile(f.source);
+  const fresh = f.service.responseView(await f.service.syncUser(USER_ID, true));
+  assert.equal(fresh.last_error, null);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries WHERE id=1').get(), original);
+  const projected = projectHomebankEntry({ ...original, fields },
+    { accountForEntry: entry => fresh.snapshot.accounts.find(account => account.id === entry.homebank_account_id) });
+  assert.equal(projected.section, 'vehicles');
+  assert.equal(projected.fields.current_value, 'ZAR 250.00', 'Asset ledger is the vehicle valuation');
+  assert.equal(projected.fields.loan_balance, fields.loan_balance, 'Source valuation must not become the owner loan');
+  assert.equal(projected.fields.loan_provider, fields.loan_provider);
+  assert.equal(projected.fields.registration, fields.registration);
+  assert.deepEqual(f.db.prepare('SELECT * FROM document_associations').all(), documents);
+  const entries = f.db.prepare('SELECT * FROM vault_entries ORDER BY id').all();
+  assert.equal(entries.length, 2);
+  assert.equal(entries[1].homebank_account_id, 2);
+  assert.equal(entries[1].section, 'investments', 'A separate missing generic asset is still created once');
+  assert.deepEqual(JSON.parse(vaultCrypto.decrypt(entries[1].fields_encrypted)), {});
+  await f.service.syncUser(USER_ID);
+  await f.service.syncUser(USER_ID);
+  assert.equal(f.parseCalls(), 1, 'Subsequent connected syncs use the validated unchanged source');
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries ORDER BY id').all(), entries);
+  assert.deepEqual(f.db.prepare('SELECT * FROM document_associations').all(), documents);
+  assert.deepEqual(await fsp.readFile(f.source), sourceBefore);
+});
+
 test('an active source account deleted from the vault returns on sync without duplicating other accounts', async t => {
   const f = await fixture(t, 3);
   f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
