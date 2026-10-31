@@ -1,0 +1,34 @@
+{
+  "synthetic_data_only": true,
+  "chromium_engines": [
+    {
+      "name": "chromium",
+      "version": "153.0.8010.12"
+    }
+  ],
+  "chromium_screens_verified": 40,
+  "chromium_mobile_workflows": [
+    {
+      "width": 390,
+      "checks_passed": 60
+    },
+    {
+      "width": 820,
+      "checks_passed": 60
+    }
+  ],
+  "webkit_engines": [
+    {
+      "name": "system-webkit",
+      "version": "2.52.4"
+    }
+  ],
+  "webkit_screens_verified": 10,
+  "webkit_mobile_workflows": [
+    {
+      "width": 390,
+      "checks_passed": 59
+    }
+  ],
+  "physical_devices_tested": false
+}

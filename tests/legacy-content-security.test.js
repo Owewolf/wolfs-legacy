@@ -24,7 +24,7 @@ process.env.DOCUMENT_STORAGE_ROOT = mediaRoot;
 
 const OWNER = 901, OTHER = 902;
 const TOKEN_A = 'synthetic-beneficiary-a-token', TOKEN_B = 'synthetic-beneficiary-b-token';
-const { hashToken, encrypt } = require('../server/crypto');
+const { hashToken, encrypt, decrypt } = require('../server/crypto');
 let db, server, base, a, b, oldEntry, foreignEntry;
 
 async function request(route, { method = 'GET', body, owner = OWNER, beneficiary, headers = {} } = {}) {
@@ -127,6 +127,56 @@ test('every new content group defaults private and stays outside the full-vault 
   assert.equal(old.status, 'granted'); assert.equal(old.entries.length, 1);
   assert.equal(old.entries[0].fields.details, 'Preserved legacy details');
   assert.ok(!JSON.stringify(old).includes('PRIVATE_'));
+});
+
+test('unified recipient-specific wishes encrypt their details and stay outside general vault access after release', async () => {
+  const unassignedToken = 'synthetic-unassigned-wishes-recipient';
+  const unassigned = Number(db.prepare(`INSERT INTO beneficiaries(user_id,name,access_token,token_expires_at)
+    VALUES(?,?,?,'2099-01-01T00:00:00.000Z')`)
+    .run(OWNER, 'Synthetic unassigned recipient', hashToken(unassignedToken)).lastInsertRowid);
+  [a, b, unassigned].forEach(grant);
+  const metadata = {
+    final_wishes: {
+      category: 'Memorial Preferences', details: 'UNIFIED_PRIVATE_WISH_DETAILS',
+      contact_person: 'UNIFIED_PRIVATE_WISH_CONTACT', contact_phone: 'UNIFIED_PRIVATE_WISH_PHONE'
+    },
+    category: 'household_services', future_metadata: { retained: 'UNIFIED_PRIVATE_WISH_FUTURE' }
+  };
+  const item = await create({
+    type: 'instruction', title: 'UNIFIED_PRIVATE_WISH_TITLE', body_markdown: 'UNIFIED_PRIVATE_WISH_MESSAGE',
+    metadata, beneficiary_ids: [a, b], release_policy: 'manual_release'
+  });
+  assert.equal(item.status, 'draft');
+  const stored = db.prepare('SELECT * FROM legacy_contents WHERE id=?').get(item.id);
+  assert.ok(!JSON.stringify(stored).includes('UNIFIED_PRIVATE_WISH_'), 'wish fields, title and message are encrypted at rest');
+  assert.deepEqual(JSON.parse(decrypt(stored.payload_encrypted)).metadata, metadata);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vault_entries WHERE user_id=?').get(OWNER).n, 1,
+    'the protected wish does not create an ordinary vault entry');
+  for (const token of [TOKEN_A, TOKEN_B, unassignedToken]) {
+    denied(await beneficiaryList(token, '/' + item.id));
+  }
+
+  successful(await request(`/api/final-wishes/legacy/${item.id}`, { method: 'PATCH', body: { status: 'ready' } }));
+  successful(await release(item, [a, b]));
+  for (const token of [TOKEN_A, TOKEN_B]) {
+    const authorized = successful(await beneficiaryList(token, '/' + item.id));
+    assert.deepEqual(authorized.metadata, metadata);
+    assert.equal(authorized.body_markdown, 'UNIFIED_PRIVATE_WISH_MESSAGE');
+  }
+  denied(await beneficiaryList(unassignedToken, '/' + item.id));
+  assert.deepEqual(successful(await beneficiaryList(unassignedToken)), []);
+
+  for (const route of ['/api/vault/entries?section=final_wishes', '/api/vault/export']) {
+    const ordinary = successful(await request(route));
+    assert.ok(!JSON.stringify(ordinary).includes('UNIFIED_PRIVATE_WISH_'), route);
+    assert.ok(JSON.stringify(ordinary).includes('Preserved legacy details'), 'existing arrangements remain available');
+  }
+  for (const token of [TOKEN_A, TOKEN_B, unassignedToken]) {
+    const ordinary = successful(await existingVault(token));
+    assert.equal(ordinary.status, 'granted');
+    assert.equal(ordinary.entries.length, 1);
+    assert.ok(!JSON.stringify(ordinary).includes('UNIFIED_PRIVATE_WISH_'), 'general vault grants do not disclose protected wishes');
+  }
 });
 
 test('manual releases require readiness, owner confirmation, explicit recipients and current general access', async () => {

@@ -95,6 +95,17 @@ const RecordCards = (() => {
   return { icon, heading, action, footer, render, entry, bindSensitive };
 })();
 
+async function vaultCounts(summary) {
+  const counts = Object.fromEntries(summary.filter(row => !SECTIONS[row.section]?.retired).map(row => [row.section, row.count]));
+  if (typeof Legacy !== 'undefined' && typeof Legacy.countEntries === 'function') {
+    try {
+      const wishes = await Legacy.countEntries();
+      if (wishes) counts.final_wishes = (counts.final_wishes || 0) + wishes;
+    } catch { /* The existing entry list handles protected-content errors. */ }
+  }
+  return counts;
+}
+
 // ── Theme toggle ──
 function getTheme() { return localStorage.getItem('lv_theme') || 'dark'; }
 function setTheme(t) { document.documentElement.setAttribute('data-theme', t); localStorage.setItem('lv_theme', t); }
@@ -315,7 +326,7 @@ async function renderDashboard(refreshedSummary, shouldRender = () => true) {
   let counts = {};
   try {
     const summary = refreshedSummary || await API.getSummary();
-    summary.filter(s => !SECTIONS[s.section]?.retired).forEach(s => counts[s.section] = s.count);
+    counts = await vaultCounts(summary);
   } catch { counts = {}; }
   if (window.location.hash !== expectedHash || !shouldRender()) return;
   state.counts = counts;
@@ -445,13 +456,15 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
   const expectedHash = window.location.hash;
   const sec = SECTIONS[key];
   if (!sec || sec.retired) return navigate('vault');
+  const requested = window.location.hash.slice(1).split('/')[2];
+  if (key === 'final_wishes' && requested?.startsWith('new?')) return navigate('add/final_wishes?' + requested.slice(4));
 
   let data;
   let counts = {};
   try {
     data = refreshedData || await API.getEntries(key);
     const summary = await API.getSummary();
-    summary.forEach(s => counts[s.section] = s.count);
+    counts = await vaultCounts(summary);
   } catch (err) { return showError(err.message); }
 
   const entries = Array.isArray(data.entries || data) ? (data.entries || data) : [];
@@ -472,38 +485,50 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
       <h1>${sec.icon} ${esc(sec.name)}</h1>
       <div class="actions"><button class="btn btn-primary" data-nav="add/${key}">+ Add ${key==='final_wishes'?'Final Wishes Entry':'Entry'}</button></div>
     </div>
-    ${key==='final_wishes'?'<div id="legacy-workspace" class="legacy-workspace"></div><details class="legacy-existing-wishes" open><summary>Final Wishes entries and arrangements</summary>':''}
-    ${entriesHTML}
-    ${key==='final_wishes'?'</details>':''}
+    ${key==='final_wishes'?'<div class="final-wishes-entries"><div id="legacy-workspace"></div></div>':entriesHTML}
   `);
 
   bindSidebar();
-  RecordCards.bindSensitive();
-  document.querySelectorAll('[data-edit]').forEach(el => { el.onclick = () => navigate('edit/' + key + '/' + el.dataset.edit); });
-  document.querySelectorAll('[data-delete]').forEach(el => {
-    el.onclick = async () => {
-      if (!confirm('Delete this entry? This cannot be undone.')) return;
-      const card = el.closest('.record-card');
-      const controls = [...card.querySelectorAll('button')];
-      card.setAttribute('aria-busy', 'true');
-      controls.forEach(control => { control.disabled = true; });
-      try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); await renderSection(key); } catch (err) {
-        showError(err.message);
-      } finally {
-        card.removeAttribute('aria-busy');
-        controls.forEach(control => { control.disabled = false; });
-      }
-    };
-  });
-  if(key==='final_wishes')void Legacy.mountOwner($('#legacy-workspace'),entries);
+  function bindCards() {
+    RecordCards.bindSensitive();
+    document.querySelectorAll('[data-edit]').forEach(el => { el.onclick = () => navigate('edit/' + key + '/' + el.dataset.edit); });
+    document.querySelectorAll('[data-delete]').forEach(el => {
+      el.onclick = async () => {
+        if (!confirm('Delete this entry? This cannot be undone.')) return;
+        const card = el.closest('.record-card');
+        const controls = [...card.querySelectorAll('button')];
+        card.setAttribute('aria-busy', 'true');
+        controls.forEach(control => { control.disabled = true; });
+        try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); await renderSection(key); } catch (err) {
+          showError(err.message);
+        } finally {
+          card.removeAttribute('aria-busy');
+          controls.forEach(control => { control.disabled = false; });
+        }
+      };
+    });
+  }
+  bindCards();
+  if(key==='final_wishes')void Legacy.mountOwner($('#legacy-workspace'),entries,{documentCounts:docCounts,onRender:bindCards});
   return true;
 }
 
 // ── Entry form (add/edit) ──
 async function renderEntryForm(sectionKey, entryId) {
   const expectedHash = window.location.hash;
+  const [key, query = ''] = String(sectionKey || '').split('?');
+  sectionKey = key;
   const sec = SECTIONS[sectionKey];
   if (!sec || (sec.retired && !entryId)) return navigate('vault');
+  if (sectionKey === 'final_wishes' && !entryId) {
+    const params = new URLSearchParams(query);
+    app.innerHTML = layoutHTML(sectionKey, `
+      <div class="page-header"><h1>Add Final Wishes Entry</h1><div class="actions"><button type="button" class="btn btn-outline" data-nav="section/final_wishes">Cancel</button></div></div>
+      <div id="legacy-workspace" class="final-wishes-entry-workspace"></div>
+    `);
+    bindSidebar();
+    return Legacy.mountOwner($('#legacy-workspace'), [], {entryForm:true,type:params.get('type') || 'instruction',beneficiaryId:params.get('beneficiary_id')});
+  }
 
   let existing = null;
   if (entryId) {
@@ -787,7 +812,7 @@ async function renderSettings() {
     <div class="card" style="margin-top:16px">
       <h3 style="margin-bottom:12px">Backup &amp; Restore</h3>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
-        Download or restore ordinary vault entries as JSON. Personal messages, managed files, recipient mappings and release history require a complete recovery backup on an independent disk.
+        Download or restore ordinary vault entries as JSON. Recipient-specific Final Wishes, personal messages, managed files and release history require a complete recovery backup on an independent disk.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
         <button class="btn btn-primary" id="backup-btn">Download vault entries (JSON)</button>
@@ -1012,7 +1037,7 @@ async function refreshLiveVault() {
       }
     } else {
       const fresh = await API.getSummary();
-      const counts = Object.fromEntries(fresh.filter(row => !SECTIONS[row.section]?.retired).map(row => [row.section, row.count]));
+      const counts = await vaultCounts(fresh);
       if (canRender() && JSON.stringify(counts) !== JSON.stringify(state.counts)) await renderDashboard(fresh, canRender);
     }
   } catch (err) { console.warn('HomeBank refresh unavailable', err); }
