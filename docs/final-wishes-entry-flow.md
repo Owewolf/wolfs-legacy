@@ -99,7 +99,35 @@ Separate tests cover concurrent checks, owner isolation, encryption, and rollbac
 Synthetic Chromium checks at 390px and 1440px confirm both kinds of draft appear
 in Final Wishes and can be opened and saved on their existing IDs.
 
-### Current verification
+### Existing-beneficiary deployment
+
+Verified on **31 October 2026 at 15:33:08 SAST** at
+`http://asus.local:4444`. Runtime revision
+`9a49dabfa8e847f7a519c4ccf88b55c127b8152d` follows
+`db138b931f13f4c98b432542d908522d7acad6a0`.
+
+The stopped complete snapshot passed integrity, foreign-key, encryption and
+managed-file checks. After restart, all **three existing beneficiaries** have a
+private, owner-editable Final Wish, with no beneficiary left without one. The
+owner API projection can read all three, each with the intended person selected,
+empty content, draft status and owner-only release policy. The original
+beneficiaries and tokens were retained. Existing database rows, keys and
+configuration match their earlier fingerprints; only the new wishes, recipient
+mappings and creation events/audits were added by the repair.
+
+Service `wolfs-legacy.service` is active/running with PID `412144`, started at
+15:32:38 SAST. Loopback and hostname health, served asset bytes and unauthenticated
+API denial checks pass. No test beneficiaries, releases or notifications were
+created during live verification. New-beneficiary creation and repeated startup
+behaviour were verified through the isolated production-entrypoint test.
+
+The previous source archive, complete snapshot and private verification records
+are retained at
+`/home/wolf/backups/wolfs-legacy/pre-existing-beneficiary-wishes-20261031T133101Z/`.
+Refresh the Final Wishes page to see the new drafts. Later documentation commits
+do not change runtime sources.
+
+### Recipient picker verification
 
 - Full suite: 250 JavaScript and 7 Python tests passed.
 - Firefox: 51 desktop checks passed, plus 66 workflow checks at each of 390px
