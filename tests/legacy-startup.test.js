@@ -98,7 +98,11 @@ test('production startup creates editable private wishes for existing beneficiar
   const repaired=await repairedResponse.json();
   assert.equal(repaired.length,1,'the first owner list after startup includes the existing beneficiary wish');
   const existingWish=repaired[0];
-  assert.equal(existingWish.title,'Final Wishes for Synthetic existing beneficiary');
+  assert.equal(existingWish.title,'Synthetic existing beneficiary');
+  assert.equal(existingWish.metadata.final_wishes.content_type,'');
+  assert.equal(existingWish.metadata.final_wishes.category,'Beneficiary Instructions');
+  assert.equal(existingWish.review_enabled,false);
+  assert.equal(existingWish.next_review_at,null);
   assert.equal(existingWish.status,'draft');
   assert.equal(existingWish.release_policy,'owner_only');
   assert.deepEqual(existingWish.beneficiary_ids,[beneficiaryId]);
@@ -113,7 +117,11 @@ test('production startup creates editable private wishes for existing beneficiar
   const newWishResponse=await fetch(base+'/api/final-wishes/legacy/'+beneficiary.final_wish_id,{headers});
   assert.equal(newWishResponse.status,200);
   const newWish=await newWishResponse.json();
-  assert.equal(newWish.title,'Final Wishes for Synthetic future beneficiary');
+  assert.equal(newWish.title,'Synthetic future beneficiary');
+  assert.equal(newWish.metadata.final_wishes.content_type,'');
+  assert.equal(newWish.metadata.final_wishes.category,'Beneficiary Instructions');
+  assert.equal(newWish.review_enabled,false);
+  assert.equal(newWish.next_review_at,null);
   assert.deepEqual(newWish.beneficiary_ids,[beneficiary.id]);
   assert.equal(newWish.status,'draft');
   assert.equal(newWish.release_policy,'owner_only');

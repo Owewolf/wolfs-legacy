@@ -93,9 +93,9 @@ test('adding a beneficiary creates one encrypted private draft assigned to that 
   assert.equal(row.review_enabled, 0);
   assert.ok(!row.payload_encrypted.includes('Synthetic beneficiary'));
   const payload = JSON.parse(decrypt(row.payload_encrypted));
-  assert.equal(payload.title, 'Final Wishes for Synthetic beneficiary');
+  assert.equal(payload.title, 'Synthetic beneficiary');
   assert.equal(payload.body_markdown, '');
-  assert.deepEqual(payload.metadata.final_wishes, { category: '', details: '', contact_person: '', contact_phone: '', notes: '' });
+  assert.deepEqual(payload.metadata.final_wishes, { content_type: '', category: 'Beneficiary Instructions', details: '', contact_person: '', contact_phone: '', notes: '' });
   assert.deepEqual(payload.metadata.origin, { type: 'beneficiary', beneficiary_id: created.id });
   const mappings = db.prepare('SELECT * FROM legacy_content_beneficiaries').all();
   assert.equal(mappings.length, 1);

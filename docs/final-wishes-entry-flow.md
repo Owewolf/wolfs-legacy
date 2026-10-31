@@ -46,8 +46,11 @@ permission or release migration.
 ## Beneficiary drafts and searchable recipients
 
 The current change creates a private Final Wish draft automatically when an owner
-adds a beneficiary. The draft is titled **Final Wishes for {beneficiary name}**,
-starts with empty wish details and content, and has that beneficiary selected.
+adds a beneficiary. The draft title is exactly the **beneficiary name**, with
+that beneficiary already selected as recipient and **Beneficiary Instructions**
+selected as the wish category. That category appears on the card. Written content
+and optional content type start blank. It uses the normal Final Wishes card
+and form, with no Information Review section or schedule.
 It uses the protected content store with `draft` status and the `owner_only`
 release policy. Creating it grants no access, releases no content and sends no
 message. At startup, existing beneficiaries without an assigned protected wish
@@ -64,7 +67,10 @@ response is retained with an added `final_wish_id` and `final_wish.id`.
 The Final Wishes form now uses **Find a recipient** in place of the full
 beneficiary checklist. Search matches names, roles or relationships, email
 addresses and phone numbers across the owner's beneficiaries and saved contacts.
-Selected people appear as removable entries. Keyboard navigation, live result
+All saved, unselected beneficiaries and contacts are offered immediately,
+including before any search text is entered. Typing filters that list; clearing
+the search restores every available choice. Selected people appear as removable
+entries. Keyboard navigation, live result
 announcements and touch controls are supported.
 
 Beneficiaries remain the authorised recipients for the existing release flow.
@@ -81,6 +87,37 @@ start without these links; editing an existing wish preserves its saved links
 and other unknown metadata. Existing linked-record displays and authorised
 recipient access to those records retain their behaviour. No schema or release
 policy migration is required.
+
+### Plain wish form and saved recipient choices
+
+New entries and beneficiary-created drafts open the normal wish form with no
+optional content type selected. Beneficiary drafts use only that person's name
+as the title, preselect their recipient and use **Beneficiary Instructions** as
+the wish category. This choice is available in the normal wish category list,
+and cards display the selected wish category. No instruction category, priority,
+checklist or Information Review schedule is prefilled. Choose an optional content
+type inside the form when needed. Existing explicit content types and existing
+review schedules on authored entries retain their controls and saved values.
+
+Startup updates only the original blank generated drafts with their old default
+title and no authored content, files or record links. It retains each wish ID,
+recipients, unknown metadata and historical records, changes the title to the
+beneficiary name and disables review scheduling on these plain drafts. It does
+not replace edited content, owner-written titles, archived or released wishes.
+The empty optional selection lives in encrypted `metadata.final_wishes.content_type`;
+no database schema change is needed. Repeated checks do not add copies or revisions.
+
+The recipient picker offers every saved, unselected beneficiary and contact
+before typing, on focus and after clearing a search. Names, roles/relationships,
+email addresses and phone numbers filter those choices. Selected people remain
+visible and removable, and named contacts receive no access permission.
+
+Verification: 263 JavaScript and 7 Python tests pass. Firefox covers 61 editor
+checks and 71 mobile workflow checks at each of 390px and 820px. Chromium covers
+30 screens at 390/820/1440px and 72 workflow checks at each mobile/tablet width; WebKitGTK covers ten screens
+and 71 workflow checks at 390px. Tests include in-place upgrades, review-history
+preservation, schedule removal, unchanged authored content, idempotency, rollback,
+blank normal forms, preselected recipients and all saved search choices.
 
 ### Existing-beneficiary repair
 

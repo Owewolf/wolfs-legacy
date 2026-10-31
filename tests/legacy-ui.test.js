@@ -16,10 +16,11 @@ const publicRoot = path.join(__dirname, '..', 'public');
 
 const apiFixture = `
 const fixtureCalls=[];
-const fixtureRecipients=[{id:1,name:'Alex Example',relationship:'Child',access_granted:1,emergency_waiting_days:7,created_at:'2026-10-20T10:00:00Z'},{id:2,name:'Jamie Example',relationship:'Sibling',access_granted:0,emergency_waiting_days:7,created_at:'2026-10-20T10:00:00Z'}];
+const fixtureRecipients=[{id:1,name:'Alex Example',relationship:'Child',email:'alex@example.test',phone:'000 000 0001',access_granted:1,emergency_waiting_days:7,created_at:'2026-10-20T10:00:00Z'},{id:2,name:'Jamie Example',relationship:'Sibling',access_granted:0,emergency_waiting_days:7,created_at:'2026-10-20T10:00:00Z'}];
 const fixtureEntries=[{id:11,title:'Memorial arrangements',section:'final_wishes',fields:{category:'Memorial Preferences',details:'Existing final wish retained',contact_person:'Family contact',contact_phone:'000 000 0000'},notes:''},{id:12,title:'Example family home',section:'real_estate',fields:{address:'Example address'},notes:''},{id:1,title:'Estate adviser',section:'contacts',fields:{name:'Casey <Adviser>',role:'Lawyer',email:'lawyer@example.test',phone:'000 000 0013'},notes:''}];
 const common={body_markdown:'A personal message',introduction:'',description:'',release_policy:'owner_only',status:'draft',beneficiary_ids:[1],metadata:{},links:[],beneficiaries:[],attachments:[],versions:[],reviews:[],release_events:[],review_enabled:false,revision:1,created_at:'2026-10-20T10:00:00Z',updated_at:'2026-10-28T10:00:00Z'};
 const fixtureItems=[
+{...structuredClone(common),id:'plain-1',title:'Alex Example',type:'instruction',body_markdown:'',metadata:{final_wishes:{content_type:'',category:'Beneficiary Instructions',details:'',contact_person:'',contact_phone:'',notes:''}},review_interval_months:6,next_review_at:null,last_reviewed_at:'2026-10-20T10:00:00Z',reviews:[{action:'disabled',created_at:'2026-10-20T10:00:00Z'}]},
 {...structuredClone(common),id:'letter-1',title:'A letter for Alex',type:'letter',description:'A private letter for a future birthday'},
 {...structuredClone(common),id:'recording-2',title:'A recorded family story',type:'recording'},
 {...structuredClone(common),id:'memory-1',title:'Family picnic',type:'family_history',metadata:{event_date:'1985',date_precision:'approximate',people:['Alex Example'],tags:['family'],place:'Example park'}},
@@ -94,13 +95,27 @@ const browserChecks = `
  check(document.querySelector('.final-wishes-entries').textContent.includes('Existing final wish retained'),'preserves existing Final Wishes fields and arrangements');
  check(!Array.from(document.querySelectorAll('.sidebar .nav-item')).some(item=>item.textContent.includes('Personal Legacy')),'adds no top-level legacy section');
  check(document.querySelectorAll('.page-header [data-nav="add/final_wishes"]').length===1&&!action('new')&&!workspace().querySelector('.legacy-heading'),'Final Wishes list has one page-level Add Final Wishes Entry action');
+ window.location.hash='section/final_wishes/plain-1';await until(()=>action('edit')&&workspace().querySelector('.legacy-heading')?.textContent.includes('Alex Example'),'beneficiary-created plain wish');
+ check(workspace().querySelector('.record-category-chip')?.textContent==='Beneficiary Instructions'&&!action('review-no-change')&&!workspace().textContent.includes('Review history'),'plain beneficiary wish has a normal Final Wishes card without information reviews');
+ action('edit').click();await until(()=>document.getElementById('legacy-editor'),'plain beneficiary wish editor');
+ let plainForm=document.getElementById('legacy-editor');
+ check(plainForm.elements.title.value==='Alex Example'&&plainForm.querySelector('[data-remove-recipient="beneficiary:1"]')&&plainForm.elements.type.value===''&&plainForm.elements.wish_category.value==='Beneficiary Instructions'&&['wish_details','wish_contact_person','wish_contact_phone','wish_notes','description','introduction','body_markdown'].every(name=>plainForm.elements[name].value==='')&&!plainForm.elements.category&&!plainForm.elements.priority&&plainForm.querySelector('#legacy-review-fields').hidden,'beneficiary-created wish has its name, recipient and Beneficiary Instructions category populated with other content blank');
+ check(plainForm.querySelectorAll('#legacy-recipient-results button').length===2&&!plainForm.querySelector('[data-add-recipient="beneficiary:1"]'),'preselected recipient is excluded while all other saved people remain offered');
+ plainForm.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await until(()=>action('edit')&&!document.getElementById('legacy-editor'),'saved plain wish');
+ const plainSave=fixtureCalls.find(call=>call.method==='PATCH'&&call.route==='/final-wishes/legacy/plain-1');
+ check(plainSave.body.type==='instruction'&&plainSave.body.metadata.final_wishes.content_type===''&&plainSave.body.metadata.final_wishes.category==='Beneficiary Instructions'&&!plainSave.body.metadata.category&&!plainSave.body.metadata.priority&&plainSave.body.review_enabled===false&&plainSave.body.review_interval_months===6&&plainSave.body.next_review_at===null&&!action('review-no-change'),'plain wish save preserves compatible storage and hidden review settings without adding defaults');
+ action('back').click();await until(()=>workspace().querySelector('.legacy-list'),'return to normal wishes');
  document.querySelector('.page-header [data-nav="add/final_wishes"]').click();
  await until(()=>document.getElementById('legacy-editor'),'unified Final Wishes editor');
  let form=document.getElementById('legacy-editor');
  check(location.hash==='#add/final_wishes'&&document.querySelector('.page-header h1').textContent==='Add Final Wishes Entry','page-level action opens the unified Final Wishes form');
- check(workspace().contains(form)&&!document.getElementById('entry-form')&&form.elements.type.value==='instruction','new wishes use one protected editor with personal instructions selected');
+ check(workspace().contains(form)&&!document.getElementById('entry-form')&&form.elements.type.value===''&&form.querySelector('#legacy-review-fields').hidden&&!form.elements.category&&!form.elements.priority,'new wishes use one blank protected editor without an optional content type or information reviews');
+ check(form.elements.wish_category.value===''&&Array.from(form.elements.wish_category.options).some(option=>option.value==='Beneficiary Instructions'&&option.textContent==='Beneficiary Instructions'),'generic new wish category stays blank and offers Beneficiary Instructions');
  check(['letter','recording','family_history','instruction','review'].every(type=>Array.from(form.querySelector('#legacy-type').options).some(option=>option.value===type)),'the unified entry editor retains every content type');
  check(form.elements.release_policy.value==='owner_only'&&form.elements.status.value==='draft','new content defaults to private draft');
+ form.elements.type.value='review';form.elements.type.dispatchEvent(new Event('change',{bubbles:true}));
+ check(!form.querySelector('#legacy-review-fields').hidden,'choosing Information Reviews explicitly offers review scheduling');
+ form.elements.review_enabled.checked=true;form.elements.review_enabled.dispatchEvent(new Event('change',{bubbles:true}));
  form.elements.wish_category.value='Memorial Preferences';
  form.elements.wish_details.value='Share family stories at the memorial.';
  form.elements.wish_contact_person.value='Alex Example';
@@ -111,15 +126,21 @@ const browserChecks = `
  form.elements.title.value='<img src=x onerror="window.fixtureInjected=true"> Letter for family';
  form.elements.body_markdown.value='# Message\\n**Family**';
  form.elements.release_policy.value='manual_release';
- check(!form.querySelector('[name="beneficiary_ids"]')&&!form.querySelector('[name="link_ids"]')&&!form.textContent.includes('Related vault records')&&!form.querySelector('#legacy-recipient-results button'),'recipients start as a search picker without a full checklist or related vault selection');
- let recipientSearch=searchRecipients('lawyer@example.test');
+ check(!form.querySelector('[name="beneficiary_ids"]')&&!form.querySelector('[name="link_ids"]')&&!form.textContent.includes('Related vault records')&&form.querySelectorAll('#legacy-recipient-results button').length===3,'recipients offer every saved beneficiary and contact immediately without a checklist or related vault selection');
+ let recipientSearch=searchRecipients('alex@example.test');
+ check(form.querySelector('[data-add-recipient="beneficiary:1"]')&&form.querySelectorAll('#legacy-recipient-results button').length===1,'beneficiary search matches a saved email');
+ recipientSearch=searchRecipients('000 000 0001');
+ check(form.querySelector('[data-add-recipient="beneficiary:1"]'),'beneficiary search matches a saved phone');
+ recipientSearch=searchRecipients('');recipientSearch.focus();
+ check(form.querySelectorAll('#legacy-recipient-results button').length===3,'focusing or clearing recipient search always offers all saved people');
+ recipientSearch=searchRecipients('lawyer@example.test');
  check(form.querySelector('[data-add-recipient="contact:1"]').textContent.includes('Casey <Adviser>')&&form.querySelector('[data-add-recipient="contact:1"]').textContent.includes('no vault access')&&!form.querySelector('[data-add-recipient="contact:1"] img'),'contact search matches email and safely labels named-only access');
  recipientSearch=searchRecipients('Lawyer');recipientSearch.focus();recipientSearch.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));
  check(document.activeElement.dataset.addRecipient==='contact:1','Arrow Down moves from search to the matching recipient button');
  document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
- check(document.activeElement===recipientSearch&&form.querySelector('#legacy-recipient-results').hidden,'Escape dismisses results and returns focus to search');
+ check(document.activeElement===recipientSearch&&form.querySelectorAll('#legacy-recipient-results button').length===3,'Escape clears the query and offers saved people again with focus on search');
  recipientSearch=searchRecipients('000 000 0013');recipientSearch.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
- check(form.querySelector('[data-remove-recipient="contact:1"]')&&!form.querySelector('#legacy-recipient-results button'),'Enter chooses a contact found by phone and clears the search results');
+ check(form.querySelector('[data-remove-recipient="contact:1"]')&&form.querySelectorAll('#legacy-recipient-results button').length===2,'Enter chooses a contact found by phone and continues offering unselected saved people');
  searchRecipients('Alex').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
  searchRecipients('Sibling');form.querySelector('[data-add-recipient="beneficiary:2"]').click();
  check(form.querySelector('[data-remove-recipient="contact:1"]')&&form.querySelector('[data-remove-recipient="beneficiary:1"]')&&form.querySelectorAll('[name="beneficiary_ids"]').length===2,'contacts and beneficiaries keep separate IDs and can be selected together');
@@ -136,6 +157,7 @@ const browserChecks = `
  check(create.body.beneficiary_ids.length===2&&create.body.metadata.final_wishes.contact_recipients.length===1&&create.body.metadata.final_wishes.contact_recipients[0].entry_id===1&&create.body.metadata.final_wishes.contact_recipients[0].name==='Casey <Adviser>'&&create.body.links.length===0,'one protected wish names contacts alongside beneficiaries without linking unrelated vault records');
  check(create.body.type==='letter'&&create.body.metadata.final_wishes.category==='Memorial Preferences'&&create.body.metadata.final_wishes.details==='Share family stories at the memorial.'&&create.body.metadata.final_wishes.contact_person==='Alex Example'&&create.body.metadata.final_wishes.contact_phone==='000 000 0001','unified authoring saves arrangements and selected content group in the protected record');
  check(!fixtureCalls.some(call=>call.method==='createEntry')&&location.hash==='#section/final_wishes/created-item','new wishes save only through the protected API and open their detail route');
+ check(workspace().querySelector('.record-category-chip')?.textContent==='Memorial Preferences'&&Array.from(workspace().querySelectorAll('.legacy-detail .record-category-chip')).length===1&&!Array.from(workspace().querySelectorAll('.legacy-metadata dt')).some(label=>label.textContent==='Wish category'),'saved wish category appears once in the card heading');
  check(!workspace().querySelector('img')&&!window.fixtureInjected&&workspace().textContent.includes('<img src=x'),'escapes personal content titles in management');
  check(workspace().querySelector('.legacy-recipients').textContent.includes('Casey <Adviser>')&&workspace().querySelector('.legacy-recipients').textContent.includes('no vault access'),'wish details distinguish named contacts from access recipients');
  action('ready').click();await until(()=>action('release'),'ready item detail');
@@ -182,7 +204,7 @@ const browserChecks = `
  check(!!action('edit'),'beneficiary content links open the existing Final Wishes editor and release controls');
  window.location.hash='beneficiaries';await until(()=>document.querySelector('[data-legacy-beneficiary="1"]'),'return to beneficiaries');document.querySelector('[data-legacy-beneficiary="1"]').open=true;await until(()=>document.querySelector('a[href="#add/final_wishes?type=letter&beneficiary_id=1"]'),'recipient authoring shortcuts');
  document.querySelector('a[href="#add/final_wishes?type=letter&beneficiary_id=1"]').click();await until(()=>document.getElementById('legacy-editor'),'recipient-specific new letter');
- check(document.getElementById('legacy-editor').elements.type.value==='letter'&&document.querySelectorAll('[name="beneficiary_ids"]').length===1&&document.querySelector('[name="beneficiary_ids"]').value==='1','beneficiary authoring shortcut prefills only that existing recipient');
+ check(document.getElementById('legacy-editor').elements.type.value==='letter'&&document.getElementById('legacy-editor').elements.title.value==='Alex Example'&&document.getElementById('legacy-editor').elements.wish_category.value==='Beneficiary Instructions'&&document.querySelectorAll('[name="beneficiary_ids"]').length===1&&document.querySelector('[name="beneficiary_ids"]').value==='1','beneficiary authoring shortcut prefills only that existing recipient');
  window.location.hash='section/final_wishes/new?type=recording&beneficiary_id=2';
  await until(()=>location.hash==='#add/final_wishes?type=recording&beneficiary_id=2'&&document.getElementById('legacy-editor')?.elements.type.value==='recording','legacy authoring shortcut redirects to the unified form');
  check(document.querySelectorAll('[name="beneficiary_ids"]').length===1&&document.querySelector('[name="beneficiary_ids"]').value==='2','legacy authoring route retains its chosen content group and beneficiary');

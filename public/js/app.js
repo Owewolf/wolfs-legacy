@@ -527,7 +527,7 @@ async function renderEntryForm(sectionKey, entryId) {
       <div id="legacy-workspace" class="final-wishes-entry-workspace"></div>
     `);
     bindSidebar();
-    return Legacy.mountOwner($('#legacy-workspace'), [], {entryForm:true,type:params.get('type') || 'instruction',beneficiaryId:params.get('beneficiary_id')});
+    return Legacy.mountOwner($('#legacy-workspace'), [], {entryForm:true,type:params.get('type') || '',beneficiaryId:params.get('beneficiary_id')});
   }
 
   let existing = null;

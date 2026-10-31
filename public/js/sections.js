@@ -178,7 +178,7 @@ const SECTIONS = {
     name: 'Final Wishes',
     icon: '\u{1F54A}',
     fields: [
-      { key: 'category', label: 'Category', type: 'select', options: ['Funeral Arrangements', 'Burial / Cremation', 'Organ Donation', 'Memorial Preferences', 'Message to Family', 'Charitable Wishes', 'Pet Care', 'Other'] },
+      { key: 'category', label: 'Category', type: 'select', options: ['Beneficiary Instructions', 'Funeral Arrangements', 'Burial / Cremation', 'Organ Donation', 'Memorial Preferences', 'Message to Family', 'Charitable Wishes', 'Pet Care', 'Other'] },
       { key: 'details', label: 'Details', type: 'textarea' },
       { key: 'contact_person', label: 'Contact Person', type: 'text' },
       { key: 'contact_phone', label: 'Contact Phone', type: 'text' }

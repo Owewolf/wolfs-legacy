@@ -18,11 +18,11 @@
   "chromium_mobile_workflows": [
     {
       "width": 390,
-      "checks_passed": 67
+      "checks_passed": 72
     },
     {
       "width": 820,
-      "checks_passed": 67
+      "checks_passed": 72
     }
   ],
   "webkit_engines": [
@@ -35,12 +35,12 @@
   "webkit_mobile_workflows": [
     {
       "width": 390,
-      "checks_passed": 66
+      "checks_passed": 71
     }
   ],
   "physical_devices_tested": false,
   "full_suite": {
-    "javascript": 250,
+    "javascript": 263,
     "python": 7,
     "failures": 0
   },
@@ -111,5 +111,42 @@
       "notice": "A private Final Wish draft will be created for this beneficiary.",
       "modalWidth": 500
     }
-  ]
+  ],
+  "plain_beneficiary_wish_evidence": [
+    {
+      "width": 390,
+      "title": "Alex Example",
+      "category": "Beneficiary Instructions",
+      "content_type": "",
+      "recipient": true,
+      "blank_content": true,
+      "review_hidden": true,
+      "available_recipients": [
+        "beneficiary:2",
+        "contact:14"
+      ],
+      "viewport_width": 390,
+      "document_width": 390,
+      "empty_search_choices": 3
+    },
+    {
+      "width": 1440,
+      "title": "Alex Example",
+      "category": "Beneficiary Instructions",
+      "content_type": "",
+      "recipient": true,
+      "blank_content": true,
+      "review_hidden": true,
+      "available_recipients": [
+        "beneficiary:2",
+        "contact:14"
+      ],
+      "viewport_width": 1440,
+      "document_width": 1440,
+      "empty_search_choices": 3
+    }
+  ],
+  "beneficiary_wish_category": "Beneficiary Instructions",
+  "beneficiary_wish_title": "Beneficiary name only",
+  "recipient_choices_offered_without_typing": true
 }

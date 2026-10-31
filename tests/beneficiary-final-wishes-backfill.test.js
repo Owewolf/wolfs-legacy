@@ -32,6 +32,17 @@ function snapshot() {
   return Object.fromEntries(TABLES.map(table => [table, db.prepare('SELECT * FROM ' + table + ' ORDER BY rowid').all()]));
 }
 function rows(table) { return db.prepare('SELECT * FROM ' + table + ' ORDER BY rowid').all(); }
+function oldGeneratedDraft(id, overrides = {}) {
+  const person = db.prepare('SELECT * FROM beneficiaries WHERE id=?').get(id);
+  return legacy.save(db, person.user_id, {
+    type: 'instruction', title: `Final Wishes for ${person.name.trim()}`, body_markdown: '',
+    status: 'draft', release_policy: 'owner_only', beneficiary_ids: [id],
+    metadata: {
+      final_wishes: { category: '', details: '', contact_person: '', contact_phone: '', notes: '' },
+      origin: { type: 'beneficiary', beneficiary_id: id }
+    }, ...overrides
+  });
+}
 
 before(() => {
   db = new Database(':memory:');
@@ -51,7 +62,9 @@ before(() => {
 beforeEach(() => {
   db.exec(`DROP TRIGGER IF EXISTS fixture_backfill_mapping_failure;
     DROP TRIGGER IF EXISTS fixture_backfill_audit_failure;
+    DROP TRIGGER IF EXISTS fixture_upgrade_audit_failure;
     DELETE FROM legacy_contents;
+    DELETE FROM managed_documents;
     DELETE FROM beneficiaries;
     DELETE FROM vault_entries;
     DELETE FROM audit_log;
@@ -89,9 +102,9 @@ test('backfill creates an encrypted editable owner-only draft for every existing
     assert.equal(mapping.release_scope, null);
     assert.ok(!raw.payload_encrypted.includes(person.name.trim()));
     const payload = JSON.parse(decrypt(raw.payload_encrypted));
-    assert.equal(payload.title, `Final Wishes for ${person.name.trim()}`);
+    assert.equal(payload.title, person.name.trim());
     assert.equal(payload.body_markdown, '');
-    assert.deepEqual(payload.metadata.final_wishes, { category: '', details: '', contact_person: '', contact_phone: '', notes: '' });
+    assert.deepEqual(payload.metadata.final_wishes, { content_type: '', category: 'Beneficiary Instructions', details: '', contact_person: '', contact_phone: '', notes: '' });
     assert.deepEqual(payload.metadata.origin, { type: 'beneficiary', beneficiary_id: id });
     assert.equal(legacy.canRead(db, { ...person, access_granted: 1 }, raw), false);
     assert.deepEqual(legacy.list(db, person.user_id, { beneficiary_id: id }).map(item => item.id), [raw.id]);
@@ -117,6 +130,115 @@ test('repeating repair and shared new-beneficiary creation does not add duplicat
   assert.deepEqual(backfillBeneficiaryFinalWishes(db), { created: 0, total: 2 });
   assert.equal(rows('legacy_contents').length, 2);
 });
+
+test('repair normalizes three pristine generated drafts in place and retains unknown metadata and all recipients', () => {
+  const ids = [beneficiary('  Synthetic first  '), beneficiary('Synthetic second'), beneficiary('Synthetic third')];
+  const originals = ids.map(id => oldGeneratedDraft(id));
+  const third = originals[2];
+  const metadata = { ...third.metadata, future_extension: { preserve: 'Synthetic unknown value' },
+    final_wishes: { ...third.metadata.final_wishes, future_setting: { preserve: true } } };
+  // Preserve an unknown extension without recording an authored content edit.
+  db.prepare('UPDATE legacy_contents SET payload_encrypted=? WHERE id=?')
+    .run(encrypt(JSON.stringify({ title: third.title, body_markdown: '', introduction: '', description: '', metadata })), third.id);
+  legacy.review(db, OWNER, third.id, { action: 'reschedule', next_review_at: '2099-05-06' });
+  const beneficiariesBefore = rows('beneficiaries'), mappingsBefore = rows('legacy_content_beneficiaries');
+  const reviewsBefore = rows('legacy_content_reviews'), eventsBefore = rows('legacy_release_events');
+  assert.equal(legacy.owned(db, OWNER, third.id).review_enabled, 1);
+
+  assert.deepEqual(backfillBeneficiaryFinalWishes(db), { created: 0, total: 3 });
+  assert.deepEqual(rows('beneficiaries'), beneficiariesBefore);
+  assert.deepEqual(rows('legacy_content_beneficiaries'), mappingsBefore);
+  assert.deepEqual(rows('legacy_content_reviews'), reviewsBefore, 'review history is retained');
+  assert.deepEqual(rows('legacy_release_events').slice(0, eventsBefore.length), eventsBefore);
+  assert.equal(rows('legacy_contents').length, 3);
+  for (const original of originals) {
+    const saved = legacy.toView(db, legacy.owned(db, OWNER, original.id));
+    const person = beneficiariesBefore.find(row => row.id === original.beneficiary_ids[0]);
+    assert.equal(saved.title, person.name.trim());
+    assert.equal(saved.metadata.final_wishes.content_type, '');
+    assert.equal(saved.metadata.final_wishes.category, 'Beneficiary Instructions');
+    assert.equal(saved.body_markdown, '');
+    assert.equal(saved.description, '');
+    assert.equal(saved.introduction, '');
+    assert.equal(saved.review_enabled, false);
+    assert.equal(saved.next_review_at, null);
+    assert.equal(saved.release_policy, 'owner_only');
+    assert.equal(saved.status, 'draft');
+    assert.equal(saved.revision, 2);
+    assert.deepEqual(saved.beneficiary_ids, original.beneficiary_ids);
+    assert.equal(saved.versions[0].payload.title, original.title, 'the original generated payload remains versioned');
+  }
+  const updatedThird = legacy.toView(db, legacy.owned(db, OWNER, third.id));
+  assert.deepEqual(updatedThird.metadata, { ...metadata, final_wishes: { ...metadata.final_wishes, content_type: '', category: 'Beneficiary Instructions' } });
+  const repaired = snapshot();
+  assert.deepEqual(backfillBeneficiaryFinalWishes(db), { created: 0, total: 3 });
+  assert.deepEqual(snapshot(), repaired, 'repeating startup leaves repaired ciphertext and history unchanged');
+});
+
+test('repair preserves authored or explicitly selected content even when its old generated title remains', () => {
+  const protectedDrafts = [];
+  function add(label, changes) {
+    const id = beneficiary('Synthetic protected ' + label);
+    const base = { final_wishes: { category: '', details: '', contact_person: '', contact_phone: '', notes: '' },
+      origin: { type: 'beneficiary', beneficiary_id: id } };
+    protectedDrafts.push(oldGeneratedDraft(id, typeof changes === 'function' ? changes(base) : changes));
+  }
+  add('title', { title: 'An owner-written title' });
+  add('body', { body_markdown: 'An owner-written message' });
+  add('introduction', { introduction: 'A personal introduction' });
+  add('description', { description: 'A personal description' });
+  add('wish category', metadata => ({ metadata: { ...metadata, final_wishes: { ...metadata.final_wishes, category: 'Owner chosen category' } } }));
+  add('wish details', metadata => ({ metadata: { ...metadata, final_wishes: { ...metadata.final_wishes, details: 'Written wishes' } } }));
+  add('type metadata', metadata => ({ metadata: { ...metadata, category: 'properties' } }));
+  add('explicit content choice', metadata => ({ metadata: { ...metadata, final_wishes: { ...metadata.final_wishes, content_type: 'instruction' } } }));
+  add('type', { type: 'letter' });
+  add('archive', { status: 'archived' });
+  add('ready', { status: 'ready' });
+  add('policy', { release_policy: 'manual_release' });
+  add('origin', metadata => ({ metadata: { ...metadata, origin: { type: 'manual' } } }));
+  add('wrong origin recipient', metadata => ({ metadata: { ...metadata, origin: { type: 'beneficiary', beneficiary_id: 999999 } } }));
+  const savedId = beneficiary('Synthetic explicitly saved');
+  const saved = oldGeneratedDraft(savedId);
+  legacy.save(db, OWNER, { title: saved.title }, saved.id);
+  protectedDrafts.push(saved);
+  const before = snapshot();
+  assert.deepEqual(backfillBeneficiaryFinalWishes(db), { created: 0, total: protectedDrafts.length });
+  assert.deepEqual(snapshot(), before, 'owner content, choices, custom titles and edited revisions are unchanged');
+});
+
+test('repair preserves generated drafts with attachments, vault links, acknowledgements or release history', () => {
+  const ids = ['attachment', 'link', 'acknowledgement', 'release'].map(label => beneficiary('Synthetic protected ' + label));
+  const drafts = ids.map(id => oldGeneratedDraft(id));
+  db.prepare(`INSERT INTO managed_documents(id,user_id,original_name_encrypted,display_name_encrypted,stored_filename,mime_type,size_bytes,sha256)
+    VALUES('synthetic-attachment',?,?,?,?,?,?,?)`)
+    .run(OWNER, encrypt('Synthetic.txt'), encrypt('Synthetic.txt'), 'synthetic.bin', 'text/plain', 1, 'a'.repeat(64));
+  db.prepare('INSERT INTO legacy_content_attachments(content_id,document_id) VALUES(?,?)').run(drafts[0].id, 'synthetic-attachment');
+  const entryId = Number(db.prepare('INSERT INTO vault_entries(user_id,section,title,fields_encrypted) VALUES(?,?,?,?)')
+    .run(OWNER, 'property', 'Synthetic linked record', encrypt('{}')).lastInsertRowid);
+  db.prepare('INSERT INTO legacy_content_links(content_id,entry_id) VALUES(?,?)').run(drafts[1].id, entryId);
+  db.prepare('INSERT INTO legacy_content_acknowledgements VALUES(?,?,?,?,?)').run(drafts[2].id, ids[2], 'synthetic-step', 1, '2026-01-01T00:00:00Z');
+  db.prepare("UPDATE legacy_content_beneficiaries SET revoked_at='2026-01-01T00:00:00Z' WHERE content_id=?").run(drafts[3].id);
+  const before = snapshot();
+  assert.deepEqual(backfillBeneficiaryFinalWishes(db), { created: 0, total: 4 });
+  assert.deepEqual(snapshot(), before);
+});
+
+for (const action of ['legacy_updated', 'legacy_created']) {
+  test(`normalization and missing-draft creation share one transaction when ${action} auditing fails`, () => {
+    const id = beneficiary('Synthetic old generated');
+    oldGeneratedDraft(id);
+    beneficiary('Synthetic missing draft');
+    const before = snapshot();
+    db.exec(`CREATE TRIGGER fixture_upgrade_audit_failure BEFORE INSERT ON audit_log WHEN NEW.action='${action}'
+      BEGIN SELECT RAISE(ABORT,'synthetic normalization failure'); END;`);
+    assert.throws(() => backfillBeneficiaryFinalWishes(db), /synthetic normalization failure/);
+    assert.deepEqual(snapshot(), before);
+    db.exec('DROP TRIGGER fixture_upgrade_audit_failure');
+    assert.deepEqual(backfillBeneficiaryFinalWishes(db), { created: 1, total: 2 });
+    assert.equal(rows('legacy_contents').length, 2);
+    assert.ok(legacy.list(db, OWNER).every(item => item.metadata.final_wishes.content_type === '' && item.metadata.final_wishes.category === 'Beneficiary Instructions'));
+  });
+}
 
 test('edited, archived and released assigned content remains byte-for-byte unchanged', () => {
   const editedId = beneficiary('Synthetic edited recipient');
@@ -161,7 +283,7 @@ test('same-name and cross-owner assignments never suppress another owner\'s miss
   assert.deepEqual(backfillBeneficiaryFinalWishes(db), { created: 1, total: 2 });
   const own = legacy.list(db, OWNER, { beneficiary_id: ownerId });
   assert.equal(own.length, 1);
-  assert.equal(own[0].title, 'Final Wishes for Synthetic shared name');
+  assert.equal(own[0].title, 'Synthetic shared name');
   assert.equal(own[0].metadata.origin.beneficiary_id, ownerId);
   assert.deepEqual(legacy.list(db, OTHER).map(row => row.id), [foreign.id]);
   assert.deepEqual(db.prepare('SELECT * FROM legacy_contents WHERE id=?').get(foreign.id), before.legacy_contents[0]);
