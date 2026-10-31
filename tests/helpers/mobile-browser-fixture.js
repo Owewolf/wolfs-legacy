@@ -15,7 +15,8 @@ const fixtureRecipients = [{id:1,name:'Alex Example',relationship:'Child',email:
 const fixtureEntries = [
  {id:11,title:'Memorial arrangements',section:'final_wishes',fields:{category:'Memorial Preferences',details:'Gather together and share the stories that made us smile.',contact_person:'Family contact',contact_phone:'000 000 0000'},notes:''},
  {id:12,title:'Example family home',section:'real_estate',fields:{address:'42 Example Road, Example Town',contact:'Family contact'},notes:'Keep these instructions with the other household records.'},
- {id:13,title:'Example savings account',section:'bank_accounts',fields:{bank_name:'Example Bank',account_type:'Savings',account_number:'EXAMPLE-0000-1111-2222',nominee:'Alex Example',online_url:'https://example.test/accounts/'+ 'long-path-segment'.repeat(8),balance_approx:'R 12 345.67'},notes:'Synthetic browser testing record.'}
+ {id:13,title:'Example savings account',section:'bank_accounts',fields:{bank_name:'Example Bank',account_type:'Savings',account_number:'EXAMPLE-0000-1111-2222',nominee:'Alex Example',online_url:'https://example.test/accounts/'+ 'long-path-segment'.repeat(8),balance_approx:'R 12 345.67'},notes:'Synthetic browser testing record.'},
+ {id:14,title:'Example estate adviser',section:'contacts',fields:{name:'Casey Example',role:'Lawyer',email:'casey@example.test',phone:'000 000 0014'},notes:''}
 ];
 const fixtureCommon = {body_markdown:'A personal message for my family.',introduction:'',description:'',release_policy:'owner_only',status:'draft',beneficiary_ids:[1],metadata:{},links:[],beneficiaries:[],attachments:[],versions:[],reviews:[],release_events:[],review_enabled:false,revision:1,created_at:'2026-10-20T10:00:00Z',updated_at:'2026-10-28T10:00:00Z'};
 const fixtureItems = [
@@ -38,7 +39,7 @@ const API = {
  async updateEntry(id,body){fixtureCalls.push({method:'updateEntry',id,body:fixtureCopy(body)});const entry=fixtureEntries.find(row=>String(row.id)===String(id));Object.assign(entry,body);return fixtureCopy(entry);},
  async getBeneficiaries(){return fixtureCopy(fixtureRecipients);},
  async exportVault(){fixtureCalls.push({method:'exportVault'});return {owner:fixtureCopy(fixtureOwner),entries:fixtureCopy(fixtureEntries),exported_at:'2026-10-29T10:00:00Z'};},
- async addBeneficiary(body){fixtureCalls.push({method:'addBeneficiary',body:fixtureCopy(body)});fixtureRecipients.push({...body,id:3,created_at:'2026-10-29T10:00:00Z'});return {accessToken:'synthetic-recipient-token'};},
+ async addBeneficiary(body){fixtureCalls.push({method:'addBeneficiary',body:fixtureCopy(body)});const beneficiary={...body,id:3,created_at:'2026-10-29T10:00:00Z'};fixtureRecipients.push(beneficiary);const finalWish=fixtureSync({...fixtureCopy(fixtureCommon),id:'beneficiary-3-wish',title:'Final wishes for '+body.name,type:'instruction',body_markdown:'',beneficiary_ids:[3]});fixtureItems.push(finalWish);return {id:3,accessToken:'synthetic-recipient-token',final_wish_id:finalWish.id};},
  async getSwitchStatus(){return {is_active:true,switch_triggered:false,is_overdue:false,last_check_in:'2026-10-28T10:00:00Z',next_check_in:'2026-11-28T10:00:00Z',grace_deadline:'2026-12-05T10:00:00Z',check_in_interval_days:30,grace_period_days:7};},
  async getAuditLog(){return {logs:[{created_at:'2026-10-28T10:00:00Z',action:'login',target_type:'owner',detail:'Synthetic owner session',ip_address:'192.0.2.1'}],page:1,pages:1};},
  async search(query){return fixtureCopy(fixtureEntries.filter(entry=>JSON.stringify(entry).toLowerCase().includes(decodeURIComponent(query).toLowerCase())));},
@@ -185,8 +186,16 @@ async function runMobileWorkflow() {
   editor.elements.wish_contact_phone.value = '000 000 0001';
   editor.elements.type.value = 'letter';
   editor.elements.type.dispatchEvent(new Event('change', { bubbles: true }));
-  editor.querySelector('[name="beneficiary_ids"][value="1"]').checked = true;
-  editor.querySelector('[name="link_ids"][value="12"]').checked = true;
+  const recipientSearch = editor.querySelector('#legacy-recipient-search');
+  check(!editor.querySelector('[name="link_ids"]') && !editor.querySelector('#legacy-recipient-results button'), 'mobile wish editor uses recipient search and has no related vault record selector');
+  recipientSearch.value = 'Alex'; recipientSearch.dispatchEvent(new Event('input', { bubbles: true }));
+  editor.querySelector('[data-add-recipient="beneficiary:1"]').click();
+  recipientSearch.value = 'Lawyer'; recipientSearch.dispatchEvent(new Event('input', { bubbles: true }));
+  const contactResult = editor.querySelector('[data-add-recipient="contact:14"]');
+  check(contactResult.textContent.includes('no vault access') && contactResult.getBoundingClientRect().height >= 44, 'mobile contact search labels separate access and has a touch target');
+  contactResult.click();
+  fits('Selected recipients');
+  check(editor.querySelector('[data-remove-recipient="beneficiary:1"]') && editor.querySelector('[data-remove-recipient="contact:14"]'), 'mobile picker keeps beneficiaries and contacts as selected recipients');
   check(editor.querySelector('#doc-file-input').accept.includes('.mp4'), 'mobile authoring retains native media and document selection');
   const selected = new DataTransfer(); selected.items.add(new File(['synthetic recording'], 'Example family recording with a long descriptive filename.wav', { type: 'audio/wav' }));
   editor.querySelector('#doc-file-input').files = selected.files;
@@ -201,7 +210,7 @@ async function runMobileWorkflow() {
   await until(() => document.querySelector('[data-legacy-action="ready"]'), 'saved personal letter');
   check(fixtureCalls.some(call => call.method === 'POST' && call.route === '/final-wishes/legacy' && call.body.release_policy === 'owner_only'), 'mobile authoring saves without releasing private content');
   const savedWish = fixtureCalls.find(call => call.method === 'POST' && call.route === '/final-wishes/legacy');
-  check(savedWish.body.type === 'letter' && savedWish.body.beneficiary_ids.includes(1) && savedWish.body.links.some(link => link.entry_id === 12) && savedWish.body.metadata.final_wishes.details === 'Share family stories at the memorial.' && savedWish.body.metadata.final_wishes.contact_person === 'Alex Example' && savedWish.body.metadata.final_wishes.contact_phone === '000 000 0001', 'mobile wishes retain arrangements, recipients and linked vault records in one protected record');
+  check(savedWish.body.type === 'letter' && savedWish.body.beneficiary_ids.includes(1) && savedWish.body.links.length === 0 && savedWish.body.metadata.final_wishes.contact_recipients[0].entry_id === 14 && savedWish.body.metadata.final_wishes.details === 'Share family stories at the memorial.' && savedWish.body.metadata.final_wishes.contact_person === 'Alex Example' && savedWish.body.metadata.final_wishes.contact_phone === '000 000 0001', 'mobile wishes retain arrangements, beneficiaries and named contacts in one protected record');
   check(!fixtureCalls.some(call => call.method === 'createEntry' && call.body.section === 'final_wishes') && location.hash === '#section/final_wishes/created-item', 'new mobile wishes avoid the ordinary vault create API and open their protected detail');
   await route('beneficiaries', '#add-ben-btn');
   document.querySelector('#add-ben-btn').click();
@@ -225,7 +234,16 @@ async function runMobileWorkflow() {
   check(toastBounds.top >= 40 && toastBounds.bottom <= 401, 'feedback remains within a simulated reduced visual viewport');
   viewportToast.remove();
   rootStyle.setProperty('--mobile-viewport-height', previousHeight); rootStyle.setProperty('--mobile-viewport-top', previousTop);
-  document.querySelector('#close-modal').click();
+  const beneficiaryForm = document.querySelector('#add-ben-form');
+  check(!beneficiaryForm.querySelector('[name="beneficiary_ids"],#legacy-recipient-search') && beneficiaryForm.textContent.includes('private Final Wish draft'), 'Add Beneficiary explains automatic wish creation without a recipient checklist');
+  beneficiaryForm.elements.name.value = 'Taylor Example';
+  beneficiaryForm.elements.email.value = 'taylor@example.test';
+  beneficiaryForm.elements.relationship.value = 'Trusted Friend';
+  beneficiaryForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await until(() => !document.querySelector('#add-ben-form') && document.querySelector('[data-legacy-beneficiary="3"]'), 'beneficiary added with a private wish');
+  const beneficiaryWish = fixtureItems.find(item => item.id === 'beneficiary-3-wish');
+  check(beneficiaryWish && beneficiaryWish.status === 'draft' && beneficiaryWish.release_policy === 'owner_only' && beneficiaryWish.beneficiary_ids.length === 1 && beneficiaryWish.beneficiary_ids[0] === 3, 'adding a beneficiary creates one private wish assigned to that beneficiary');
+  check([...document.querySelectorAll('.toast')].some(toast => toast.textContent.includes('private Final Wish draft created')), 'beneficiary success feedback confirms the automatic wish');
   await route('homebank', '.hb-account');
   document.querySelector('.hb-account').open = true; fits('Expanded HomeBank account');
   check(document.querySelector('.hb-table-wrap').scrollWidth >= document.querySelector('.hb-table-wrap').clientWidth, 'HomeBank transactions keep a local scroll container');

@@ -83,6 +83,37 @@ function validateMetadata(value) {
   }
   return out;
 }
+function validateContactRecipients(db,userId,metadata,previous={}) {
+  const wishes=metadata.final_wishes;
+  if(!wishes || typeof wishes!=='object' || Array.isArray(wishes) || wishes.contact_recipients===undefined) return;
+  const recipients=wishes.contact_recipients;
+  if(!Array.isArray(recipients)||recipients.length>200) throw error('Invalid contact recipient selection');
+  const prior=Array.isArray(previous?.final_wishes?.contact_recipients)?previous.final_wishes.contact_recipients:[];
+  const used=new Set();
+  wishes.contact_recipients=recipients.map(recipient=>{
+    if(!recipient||typeof recipient!=='object'||Array.isArray(recipient)||!Number.isSafeInteger(recipient.entry_id)||recipient.entry_id<1||used.has(recipient.entry_id))
+      throw error('Invalid contact recipient selection');
+    const id=recipient.entry_id;
+    used.add(id);
+    const entry=store.ownedEntry(db,userId,id);
+    let name;
+    if(entry&&entry.section==='contacts') {
+      let fields;
+      try {fields=JSON.parse(decrypt(entry.fields_encrypted));} catch {throw error('Contact could not be decrypted',500);}
+      name=fields?.name||entry.title;
+    } else {
+      // A saved wish retains the name it originally addressed even after the
+      // contact disappears. The request cannot invent or rename a stale ID.
+      const snapshot=prior.find(item=>item?.entry_id===id);
+      if(!snapshot) throw error('Contact recipient not found',404);
+      name=snapshot.name;
+    }
+    name=text(name,'contact recipient name',10000).trim();
+    if(!name) throw error('Contact recipient name is required');
+    return {entry_id:id,name};
+  });
+  if(JSON.stringify(metadata).length>30000) throw error('Invalid metadata');
+}
 function reviewState(row,at=now()) {
   if(row.status==='archived') return 'archived';
   if(!row.review_enabled||!row.next_review_at) return 'current';
@@ -144,6 +175,7 @@ function save(db,userId,input,id=null) {
     const data={title:input.title??old.title??'',body_markdown:input.body_markdown??old.body_markdown??'',
       introduction:input.introduction??old.introduction??'',description:input.description??old.description??'',
       metadata:validateMetadata(input.metadata??old.metadata??{})};
+    validateContactRecipients(db,userId,data.metadata,old.metadata);
     text(data.title,'title',500);if(!data.title.trim()) throw error('Title is required');
     if(data.metadata.related_legacy_content_id) {
       if(typeof data.metadata.related_legacy_content_id!=='string'||!db.prepare('SELECT 1 FROM legacy_contents WHERE id=? AND user_id=?').get(data.metadata.related_legacy_content_id,userId)) throw error('Related personal content not found',404);

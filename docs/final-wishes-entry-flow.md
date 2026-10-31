@@ -40,9 +40,66 @@ Use the Final Wishes page's search for protected wish content. General vault
 search and ordinary entry JSON/print exports retain their existing scope and do
 not include protected content. Recipient-specific wishes and their files require
 the [complete recovery snapshot](legacy-recovery.md); Settings names this scope
-explicitly. No storage, backend, permission or release migration was introduced.
+explicitly. The original combined-entry change introduced no storage, backend,
+permission or release migration.
 
-## Verification
+## Beneficiary drafts and searchable recipients
+
+The current change creates a private Final Wish draft automatically when an owner
+adds a beneficiary. The draft is titled **Final Wishes for {beneficiary name}**,
+starts with empty wish details and content, and has that beneficiary selected.
+It uses the protected content store with `draft` status and the `owner_only`
+release policy. Creating it grants no access, releases no content and sends no
+message. Existing beneficiaries are not backfilled.
+
+The beneficiary, encrypted wish, recipient mapping and creation audits are saved
+in one transaction. A failure rolls the whole addition back, so retrying a failed
+addition does not leave an orphaned beneficiary or wish. The existing beneficiary
+response is retained with an added `final_wish_id` and `final_wish.id`.
+
+The Final Wishes form now uses **Find a recipient** in place of the full
+beneficiary checklist. Search matches names, roles or relationships, email
+addresses and phone numbers across the owner's beneficiaries and saved contacts.
+Selected people appear as removable entries. Keyboard navigation, live result
+announcements and touch controls are supported.
+
+Beneficiaries remain the authorised recipients for the existing release flow.
+Contacts are named on the wish and explicitly labelled as having no vault access;
+selecting a contact creates no beneficiary, token or access permission. Contact
+names and IDs are stored within encrypted
+`metadata.final_wishes.contact_recipients`. The server validates contact ownership
+and type and uses the saved contact's name. Existing named-contact snapshots
+remain when a contact is later removed, until the owner removes that recipient
+from the wish.
+
+**Related vault records** is removed from the Save Final Wish form. New wishes
+start without these links; editing an existing wish preserves its saved links
+and other unknown metadata. Existing linked-record displays and authorised
+recipient access to those records retain their behaviour. No schema or release
+policy migration is required.
+
+### Current verification
+
+- Full suite: 250 JavaScript and 7 Python tests passed.
+- Firefox: 51 desktop checks passed, plus 66 workflow checks at each of 390px
+  and 820px.
+- Chromium: 30 screen captures at 390/820/1440px, plus 67 workflow checks
+  at each mobile/tablet width. WebKitGTK: ten captures and 66 workflow checks
+  at 390px. Recipient search and selection fit the phone and desktop; remove
+  buttons meet 44px touch targets.
+- Integration checks cover automatic draft creation, encryption, owner isolation,
+  private access, validation and rollback when wish creation or either creation
+  audit fails. Contact checks cover owner/type validation, canonical names,
+  named-only access and retention of existing snapshots.
+- Browser checks cover searching and choosing contacts and beneficiaries,
+  keyboard navigation, removing recipients, existing recipient shortcuts, and
+  preserving saved links while hiding the related-record selector.
+
+These checks use synthetic local fixtures. This section records the current
+implementation and does not record a live deployment. The deployments below
+describe the earlier combined-entry and category-button changes.
+
+## Original combined-entry verification
 
 - Full suite: 239 JavaScript and 7 Python tests passed, with no failures/skips.
 - Firefox: combined creation, recipient selection, wish metadata, existing

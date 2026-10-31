@@ -62,6 +62,10 @@ async function existingVault(token = TOKEN_A) {
   return request('/api/beneficiaries/access', { method: 'POST', body: { accessToken: token }, beneficiary: null });
 }
 function grant(id) { db.prepare('UPDATE beneficiaries SET access_granted=1,access_granted_at=? WHERE id=?').run(new Date().toISOString(), id); }
+function savedContact({ owner=OWNER, title='Synthetic contact', fields={ name:'Synthetic contact name' } }={}) {
+  return Number(db.prepare('INSERT INTO vault_entries(user_id,section,title,fields_encrypted) VALUES(?,?,?,?)')
+    .run(owner,'contacts',title,encrypt(JSON.stringify(fields))).lastInsertRowid);
+}
 function managedDocument(bytes = Buffer.from('PRIVATE_MANAGED_DOCUMENT_BYTES')) {
   const store = require('../server/document-store');
   const id = crypto.randomUUID();
@@ -177,6 +181,95 @@ test('unified recipient-specific wishes encrypt their details and stay outside g
     assert.equal(ordinary.entries.length, 1);
     assert.ok(!JSON.stringify(ordinary).includes('UNIFIED_PRIVATE_WISH_'), 'general vault grants do not disclose protected wishes');
   }
+});
+
+test('named contact recipients stay private and do not create beneficiaries, tokens or access grants', async () => {
+  const secret='ENCRYPTED_NAMED_CONTACT_RECIPIENT_8319';
+  const entryId=savedContact({fields:{name:secret,email:'contact-private@example.test',phone:'PRIVATE_CONTACT_PHONE'}});
+  const before=db.prepare('SELECT * FROM beneficiaries ORDER BY id').all();
+  const item=await create({
+    release_policy:'manual_release',metadata:{final_wishes:{contact_recipients:[{entry_id:entryId,name:'Forged name',email:'ignored@example.test'}]}}
+  });
+  assert.deepEqual(item.metadata.final_wishes.contact_recipients,[{entry_id:entryId,name:secret}]);
+  assert.deepEqual(item.beneficiary_ids,[]);
+  assert.deepEqual(db.prepare('SELECT * FROM beneficiaries ORDER BY id').all(),before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM legacy_content_beneficiaries WHERE content_id=?').get(item.id).n,0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM legacy_release_events WHERE content_id=? AND event_type='released'").get(item.id).n,0);
+  assert.equal(db.serialize().includes(Buffer.from(secret)),false,'contact names stay in encrypted contact and wish payloads');
+  assert.ok(!JSON.stringify(item.metadata).includes('contact-private@example.test'));
+  assert.ok(!JSON.stringify(item.metadata).includes('PRIVATE_CONTACT_PHONE'));
+  grant(a); grant(b);
+  denied(await beneficiaryList(TOKEN_A,'/'+item.id));
+  denied(await beneficiaryList(TOKEN_B,'/'+item.id));
+  successful(await request(`/api/final-wishes/legacy/${item.id}`,{method:'PATCH',body:{status:'ready'}}));
+  denied(await request(`/api/final-wishes/legacy/${item.id}/release`,{method:'POST',body:{confirm:true}}));
+  denied(await release(item,[a]));
+  assert.deepEqual(successful(await beneficiaryList()),[]);
+  denied(await request(`/api/final-wishes/legacy/${item.id}`,{owner:OTHER}));
+});
+
+test('contact names come from owned saved contacts while beneficiary access remains explicitly assigned', async () => {
+  const namedId=savedContact({title:'Fallback title ignored',fields:{name:'Canonical saved name',email:'private@example.test'}});
+  const fallbackId=savedContact({title:'Canonical title fallback',fields:{email:'private-fallback@example.test'}});
+  const item=await create({status:'ready',release_policy:'manual_release',beneficiary_ids:[a],
+    metadata:{final_wishes:{category:'Other',contact_recipients:[{entry_id:namedId,name:'Forged canonical name'},{entry_id:fallbackId,name:'Forged fallback name'}]},future_metadata:{retained:true}}});
+  const expected=[{entry_id:namedId,name:'Canonical saved name'},{entry_id:fallbackId,name:'Canonical title fallback'}];
+  assert.deepEqual(item.metadata.final_wishes.contact_recipients,expected);
+  assert.deepEqual(item.metadata.future_metadata,{retained:true});
+  assert.deepEqual(item.beneficiary_ids,[a]);
+  grant(a); grant(b);
+  successful(await release(item));
+  assert.deepEqual(successful(await beneficiaryList(TOKEN_A,'/'+item.id)).metadata.final_wishes.contact_recipients,expected);
+  denied(await beneficiaryList(TOKEN_B,'/'+item.id));
+  assert.equal((await request('/api/final-wishes/legacy',{method:'POST',body:{type:'letter',title:'Foreign contact wish',
+    metadata:{final_wishes:{contact_recipients:[{entry_id:namedId,name:'Stolen name'}]}}},owner:OTHER})).status,404);
+});
+
+test('contact recipient selections reject foreign contacts, other vault sections and malformed or duplicate IDs', async () => {
+  const contactId=savedContact();
+  const foreignContactId=savedContact({owner:OTHER});
+  const invalidSelections=[null,{},'contact',42,[null],[[]],[{}],[{entry_id:String(contactId)}],[{entry_id:0}],
+    [{entry_id:-1}],[{entry_id:1.5}],[{entry_id:Number.MAX_SAFE_INTEGER+1}],
+    [{entry_id:contactId},{entry_id:contactId}],Array.from({length:201},()=>({entry_id:contactId}))];
+  for(const contact_recipients of invalidSelections) {
+    assert.equal((await request('/api/final-wishes/legacy',{method:'POST',body:{type:'letter',title:'Invalid contact selection',
+      metadata:{final_wishes:{contact_recipients}}}})).status,400,JSON.stringify(contact_recipients));
+  }
+  for(const entry_id of [foreignContactId,foreignEntry,oldEntry,999999]) {
+    assert.equal((await request('/api/final-wishes/legacy',{method:'POST',body:{type:'letter',title:'Unavailable contact selection',
+      metadata:{final_wishes:{contact_recipients:[{entry_id,name:'Forged snapshot'}]}}}})).status,404,String(entry_id));
+  }
+  const oversized=Array.from({length:4},()=>({entry_id:savedContact({fields:{name:'N'.repeat(8000)}})}));
+  assert.equal((await request('/api/final-wishes/legacy',{method:'POST',body:{type:'letter',title:'Oversized canonical contact names',
+    metadata:{final_wishes:{contact_recipients:oversized}}}})).status,400,'canonical names respect the existing encrypted metadata limit');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM legacy_contents').get().n,0,'invalid selections never create partial wishes');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM beneficiaries').get().n,2);
+});
+
+test('deleted contact names survive wish edits and status changes using the prior encrypted snapshot', async () => {
+  const entryId=savedContact({fields:{name:'Preserved named contact'}});
+  const item=await create({metadata:{final_wishes:{contact_recipients:[{entry_id:entryId,name:'Submitted name'}],details:'Existing details'},future_metadata:{keep:'yes'}}});
+  successful(await request('/api/vault/entries/'+entryId,{method:'DELETE'}));
+  const ready=successful(await request(`/api/final-wishes/legacy/${item.id}`,{method:'PATCH',body:{status:'ready'}}));
+  assert.deepEqual(ready.metadata,item.metadata);
+  const edited=successful(await request(`/api/final-wishes/legacy/${item.id}`,{method:'PATCH',body:{title:'Updated private wish',metadata:{
+    ...ready.metadata,final_wishes:{...ready.metadata.final_wishes,contact_recipients:[{entry_id:entryId,name:'Forged stale name',phone:'Never copied'}]}
+  }}}));
+  assert.deepEqual(edited.metadata,item.metadata);
+  assert.ok(edited.versions.some(version=>version.payload.metadata.final_wishes.contact_recipients[0].name==='Preserved named contact'));
+  assert.equal((await request('/api/final-wishes/legacy',{method:'POST',body:{type:'letter',title:'New stale contact wish',
+    metadata:{final_wishes:{contact_recipients:[{entry_id:entryId,name:'Preserved named contact'}]}}}})).status,404);
+  const unrelated=savedContact({fields:{name:'Never selected'}});
+  successful(await request('/api/vault/entries/'+unrelated,{method:'DELETE'}));
+  assert.equal((await request(`/api/final-wishes/legacy/${item.id}`,{method:'PATCH',body:{metadata:{final_wishes:{
+    contact_recipients:[{entry_id:entryId,name:'Existing'},{entry_id:unrelated,name:'Forged addition'}]
+  }}}})).status,404);
+  assert.deepEqual(successful(await request(`/api/final-wishes/legacy/${item.id}`)).metadata,item.metadata);
+  const removed=successful(await request(`/api/final-wishes/legacy/${item.id}`,{method:'PATCH',body:{metadata:{...item.metadata,final_wishes:{...item.metadata.final_wishes,contact_recipients:[]}}}}));
+  assert.deepEqual(removed.metadata.final_wishes.contact_recipients,[]);
+  assert.deepEqual(removed.metadata.future_metadata,{keep:'yes'});
+  assert.equal((await request(`/api/final-wishes/legacy/${item.id}`,{method:'PATCH',body:{metadata:item.metadata}})).status,404,
+    'removing a stale recipient prevents it from being reintroduced from historical versions');
 });
 
 test('manual releases require readiness, owner confirmation, explicit recipients and current general access', async () => {

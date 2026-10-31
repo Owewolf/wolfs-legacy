@@ -86,11 +86,12 @@ const Legacy = (() => {
       try{await openAttachment(item.id,attachment,control.dataset.mode,token);}catch(error){showError(error.message);}finally{control.disabled=false;}
     }));
   }
+  const contactRecipients = item => Array.isArray(item.metadata?.final_wishes?.contact_recipients) ? item.metadata.final_wishes.contact_recipients.filter(recipient=>recipient && Number.isSafeInteger(Number(recipient.entry_id)) && Number(recipient.entry_id)>0 && typeof recipient.name==='string') : [];
   function metadataView(item) {
     const metadata = item.metadata || {};
     const wishes = metadata.final_wishes || {};
     const fields = [
-      ['Wish category',wishes.category],['Details',wishes.details],['Contact person',wishes.contact_person],['Contact phone',wishes.contact_phone],['Notes',wishes.notes],
+      ['Named contacts',contactRecipients(item).map(recipient=>recipient.name).join(', ')],['Wish category',wishes.category],['Details',wishes.details],['Contact person',wishes.contact_person],['Contact phone',wishes.contact_phone],['Notes',wishes.notes],
       ['Date',metadata.event_date ? `${metadata.date_precision==='approximate'?'Approximately ':''}${metadata.event_date}` : item.type==='family_history'?'Unknown':null],
       ['Recorded',metadata.recorded_at],['People',textList(metadata.people)],['Relationship',metadata.relationship],['Place',metadata.place],
       ['Tags',textList(metadata.tags)],['Category',metadata.category],['Priority',metadata.priority],['Responsible people',textList(metadata.responsible_people)],['Helpful contacts',textList(metadata.helpful_contacts)],
@@ -107,8 +108,8 @@ const Legacy = (() => {
     return `${item.introduction?`<p class="legacy-introduction">${escape(item.introduction)}</p>`:''}${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}${metadataView(item)}<div class="legacy-markdown">${html || '<p>No written message.</p>'}</div>${checklistView(item,acknowledge)}${attachmentCards(item)}`;
   }
   function ownerRecipientSummary(item) {
-    const recipients=item.beneficiaries || [];
-    return `<section class="legacy-subsection"><h3>Recipients and release</h3><p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)}</p>${recipients.length?`<ul class="legacy-recipients">${recipients.map(recipient=>`<li><strong>${escape(recipient.name || 'Beneficiary')}</strong> ${recipient.revoked_at?badge('revoked','danger'):recipient.released_at?badge('released'):badge('private')}${recipient.released_at?`<small>Released ${escape(date(recipient.released_at,true))}${recipient.release_scope?` · ${escape(recipient.release_scope.replace(/_/g,' '))}`:''}</small>`:''}${recipient.revoked_at?`<small>Revoked ${escape(date(recipient.revoked_at,true))}</small>`:''}</li>`).join('')}</ul>`:'<p>No recipients selected.</p>'}</section>`;
+    const recipients=item.beneficiaries || [],contacts=contactRecipients(item);
+    return `<section class="legacy-subsection"><h3>Recipients and release</h3><p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)}</p>${recipients.length || contacts.length?`<ul class="legacy-recipients">${recipients.map(recipient=>`<li><strong>${escape(recipient.name || 'Beneficiary')}</strong> ${recipient.revoked_at?badge('revoked','danger'):recipient.released_at?badge('released'):badge('private')}${recipient.released_at?`<small>Released ${escape(date(recipient.released_at,true))}${recipient.release_scope?` · ${escape(recipient.release_scope.replace(/_/g,' '))}`:''}</small>`:''}${recipient.revoked_at?`<small>Revoked ${escape(date(recipient.revoked_at,true))}</small>`:''}</li>`).join('')}${contacts.map(recipient=>`<li><strong>${escape(recipient.name)}</strong> <span class="legacy-recipient-kind">Contact</span><small>Named on this wish; no vault access.</small></li>`).join('')}</ul>`:'<p>No recipients selected.</p>'}</section>`;
   }
 
   async function mountOwner(root,finalEntries=[],options={}) {
@@ -131,7 +132,7 @@ const Legacy = (() => {
     }
     function card(item,timeline=item.type==='family_history') {
       const metadata=item.metadata || {};
-      const recipients=(item.beneficiaries || []).map(recipient=>recipient.name).filter(Boolean);
+      const recipients=[...(item.beneficiaries || []).map(recipient=>recipient.name),...contactRecipients(item).map(recipient=>recipient.name)].filter(Boolean);
       const timelineDate=timeline?`<p class="legacy-timeline-date">${escape(metadata.event_date?`${metadata.date_precision==='approximate'?'Approx. ':''}${metadata.event_date}`:'Unknown date')}</p>`:'';
       return RecordCards.render({
         title:item.title,section:'final_wishes',category:types[item.type] || item.type,iconName:recordIcons[item.type] || 'file-earmark-text',
@@ -196,7 +197,7 @@ const Legacy = (() => {
     }
     function metadataFields(item) {
       const metadata=item.metadata || {};
-      return `<div class="legacy-form-grid">${item.type==='family_history'?field('event_date','Event date',metadata.event_date,{placeholder:'YYYY, YYYY-MM or YYYY-MM-DD; blank if unknown'})+`<div class="form-group"><label for="legacy-date_precision">Date certainty</label><select id="legacy-date_precision" name="date_precision">${selectOptions({unknown:'Unknown',exact:'Exact',approximate:'Approximate'},metadata.date_precision || 'unknown')}</select></div>`+field('relationship','Family relationship',metadata.relationship)+field('place','Place',metadata.place):''}${item.type==='recording'?field('recorded_at','Recording date (optional)',dateInput(metadata.recorded_at),{type:'date'}):''}${['family_history','recording'].includes(item.type)?field('people','People (separate with commas)',textList(metadata.people))+field('tags','Tags (separate with commas)',textList(metadata.tags)):''}${item.type==='family_history'?field('category','Archive category',metadata.category,{placeholder:'Story, event, photograph, certificate…'}):''}${['letter','recording'].includes(item.type)?`<div class="form-group"><label for="legacy-related_legacy_content_id">${item.type==='letter'?'Related recording':'Related letter'} (optional)</label><select id="legacy-related_legacy_content_id" name="related_legacy_content_id"><option value="">None — standalone</option>${items.filter(related=>related.type===(item.type==='letter'?'recording':'letter') && related.id!==item.id).map(related=>`<option value="${escape(related.id)}" ${metadata.related_legacy_content_id===related.id?'selected':''}>${escape(related.title)}</option>`).join('')}</select></div>`:''}${item.type==='instruction'?`<div class="form-group"><label for="legacy-category">Category</label><select id="legacy-category" name="category">${selectOptions({properties:'Properties',maintenance:'Maintenance',vehicles:'Vehicles',equipment:'Equipment',pets:'Pets',household_services:'Household services',subscriptions:'Subscriptions',digital_administration:'Digital administration',other:'Other'},metadata.category || 'other')}</select></div><div class="form-group"><label for="legacy-priority">Priority</label><select id="legacy-priority" name="priority">${selectOptions({low:'Low',normal:'Normal',high:'High',urgent:'Urgent'},metadata.priority || 'normal')}</select></div>`+field('responsible_people','Responsible people (separate with commas)',textList(metadata.responsible_people))+field('helpful_contacts','Helpful contacts (separate with commas)',textList(metadata.helpful_contacts)):''}</div>${item.type==='instruction'?field('checklist','Checklist — one step per line',(metadata.checklist || []).map(step=>step.text).join('\n'),{textarea:true,rows:6})+'<p class="legacy-help">Keep passwords, alarm codes and recovery keys in the protected vault records linked below.</p>':''}`;
+      return `<div class="legacy-form-grid">${item.type==='family_history'?field('event_date','Event date',metadata.event_date,{placeholder:'YYYY, YYYY-MM or YYYY-MM-DD; blank if unknown'})+`<div class="form-group"><label for="legacy-date_precision">Date certainty</label><select id="legacy-date_precision" name="date_precision">${selectOptions({unknown:'Unknown',exact:'Exact',approximate:'Approximate'},metadata.date_precision || 'unknown')}</select></div>`+field('relationship','Family relationship',metadata.relationship)+field('place','Place',metadata.place):''}${item.type==='recording'?field('recorded_at','Recording date (optional)',dateInput(metadata.recorded_at),{type:'date'}):''}${['family_history','recording'].includes(item.type)?field('people','People (separate with commas)',textList(metadata.people))+field('tags','Tags (separate with commas)',textList(metadata.tags)):''}${item.type==='family_history'?field('category','Archive category',metadata.category,{placeholder:'Story, event, photograph, certificate…'}):''}${['letter','recording'].includes(item.type)?`<div class="form-group"><label for="legacy-related_legacy_content_id">${item.type==='letter'?'Related recording':'Related letter'} (optional)</label><select id="legacy-related_legacy_content_id" name="related_legacy_content_id"><option value="">None — standalone</option>${items.filter(related=>related.type===(item.type==='letter'?'recording':'letter') && related.id!==item.id).map(related=>`<option value="${escape(related.id)}" ${metadata.related_legacy_content_id===related.id?'selected':''}>${escape(related.title)}</option>`).join('')}</select></div>`:''}${item.type==='instruction'?`<div class="form-group"><label for="legacy-category">Category</label><select id="legacy-category" name="category">${selectOptions({properties:'Properties',maintenance:'Maintenance',vehicles:'Vehicles',equipment:'Equipment',pets:'Pets',household_services:'Household services',subscriptions:'Subscriptions',digital_administration:'Digital administration',other:'Other'},metadata.category || 'other')}</select></div><div class="form-group"><label for="legacy-priority">Priority</label><select id="legacy-priority" name="priority">${selectOptions({low:'Low',normal:'Normal',high:'High',urgent:'Urgent'},metadata.priority || 'normal')}</select></div>`+field('responsible_people','Responsible people (separate with commas)',textList(metadata.responsible_people))+field('helpful_contacts','Helpful contacts (separate with commas)',textList(metadata.helpful_contacts)):''}</div>${item.type==='instruction'?field('checklist','Checklist — one step per line',(metadata.checklist || []).map(step=>step.text).join('\n'),{textarea:true,rows:6})+'<p class="legacy-help">Keep passwords, alarm codes and recovery keys in their protected vault records.</p>':''}`;
     }
     function wishFields(item) {
       const wishes=item.metadata?.final_wishes || {};
@@ -211,6 +212,54 @@ const Legacy = (() => {
         ${field('wish_notes','Notes',wishes.notes,{textarea:true,rows:3})}
       </fieldset>`;
     }
+    function mountRecipientPicker(item) {
+      const search=root.querySelector('#legacy-recipient-search'),results=root.querySelector('#legacy-recipient-results'),selected=root.querySelector('[data-selected-recipients]'),status=root.querySelector('#legacy-recipient-status');
+      const candidates=[
+        ...beneficiaries.map(row=>({key:'beneficiary:'+row.id,id:Number(row.id),name:row.name || 'Beneficiary',kind:'Beneficiary',detail:row.relationship || '',search:[row.name,row.relationship,row.email,row.phone].filter(Boolean).join(' ')})),
+        ...vaultEntries.filter(entry=>entry.section==='contacts').map(entry=>({key:'contact:'+entry.id,id:Number(entry.id),name:entry.fields?.name || entry.title || 'Contact',kind:'Contact',detail:entry.fields?.role || '',search:[entry.title,...Object.values(entry.fields || {})].filter(value=>typeof value==='string').join(' ')}))
+      ];
+      const chosen=new Map();
+      for(const id of item.beneficiary_ids || (item.beneficiaries || []).map(recipient=>recipient.beneficiary_id)){
+        const recipient=candidates.find(row=>row.key==='beneficiary:'+id);
+        if(recipient)chosen.set(recipient.key,recipient);
+      }
+      for(const contact of contactRecipients(item)){
+        const key='contact:'+contact.entry_id,existing=candidates.find(row=>row.key===key);
+        chosen.set(key,existing || {key,id:Number(contact.entry_id),name:contact.name,kind:'Contact',detail:'Saved contact'});
+      }
+      const labels=recipient=>`<span class="legacy-recipient-name">${escape(recipient.name)}</span><span class="legacy-recipient-kind">${recipient.kind}</span>${recipient.detail?`<small>${escape(recipient.detail)}</small>`:''}${recipient.kind==='Contact'?'<small>Named only · no vault access</small>':''}`;
+      function drawSelected(){
+        selected.innerHTML=[...chosen.values()].map(recipient=>`<li class="legacy-recipient-chip">${recipient.kind==='Beneficiary'?`<input type="hidden" name="beneficiary_ids" value="${escape(recipient.id)}">`:''}<span>${labels(recipient)}</span><button type="button" class="btn btn-outline" data-remove-recipient="${escape(recipient.key)}" aria-label="Remove ${escape(recipient.name)}">×</button></li>`).join('');
+        selected.hidden=!chosen.size;
+        selected.querySelectorAll('[data-remove-recipient]').forEach(control=>control.onclick=()=>{chosen.delete(control.dataset.removeRecipient);drawSelected();drawResults();search.focus();});
+      }
+      function drawResults(){
+        const query=search.value.trim().toLocaleLowerCase();
+        const matches=query?candidates.filter(recipient=>!chosen.has(recipient.key) && recipient.search.toLocaleLowerCase().includes(query)):[];
+        results.innerHTML=matches.map(recipient=>`<li><button type="button" class="legacy-recipient-result" data-add-recipient="${escape(recipient.key)}">${labels(recipient)}</button></li>`).join('');
+        results.hidden=!matches.length;
+        status.textContent=query?(matches.length?`${matches.length} matching ${matches.length===1?'recipient':'recipients'}. Choose a person to add them.`:'No matching contacts or beneficiaries.'):chosen.size?`${chosen.size} ${chosen.size===1?'recipient selected':'recipients selected'}. Search to add another person.`:'Search to choose a contact or beneficiary.';
+        results.querySelectorAll('[data-add-recipient]').forEach(control=>control.onclick=()=>{
+          const recipient=candidates.find(row=>row.key===control.dataset.addRecipient);
+          if(!recipient)return;
+          chosen.set(recipient.key,recipient);search.value='';drawSelected();drawResults();search.focus();
+        });
+      }
+      search.oninput=drawResults;
+      search.onkeydown=event=>{
+        if(event.key==='Enter'){event.preventDefault();results.querySelector('button')?.click();}
+        if(event.key==='ArrowDown'){const first=results.querySelector('button');if(first){event.preventDefault();first.focus();}}
+        if(event.key==='Escape'){event.preventDefault();event.stopPropagation();search.value='';drawResults();}
+      };
+      results.onkeydown=event=>{
+        const controls=[...results.querySelectorAll('button')],index=controls.indexOf(document.activeElement);
+        if(event.key==='Escape'){event.preventDefault();event.stopPropagation();search.value='';drawResults();search.focus();}
+        if(event.key==='ArrowDown'){event.preventDefault();controls[Math.min(index+1,controls.length-1)]?.focus();}
+        if(event.key==='ArrowUp'){event.preventDefault();if(index<=0)search.focus();else controls[index-1].focus();}
+      };
+      drawSelected();drawResults();
+      return ()=>[...chosen.values()].filter(recipient=>recipient.kind==='Contact').map(recipient=>({entry_id:recipient.id,name:recipient.name}));
+    }
     async function showEditor(item={},reviewAfterSave=false) {
       const current=++sequence;
       item={type:'instruction',status:'draft',release_policy:'owner_only',metadata:{},...item};
@@ -222,7 +271,11 @@ const Legacy = (() => {
         ${reviewAfterSave?'<div class="alert alert-info">Saving this update also records the information review.</div>':''}
         ${wishFields(item)}
         <fieldset class="legacy-fieldset"><legend>Recipients for this wish</legend>
-          ${beneficiaries.length?beneficiaries.map(beneficiary=>`<label class="legacy-check"><input type="checkbox" name="beneficiary_ids" value="${escape(beneficiary.id)}" ${(item.beneficiary_ids || []).map(String).includes(String(beneficiary.id))?'checked':''}><span>${escape(beneficiary.name)}${beneficiary.relationship?` · ${escape(beneficiary.relationship)}`:''}</span></label>`).join(''):'<p>Add recipients in <a href="#beneficiaries">Beneficiaries</a>.</p>'}
+          <p id="legacy-recipient-help" class="legacy-help">Search your beneficiaries and saved contacts. Contacts are named on the wish; access remains separate.</p>
+          <ul class="legacy-recipient-selection" data-selected-recipients aria-label="Selected recipients" hidden></ul>
+          <div class="form-group"><label for="legacy-recipient-search">Find a recipient</label><input id="legacy-recipient-search" type="search" placeholder="Search name, role, email or phone" autocomplete="off" aria-describedby="legacy-recipient-help legacy-recipient-status" aria-controls="legacy-recipient-results"></div>
+          <p id="legacy-recipient-status" class="legacy-help" role="status" aria-live="polite"></p>
+          <ul id="legacy-recipient-results" class="legacy-recipient-results" aria-label="Matching recipients" hidden></ul>
         </fieldset>
         <fieldset class="legacy-fieldset"><legend>Content for this wish</legend>
           <div class="form-group"><label for="legacy-type">Content type</label><select id="legacy-type" name="type">${selectOptions(types,item.type)}</select></div>
@@ -234,10 +287,10 @@ const Legacy = (() => {
         </fieldset>
         <div class="legacy-form-grid"><div class="form-group"><label for="legacy-status">Status</label><select id="legacy-status" name="status">${selectOptions({draft:'Draft',ready:'Ready',archived:'Archived'},item.status==='released'?'draft':item.status)}</select></div><div class="form-group"><label for="legacy-release_policy">Release policy</label><select id="legacy-release_policy" name="release_policy">${selectOptions(policies,item.release_policy)}</select></div></div>
         <p class="legacy-help">Drafts stay private. A ready item becomes available only after its release condition occurs for an authorised, selected recipient.</p>
-        <fieldset class="legacy-fieldset"><legend>Related vault records</legend><p class="legacy-help">Link properties, vehicles, contacts and accounts without copying their private information.</p><div class="legacy-linked-options">${vaultEntries.map(entry=>`<label class="legacy-check"><input type="checkbox" name="link_ids" value="${escape(entry.id)}" ${(item.links || []).some(link=>String(link.entry_id)===String(entry.id))?'checked':''}><span>${escape(SECTIONS[entry.section]?.name || entry.section)} · ${escape(entry.title)}</span></label>`).join('') || '<p>No vault records available yet.</p>'}</div></fieldset>
         <fieldset class="legacy-fieldset"><legend>Information review</legend><label class="legacy-check"><input name="review_enabled" type="checkbox" ${item.review_enabled?'checked':''}><span>Schedule information reviews</span></label><div class="legacy-form-grid"><div class="form-group"><label for="legacy-review_interval_months">Review interval</label><select id="legacy-review_interval_months" name="review_interval_months">${selectOptions({3:'Every 3 months',6:'Every 6 months',12:'Every 12 months'},item.review_interval_months || 12)}</select></div>${field('next_review_at','Next review date',dateInput(item.next_review_at),{type:'date'})}</div></fieldset>
         <button type="submit" class="btn btn-primary" id="legacy-save">Save Final Wishes Entry &amp; copy files</button>
       </form></div>`;
+      const selectedContacts=mountRecipientPicker(item);
       widget=Docs.mount(savedId,{edit:false,maxBytes:uploadConfig.max_file_bytes,list:async id=>(await API.request('GET',base+'/'+urlId(id))).attachments || [],unlink:(id,attachmentId)=>API.request('DELETE',base+'/'+urlId(id)+'/attachments/'+urlId(attachmentId)),open:(attachment,id,mode)=>openAttachment(id,attachment,mode),upload:async(id,file)=>{const form=new FormData();form.append('files',file,file.name);const response=await fetch('/api'+base+'/'+urlId(id)+'/attachments',{method:'POST',headers:{Authorization:'Bearer '+API.token},body:form});const result=await response.json();if(!response.ok || result.errors?.length)throw new Error(result.errors?.[0]?.error || result.error || 'Upload failed');}});
       bindActions();
       const reviewToggle=root.querySelector('[name="review_enabled"]'),reviewDate=root.querySelector('[name="next_review_at"]');
@@ -253,7 +306,7 @@ const Legacy = (() => {
       root.querySelector('#legacy-editor').onsubmit=async event=>{
         event.preventDefault();const form=event.target,values=new FormData(form),save=root.querySelector('#legacy-save');save.disabled=true;
         const metadata={...(item.metadata || {})},type=values.get('type');
-        metadata.final_wishes={...(metadata.final_wishes || {})};
+        metadata.final_wishes={...(metadata.final_wishes || {}),contact_recipients:selectedContacts()};
         ['category','details','contact_person','contact_phone','notes'].forEach(key=>{metadata.final_wishes[key]=values.get('wish_'+key) || '';});
         ['event_date','date_precision','relationship','place','recorded_at','category','priority','related_legacy_content_id'].forEach(key=>{if(values.has(key))metadata[key]=values.get(key);});
         ['people','tags','responsible_people','helpful_contacts'].forEach(key=>{if(values.has(key))metadata[key]=commaList(values.get(key));});
@@ -264,7 +317,7 @@ const Legacy = (() => {
             const id=previous?.id || stepId();used.add(id);return {id,text};
           });
         }
-        const payload={type,title:values.get('title'),description:values.get('description'),introduction:values.get('introduction') || '',body_markdown:values.get('body_markdown'),status:values.get('status'),release_policy:values.get('release_policy'),metadata,beneficiary_ids:values.getAll('beneficiary_ids').map(Number),links:values.getAll('link_ids').map(id=>({entry_id:Number(id)})),final_wishes_entry_id:values.has('final_wishes_entry_id')?(values.get('final_wishes_entry_id')?Number(values.get('final_wishes_entry_id')):null):(item.final_wishes_entry_id ?? null),review_enabled:values.has('review_enabled'),review_interval_months:Number(values.get('review_interval_months')),next_review_at:values.get('next_review_at') || null};
+        const payload={type,title:values.get('title'),description:values.get('description'),introduction:values.get('introduction') || '',body_markdown:values.get('body_markdown'),status:values.get('status'),release_policy:values.get('release_policy'),metadata,beneficiary_ids:values.getAll('beneficiary_ids').map(Number),links:item.links || [],final_wishes_entry_id:values.has('final_wishes_entry_id')?(values.get('final_wishes_entry_id')?Number(values.get('final_wishes_entry_id')):null):(item.final_wishes_entry_id ?? null),review_enabled:values.has('review_enabled'),review_interval_months:Number(values.get('review_interval_months')),next_review_at:values.get('next_review_at') || null};
         try{
           const result=await API.request(savedId?'PATCH':'POST',base+(savedId?'/'+urlId(savedId):''),payload);
           savedId=result.id || savedId;item={...item,...payload,id:savedId};

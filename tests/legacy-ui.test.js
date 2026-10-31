@@ -17,7 +17,7 @@ const publicRoot = path.join(__dirname, '..', 'public');
 const apiFixture = `
 const fixtureCalls=[];
 const fixtureRecipients=[{id:1,name:'Alex Example',relationship:'Child',access_granted:1,emergency_waiting_days:7,created_at:'2026-10-20T10:00:00Z'},{id:2,name:'Jamie Example',relationship:'Sibling',access_granted:0,emergency_waiting_days:7,created_at:'2026-10-20T10:00:00Z'}];
-const fixtureEntries=[{id:11,title:'Memorial arrangements',section:'final_wishes',fields:{category:'Memorial Preferences',details:'Existing final wish retained',contact_person:'Family contact',contact_phone:'000 000 0000'},notes:''},{id:12,title:'Example family home',section:'real_estate',fields:{address:'Example address'},notes:''}];
+const fixtureEntries=[{id:11,title:'Memorial arrangements',section:'final_wishes',fields:{category:'Memorial Preferences',details:'Existing final wish retained',contact_person:'Family contact',contact_phone:'000 000 0000'},notes:''},{id:12,title:'Example family home',section:'real_estate',fields:{address:'Example address'},notes:''},{id:1,title:'Estate adviser',section:'contacts',fields:{name:'Casey <Adviser>',role:'Lawyer',email:'lawyer@example.test',phone:'000 000 0013'},notes:''}];
 const common={body_markdown:'A personal message',introduction:'',description:'',release_policy:'owner_only',status:'draft',beneficiary_ids:[1],metadata:{},links:[],beneficiaries:[],attachments:[],versions:[],reviews:[],release_events:[],review_enabled:false,revision:1,created_at:'2026-10-20T10:00:00Z',updated_at:'2026-10-28T10:00:00Z'};
 const fixtureItems=[
 {...structuredClone(common),id:'letter-1',title:'A letter for Alex',type:'letter',description:'A private letter for a future birthday'},
@@ -25,7 +25,7 @@ const fixtureItems=[
 {...structuredClone(common),id:'memory-1',title:'Family picnic',type:'family_history',metadata:{event_date:'1985',date_precision:'approximate',people:['Alex Example'],tags:['family'],place:'Example park'}},
 {...structuredClone(common),id:'memory-2',title:'An undated photograph',type:'family_history',metadata:{date_precision:'unknown',people:['Jamie Example']}},
 {...structuredClone(common),id:'review-1',title:'Review estate information',type:'review',review_enabled:true},
-{...structuredClone(common),id:'instructions-1',title:'Household handover',type:'instruction',body_markdown:'Check the garden each week.',status:'released',release_policy:'manual_release',review_enabled:true,review_interval_months:12,next_review_at:'2026-11-01T00:00:00Z',review_state:'due_soon',metadata:{category:'maintenance',priority:'normal',checklist:[{id:'water-garden',text:'Water the garden'},{id:'call-service',text:'Contact the maintenance service'}]},links:[{entry_id:12}],attachments:[{id:'recording-1',display_name:'Garden instructions.wav',mime_type:'audio/wav',size_bytes:128,sha256:'a'.repeat(64)}],beneficiaries:[{beneficiary_id:1,name:'Alex Example',released_at:'2026-10-28T10:00:00Z',revoked_at:null,release_scope:'manual_release'}]}
+{...structuredClone(common),id:'instructions-1',title:'Household handover',type:'instruction',body_markdown:'Check the garden each week.',status:'released',release_policy:'manual_release',review_enabled:true,review_interval_months:12,next_review_at:'2026-11-01T00:00:00Z',review_state:'due_soon',metadata:{custom_owner_note:'Retain this metadata',final_wishes:{custom_detail:'Retain this wish detail',contact_recipients:[{entry_id:99,name:'Saved former contact'}]},category:'maintenance',priority:'normal',checklist:[{id:'water-garden',text:'Water the garden'},{id:'call-service',text:'Contact the maintenance service'}]},links:[{entry_id:12}],attachments:[{id:'recording-1',display_name:'Garden instructions.wav',mime_type:'audio/wav',size_bytes:128,sha256:'a'.repeat(64)}],beneficiaries:[{beneficiary_id:1,name:'Alex Example',released_at:'2026-10-28T10:00:00Z',revoked_at:null,release_scope:'manual_release'}]}
 ];
 const fixtureCopy=value=>structuredClone(value);
 function fixtureSync(item){item.beneficiaries=item.beneficiary_ids.map(id=>item.beneficiaries?.find(row=>row.beneficiary_id===id)||{beneficiary_id:id,name:fixtureRecipients.find(recipient=>recipient.id===id).name,released_at:null,revoked_at:null});return item;}
@@ -87,6 +87,7 @@ const browserChecks = `
  async function until(predicate,label){for(let n=0;n<120;n++){if(predicate())return;await flush();}throw new Error('Timed out: '+label);}
  const workspace=()=>document.getElementById('legacy-workspace');
  const action=name=>workspace()?.querySelector('[data-legacy-action="'+name+'"]');
+ const searchRecipients=query=>{const input=document.getElementById('legacy-recipient-search');input.value=query;input.dispatchEvent(new Event('input',{bubbles:true}));return input;};
  await until(()=>workspace()?.querySelector('.legacy-list'),'owner content list');
  check(!workspace().querySelector('.legacy-tabs,[data-legacy-group]'),'Final Wishes list has no separate content category buttons');
  check(fixtureItems.every(item=>workspace().querySelector('.legacy-list').textContent.includes(item.title)),'one Final Wishes list displays letters, recordings, family history, instructions and reviews');
@@ -110,29 +111,43 @@ const browserChecks = `
  form.elements.title.value='<img src=x onerror="window.fixtureInjected=true"> Letter for family';
  form.elements.body_markdown.value='# Message\\n**Family**';
  form.elements.release_policy.value='manual_release';
- form.querySelectorAll('[name="beneficiary_ids"]').forEach(control=>control.checked=true);
- form.querySelector('[name="link_ids"][value="12"]').checked=true;
+ check(!form.querySelector('[name="beneficiary_ids"]')&&!form.querySelector('[name="link_ids"]')&&!form.textContent.includes('Related vault records')&&!form.querySelector('#legacy-recipient-results button'),'recipients start as a search picker without a full checklist or related vault selection');
+ let recipientSearch=searchRecipients('lawyer@example.test');
+ check(form.querySelector('[data-add-recipient="contact:1"]').textContent.includes('Casey <Adviser>')&&form.querySelector('[data-add-recipient="contact:1"]').textContent.includes('no vault access')&&!form.querySelector('[data-add-recipient="contact:1"] img'),'contact search matches email and safely labels named-only access');
+ recipientSearch=searchRecipients('Lawyer');recipientSearch.focus();recipientSearch.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));
+ check(document.activeElement.dataset.addRecipient==='contact:1','Arrow Down moves from search to the matching recipient button');
+ document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+ check(document.activeElement===recipientSearch&&form.querySelector('#legacy-recipient-results').hidden,'Escape dismisses results and returns focus to search');
+ recipientSearch=searchRecipients('000 000 0013');recipientSearch.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+ check(form.querySelector('[data-remove-recipient="contact:1"]')&&!form.querySelector('#legacy-recipient-results button'),'Enter chooses a contact found by phone and clears the search results');
+ searchRecipients('Alex').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+ searchRecipients('Sibling');form.querySelector('[data-add-recipient="beneficiary:2"]').click();
+ check(form.querySelector('[data-remove-recipient="contact:1"]')&&form.querySelector('[data-remove-recipient="beneficiary:1"]')&&form.querySelectorAll('[name="beneficiary_ids"]').length===2,'contacts and beneficiaries keep separate IDs and can be selected together');
+ form.querySelector('[data-remove-recipient="contact:1"]').click();
+ check(!form.querySelector('[data-remove-recipient="contact:1"]')&&document.activeElement===recipientSearch,'selected recipient removal returns focus to search');
+ searchRecipients('Lawyer');form.querySelector('[data-add-recipient="contact:1"]').click();
+ check([...form.querySelectorAll('[data-add-recipient],[data-remove-recipient]')].every(control=>control.getBoundingClientRect().height>=44),'recipient picker controls keep accessible touch targets');
  action('markdown-preview').click();await until(()=>!document.getElementById('legacy-editor-preview').hidden,'Markdown preview');
  const rendered=document.getElementById('legacy-editor-preview');
  check(!!rendered.querySelector('strong')&&!rendered.querySelector('img,script,iframe')&&!rendered.querySelector('a[href]')&&!window.fixtureInjected,'Markdown preview keeps formatting and removes executable HTML, unsafe links and remote tracking');
  form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await until(()=>action('ready'),'saved draft detail');
  const create=fixtureCalls.find(call=>call.method==='POST'&&call.route==='/final-wishes/legacy');
- check(create.body.beneficiary_ids.length===2&&create.body.links[0].entry_id===12,'one content record holds multiple recipients and existing vault links');
+ check(create.body.beneficiary_ids.length===2&&create.body.metadata.final_wishes.contact_recipients.length===1&&create.body.metadata.final_wishes.contact_recipients[0].entry_id===1&&create.body.metadata.final_wishes.contact_recipients[0].name==='Casey <Adviser>'&&create.body.links.length===0,'one protected wish names contacts alongside beneficiaries without linking unrelated vault records');
  check(create.body.type==='letter'&&create.body.metadata.final_wishes.category==='Memorial Preferences'&&create.body.metadata.final_wishes.details==='Share family stories at the memorial.'&&create.body.metadata.final_wishes.contact_person==='Alex Example'&&create.body.metadata.final_wishes.contact_phone==='000 000 0001','unified authoring saves arrangements and selected content group in the protected record');
  check(!fixtureCalls.some(call=>call.method==='createEntry')&&location.hash==='#section/final_wishes/created-item','new wishes save only through the protected API and open their detail route');
  check(!workspace().querySelector('img')&&!window.fixtureInjected&&workspace().textContent.includes('<img src=x'),'escapes personal content titles in management');
- check(workspace().querySelector('a[href="#edit/real_estate/12"]'),'shows a useful link to the existing property record');
+ check(workspace().querySelector('.legacy-recipients').textContent.includes('Casey <Adviser>')&&workspace().querySelector('.legacy-recipients').textContent.includes('no vault access'),'wish details distinguish named contacts from access recipients');
  action('ready').click();await until(()=>action('release'),'ready item detail');
  action('release').click();
  let dialog=document.querySelector('[aria-labelledby="legacy-release-dialog"]');
- check(dialog&&!dialog.querySelector('[name="confirmed"]').checked&&!fixtureCalls.some(call=>call.route.endsWith('/release')),'manual release waits for explicit confirmation');
+ check(dialog&&dialog.querySelectorAll('[name="release_ids"]').length===2&&!dialog.textContent.includes('Casey <Adviser>')&&!dialog.querySelector('[name="confirmed"]').checked&&!fixtureCalls.some(call=>call.route.endsWith('/release')),'manual release waits for explicit confirmation');
  dialog.querySelector('[name="confirmed"]').checked=true;
  dialog.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await until(()=>action('revoke'),'released item detail');
  check(fixtureCalls.some(call=>call.route.endsWith('/release')&&call.body.confirm===true&&call.body.beneficiary_ids.length===2),'confirmed release targets selected existing beneficiaries');
  action('preview').click();await until(()=>workspace().textContent.includes('Owner preview of the recipient'),'recipient preview');
- check(!action('release')&&!workspace().textContent.includes('Revision history'),'recipient preview shows content without owner management history');
+ check(!action('release')&&!workspace().textContent.includes('Revision history')&&workspace().textContent.includes('Casey <Adviser>'),'recipient preview shows named contacts with the content without owner management history');
  action('open').click();await until(()=>action('edit'),'return to management');action('edit').click();
  await until(()=>document.getElementById('legacy-editor'),'released content editor');
  check(workspace().textContent.includes('clears previous releases')&&document.getElementById('legacy-editor').elements.status.value==='draft','editing released content explains and defaults to a new draft');
@@ -152,6 +167,14 @@ const browserChecks = `
  check(!workspace().querySelector('#legacy-from,#legacy-to,.legacy-timeline'),'the shared list has no separate family timeline or date range controls');
  workspace().querySelector('#legacy-search').value='family';workspace().querySelector('#legacy-filter-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
  check(fixtureCalls.some(call=>call.route.includes('q=family')),'shared Final Wishes search sends people or tag text');
+ check(workspace().querySelector('.legacy-list').textContent.includes('Casey <Adviser>'),'wish cards show contact recipient names alongside beneficiaries');
+ window.location.hash='section/final_wishes/instructions-1';await until(()=>action('edit')&&workspace().textContent.includes('Household handover'),'existing linked wish');
+ check(workspace().querySelector('a[href="#edit/real_estate/12"]'),'existing related records remain available in read-only detail');
+ action('edit').click();await until(()=>document.getElementById('legacy-editor'),'existing linked wish editor');form=document.getElementById('legacy-editor');
+ check(form.querySelector('[data-remove-recipient="contact:99"]')?.getAttribute('aria-label').includes('Saved former contact')&&!form.querySelector('[name="link_ids"]'),'editing retains a deleted contact snapshot and hides vault record selection');
+ form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await until(()=>action('ready'),'saved existing linked wish');
+ const linkedEdit=fixtureCalls.find(call=>call.method==='PATCH'&&call.route==='/final-wishes/legacy/instructions-1'&&call.body.metadata);
+ check(linkedEdit.body.links.length===1&&linkedEdit.body.links[0].entry_id===12&&linkedEdit.body.metadata.custom_owner_note==='Retain this metadata'&&linkedEdit.body.metadata.final_wishes.custom_detail==='Retain this wish detail'&&linkedEdit.body.metadata.final_wishes.contact_recipients[0].name==='Saved former contact','editing preserves historical links, deleted contact names and unknown metadata');
  window.location.hash='beneficiaries';await until(()=>document.querySelector('[data-legacy-beneficiary]'),'existing beneficiaries view');
  document.querySelector('[data-legacy-beneficiary="1"]').open=true;await until(()=>document.querySelector('[data-legacy-recipient-items]').textContent.includes('A letter for Alex'),'recipient content summary');
  check(document.querySelector('[data-legacy-recipient-items]').textContent.includes('private')&&document.querySelector('[data-legacy-recipient-items]').textContent.includes('Household handover'),'beneficiary record shows its private and released content alongside existing access controls');
@@ -159,10 +182,10 @@ const browserChecks = `
  check(!!action('edit'),'beneficiary content links open the existing Final Wishes editor and release controls');
  window.location.hash='beneficiaries';await until(()=>document.querySelector('[data-legacy-beneficiary="1"]'),'return to beneficiaries');document.querySelector('[data-legacy-beneficiary="1"]').open=true;await until(()=>document.querySelector('a[href="#add/final_wishes?type=letter&beneficiary_id=1"]'),'recipient authoring shortcuts');
  document.querySelector('a[href="#add/final_wishes?type=letter&beneficiary_id=1"]').click();await until(()=>document.getElementById('legacy-editor'),'recipient-specific new letter');
- check(document.getElementById('legacy-editor').elements.type.value==='letter'&&document.querySelectorAll('[name="beneficiary_ids"]:checked').length===1&&document.querySelector('[name="beneficiary_ids"]:checked').value==='1','beneficiary authoring shortcut prefills only that existing recipient');
+ check(document.getElementById('legacy-editor').elements.type.value==='letter'&&document.querySelectorAll('[name="beneficiary_ids"]').length===1&&document.querySelector('[name="beneficiary_ids"]').value==='1','beneficiary authoring shortcut prefills only that existing recipient');
  window.location.hash='section/final_wishes/new?type=recording&beneficiary_id=2';
  await until(()=>location.hash==='#add/final_wishes?type=recording&beneficiary_id=2'&&document.getElementById('legacy-editor')?.elements.type.value==='recording','legacy authoring shortcut redirects to the unified form');
- check(document.querySelectorAll('[name="beneficiary_ids"]:checked').length===1&&document.querySelector('[name="beneficiary_ids"]:checked').value==='2','legacy authoring route retains its chosen content group and beneficiary');
+ check(document.querySelectorAll('[name="beneficiary_ids"]').length===1&&document.querySelector('[name="beneficiary_ids"]').value==='2','legacy authoring route retains its chosen content group and beneficiary');
  renderVaultReadonly({owner:{name:'Example owner',email:'owner@example.test'},beneficiary:{name:'Alex Example',relationship:'Child'},entries:[fixtureEntries[1]]},'synthetic-recipient-token');
  await until(()=>document.querySelector('[data-recipient-content]'),'protected beneficiary content');
  check(!document.getElementById('beneficiary-legacy-root').textContent.includes('A letter for Alex'),'recipient portal displays only server-authorised records');

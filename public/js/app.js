@@ -699,6 +699,7 @@ function showAddBeneficiaryModal() {
   overlay.innerHTML = `<div class="modal">
     <h2>Add Beneficiary</h2>
     <form id="add-ben-form">
+      <p class="legacy-help">A private Final Wish draft will be created for this beneficiary.</p>
       <div class="form-group"><label>Name *</label><input type="text" name="name" required></div>
       <div class="form-group"><label>Email</label><input type="email" name="email"></div>
       <div class="form-group"><label>Phone</label><input type="text" name="phone"></div>
@@ -721,6 +722,10 @@ function showAddBeneficiaryModal() {
 
   overlay.querySelector('#add-ben-form').onsubmit = async (e) => {
     e.preventDefault();
+    const button = e.target.querySelector('button[type="submit"]');
+    if (button.disabled) return;
+    button.disabled = true;
+    e.target.setAttribute('aria-busy', 'true');
     const f = new FormData(e.target);
     try {
       const res = await API.addBeneficiary({
@@ -729,9 +734,14 @@ function showAddBeneficiaryModal() {
       });
       state.newToken = res.accessToken;
       overlay.remove();
-      showSuccess('Beneficiary added');
+      showSuccess(res.final_wish_id ? 'Beneficiary added and private Final Wish draft created' : 'Beneficiary added');
+      try { state.counts = await vaultCounts(await API.getSummary()); } catch { /* Refresh on the next vault view. */ }
       renderBeneficiaries();
     } catch (err) { showError(err.message); }
+    finally {
+      button.disabled = false;
+      e.target.removeAttribute('aria-busy');
+    }
   };
 }
 

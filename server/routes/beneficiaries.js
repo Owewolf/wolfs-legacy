@@ -45,12 +45,27 @@ router.post('/', authenticateToken, (req, res) => {
   const db = getDb();
   const token = generateAccessToken();
   const expires = tokenExpiresAt();
-  const result = db.prepare(
-    'INSERT INTO beneficiaries (user_id, name, email, phone, relationship, access_token, token_expires_at, emergency_waiting_days) VALUES (?,?,?,?,?,?,?,?)'
-  ).run(req.user.id, name.trim(), email || null, phone || null, relationship || null, hashToken(token), expires, waitDays);
-
-  audit(req.user.id, 'add_beneficiary', 'beneficiary', result.lastInsertRowid, name.trim(), req.ip);
-  res.json({ id: result.lastInsertRowid, name: name.trim(), email, phone, relationship, accessToken: token, token_expires_at: expires, emergency_waiting_days: waitDays });
+  const created = db.transaction(() => {
+    const result = db.prepare(
+      'INSERT INTO beneficiaries (user_id, name, email, phone, relationship, access_token, token_expires_at, emergency_waiting_days) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(req.user.id, name.trim(), email || null, phone || null, relationship || null, hashToken(token), expires, waitDays);
+    const beneficiaryId = Number(result.lastInsertRowid);
+    const wish = legacy.save(db, req.user.id, {
+      type: 'instruction', title: `Final Wishes for ${name.trim()}`, body_markdown: '',
+      status: 'draft', release_policy: 'owner_only', beneficiary_ids: [beneficiaryId],
+      metadata: {
+        final_wishes: { category: '', details: '', contact_person: '', contact_phone: '', notes: '' },
+        origin: { type: 'beneficiary', beneficiary_id: beneficiaryId }
+      }
+    });
+    // This creation audit must be durable alongside both records; the general
+    // audit helper is intentionally best effort and cannot protect this write.
+    db.prepare('INSERT INTO audit_log (user_id, action, target_type, target_id, detail, ip_address) VALUES (?,?,?,?,?,?)')
+      .run(req.user.id, 'add_beneficiary', 'beneficiary', beneficiaryId, name.trim(), req.ip || null);
+    return { beneficiaryId, wishId: wish.id };
+  })();
+  res.json({ id: created.beneficiaryId, name: name.trim(), email, phone, relationship, accessToken: token, token_expires_at: expires, emergency_waiting_days: waitDays,
+    final_wish_id: created.wishId, final_wish: { id: created.wishId } });
 });
 
 router.delete('/:id', authenticateToken, (req, res) => {
