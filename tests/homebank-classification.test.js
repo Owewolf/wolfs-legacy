@@ -68,6 +68,11 @@ test('asset balance signs and transaction categories do not invent purpose, owne
   }
 });
 
+test('a source without an allocation or recognized group has no inferred product type', () => {
+  assert.deepEqual(classifyAccount({ type_id: 3, group_name: 'Personal' }), { section: undefined, fields: {} });
+  assert.deepEqual(classifyAccount({ type_id: 0 }), { section: undefined, fields: {} });
+});
+
 function fixture(t) {
   const db = new Database(':memory:');
   t.after(() => db.close());
@@ -185,4 +190,123 @@ test('invalid stored field payloads remain recoverable during classification rec
   assert.equal(result.changed, 0);
   assert.ok(result.skipped >= 1);
   assert.deepEqual(rows(), before);
+});
+
+const namedAccount = (id, values) => sourceAccount(id, { name: `Synthetic account ${id}`, ...values });
+
+test('account reconciliation creates active source identities once with encrypted empty owner fields', t => {
+  const { db, rows } = fixture(t);
+  const source = snapshot([
+    namedAccount(101, { type_id: 6, bank_name: 'Source institution', account_number: 'SOURCE123', today: 950 }),
+    namedAccount(102, { type_id: 7, group_name: 'Retirement Annuity' }),
+    namedAccount(103, { type_id: 4, group_name: 'Vehicles' }),
+    namedAccount(104, { type_id: 3, group_name: 'Real Estate' }),
+    namedAccount(105, { type_id: 3, group_name: 'Vehicles' }),
+    namedAccount(106, { type_id: 3, group_name: 'Investments' }),
+    namedAccount(107, { type_id: 5 }),
+    namedAccount(108, { type_id: 2 }),
+    namedAccount(109, { type_id: 1, closed: true }),
+    namedAccount(110, { type_id: 1, excluded_from_summary: true })
+  ]);
+  assert.deepEqual(classification.reconcileHomebankAccounts(db, 42, source, options),
+    { created: 8, changed: 0, skipped: 0 });
+  const added = rows();
+  assert.deepEqual(added.map(row => [row.homebank_account_id, row.section]), [
+    [101, 'bank_accounts'], [102, 'retirement'], [103, 'debts'], [104, 'real_estate'],
+    [105, 'vehicles'], [106, 'investments'], [107, 'debts'], [108, 'bank_accounts']
+  ]);
+  for (const row of added) {
+    assert.equal(row.user_id, 42);
+    assert.equal(row.title, `Synthetic account ${row.homebank_account_id}`);
+    assert.deepEqual(JSON.parse(decrypt(row.fields_encrypted)), {});
+    assert.notEqual(row.fields_encrypted, '{}');
+    assert.equal(row.notes_encrypted, null);
+  }
+  assert.deepEqual(classification.reconcileHomebankAccounts(db, 42, source, options),
+    { created: 0, changed: 0, skipped: 0 });
+  assert.deepEqual(rows(), added, 'Repeated reconciliation does not rewrite identity, ciphertext or timestamps');
+});
+
+test('new unspecified assets use generic allocation while names and balance signs never classify them', t => {
+  const { db, rows } = fixture(t);
+  const source = snapshot([
+    namedAccount(101, { type_id: 3, name: 'Synthetic car mortgage', group_name: 'Personal', today: -100 }),
+    namedAccount(102, { type_id: 0, name: 'Synthetic pension', today: 200 }),
+    namedAccount(103, { type_id: 99, type: 'Future source type', today: -500 }),
+    namedAccount(104, { type_id: 1, name: '   ' })
+  ]);
+  assert.equal(classification.reconcileHomebankAccounts(db, 42, source, options).created, 4);
+  assert.deepEqual(rows().map(row => row.section), ['investments', 'bank_accounts', 'bank_accounts', 'bank_accounts']);
+  assert.equal(rows()[3].title, 'HomeBank account 104');
+  for (const row of rows()) assert.deepEqual(JSON.parse(decrypt(row.fields_encrypted)), {});
+});
+
+test('account reconciliation preserves manual records, existing links, documents and other owners', t => {
+  const { db, add, rows } = fixture(t);
+  add(1, 'bank_accounts', { owner_reference: 'Existing owner detail' }, 101);
+  add(2, 'retirement', { provider: 'Manual provider' }, null);
+  add(3, 'bank_accounts', { owner_reference: 'Other owner detail' }, 102, 43);
+  const original = rows();
+  const documents = db.prepare('SELECT * FROM document_associations').all();
+  const source = snapshot([namedAccount(101, { type_id: 1 }), namedAccount(102, { type_id: 1 })]);
+  assert.equal(classification.reconcileHomebankAccounts(db, 42, source, options).created, 1);
+  assert.deepEqual(rows().slice(0, 3), original);
+  assert.deepEqual(db.prepare('SELECT * FROM document_associations').all(), documents);
+  assert.equal(rows()[3].user_id, 42);
+  assert.equal(rows()[3].homebank_account_id, 102);
+  const after = rows();
+  assert.deepEqual(classification.reconcileHomebankAccounts(db, 43, source, options),
+    { created: 0, changed: 0, skipped: 0 });
+  for (const ownerEmail of ['', 'missing@example.test']) {
+    assert.deepEqual(classification.reconcileHomebankAccounts(db, 42, source, { ownerEmail }),
+      { created: 0, changed: 0, skipped: 0 });
+  }
+  assert.deepEqual(rows(), after);
+});
+
+test('invalid account snapshots never partially create or reclassify entries', t => {
+  const { db, add, rows } = fixture(t);
+  add(1, 'bank_accounts', { owner_reference: 'Keep owner detail' }, 101);
+  const original = rows();
+  const valid = namedAccount(101, { type_id: 7, group_name: 'Retirement Annuity' });
+  const badAccounts = [
+    namedAccount(102, { id: 101 }), namedAccount(102, { closed: 'false' }),
+    namedAccount(102, { excluded_from_summary: 0 }), namedAccount(102, { name: null }),
+    namedAccount(102, { group_name: {} }), namedAccount(102, { type_id: -1 }),
+    namedAccount(102, { type: {} }), null
+  ];
+  for (const bad of badAccounts) {
+    assert.throws(() => classification.reconcileHomebankAccounts(db, 42, snapshot([valid, bad]), options),
+      /Invalid HomeBank account snapshot/);
+    assert.deepEqual(rows(), original);
+  }
+  for (const invalid of [null, { accounts: [] }, { snapshot_schema_version: 2, accounts: [] }]) {
+    assert.throws(() => classification.reconcileHomebankAccounts(db, 42, invalid, options), /Invalid HomeBank/);
+    assert.deepEqual(rows(), original);
+  }
+});
+
+test('an account creation failure rolls back linked reclassification and all new records', t => {
+  const { db, add, rows } = fixture(t);
+  add(1, 'bank_accounts', { owner_reference: 'Keep owner detail' }, 101);
+  const original = rows();
+  db.exec(`CREATE TRIGGER reject_synthetic_account BEFORE INSERT ON vault_entries
+    WHEN new.homebank_account_id = 103 BEGIN SELECT RAISE(ABORT,'Synthetic insert failure'); END;`);
+  const source = snapshot([
+    namedAccount(101, { type_id: 7, group_name: 'Retirement Annuity' }),
+    namedAccount(102, { type_id: 1 }), namedAccount(103, { type_id: 1 })
+  ]);
+  assert.throws(() => classification.reconcileHomebankAccounts(db, 42, source, options), /Synthetic insert failure/);
+  assert.deepEqual(rows(), original);
+});
+
+test('a dry run reports missing accounts and classifications without modifying the database', t => {
+  const { db, add, rows } = fixture(t);
+  add(1, 'bank_accounts', {}, 101);
+  const original = rows();
+  const result = classification.reconcileHomebankAccounts(db, 42,
+    snapshot([namedAccount(101, { type_id: 7, group_name: 'Retirement Annuity' }), namedAccount(102, { type_id: 1 })]),
+    { ...options, dryRun: true });
+  assert.deepEqual(result, { created: 1, changed: 1, skipped: 0 });
+  assert.deepEqual(rows(), original);
 });

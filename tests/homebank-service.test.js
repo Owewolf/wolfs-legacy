@@ -67,7 +67,8 @@ async function fixture(t, schemaVersion) {
   vm.runInNewContext(SERVICE_SOURCE, context, { filename: SERVICE_PATH });
   const service = isolatedModule.exports;
   const [file] = await service.listing(directory);
-  const snapshot = { exported_date: today(), accounts: [{ id: 1, name: 'Cached fixture' }] };
+  const snapshot = { exported_date: today(), accounts: [{ id: 1, name: 'Cached fixture', type_id: 1,
+    group_name: 'Savings Accounts', closed: false, excluded_from_summary: false }] };
   if (schemaVersion !== undefined) snapshot.snapshot_schema_version = schemaVersion;
   db.prepare(`INSERT INTO homebank_snapshots
     (user_id, config_encrypted, snapshot_encrypted, fingerprint, source_file)
@@ -152,4 +153,193 @@ test('saved source groups realign linked entries during refresh and on unchanged
   assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries WHERE id=1').get(), cachedEntry,
     'Subsequent cached reads must retain unchanged ciphertext and timestamps');
   assert.deepEqual(await fsp.readFile(f.source), sourceBefore);
+});
+
+test('a fresh sync keeps legacy saved connections active and creates owner source identities without copied fields', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  const sourceBefore = await fsp.readFile(f.source);
+  const refreshed = f.service.responseView(await f.service.syncUser(USER_ID, true));
+  assert.equal(refreshed.last_error, null);
+  assert.equal(f.parseCalls(), 1);
+  const added = f.db.prepare('SELECT * FROM vault_entries').all();
+  assert.equal(added.length, 1);
+  assert.equal(added[0].user_id, USER_ID);
+  assert.equal(added[0].title, 'Fixture bank');
+  assert.equal(added[0].section, 'bank_accounts');
+  assert.equal(added[0].homebank_account_id, 1);
+  assert.deepEqual(JSON.parse(vaultCrypto.decrypt(added[0].fields_encrypted)), {});
+  assert.equal(added[0].notes_encrypted, null);
+  await f.service.syncUser(USER_ID, true);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries').all(), added);
+  assert.deepEqual(await fsp.readFile(f.source), sourceBefore);
+});
+
+test('unchanged legacy connected snapshots create missing active identities once across overlapping requests', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  const original = f.db.prepare('SELECT snapshot_encrypted FROM homebank_snapshots').get().snapshot_encrypted;
+  await Promise.all(Array.from({ length: 6 }, () => f.service.syncUser(USER_ID)));
+  assert.equal(f.parseCalls(), 0);
+  const added = f.db.prepare('SELECT * FROM vault_entries').all();
+  assert.equal(added.length, 1);
+  assert.equal(added[0].title, 'Cached fixture');
+  assert.equal(added[0].homebank_account_id, 1);
+  await f.service.syncUser(USER_ID);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries').all(), added);
+  assert.equal(f.db.prepare('SELECT snapshot_encrypted FROM homebank_snapshots').get().snapshot_encrypted, original);
+});
+
+test('default directory discovery never adds account cards until the source is explicitly connected', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  f.db.prepare('DELETE FROM homebank_snapshots WHERE user_id=?').run(USER_ID);
+  const initial = f.service.responseView(await f.service.syncUser(USER_ID));
+  assert.equal(initial.last_error, null);
+  assert.equal(initial.snapshot.accounts.length, 1, 'Default discovery still supplies the existing overview');
+  assert.equal(initial.config.accounts_connected, false);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+  const cached = f.service.responseView(await f.service.syncUser(USER_ID));
+  assert.equal(cached.config.accounts_connected, false);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+  await fsp.writeFile(f.source, xml(500).replace('</homebank>',
+    '<account key="2" name="Another discovered fixture" type="6"/></homebank>'));
+  const changed = f.service.responseView(await f.service.syncUser(USER_ID));
+  assert.equal(changed.snapshot.accounts.length, 2);
+  assert.equal(changed.config.accounts_connected, false);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+});
+
+test('legacy unconnected settings remain unconnected after automatic discovery and preserve other configuration', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  const config = { directory: path.dirname(f.source), selectedFile: '', auto: true, future_setting: 'Preserve this' };
+  f.db.prepare(`UPDATE homebank_snapshots SET config_encrypted=?,snapshot_encrypted=NULL,
+    source_file=NULL,fingerprint=NULL WHERE user_id=?`).run(JSON.stringify(config), USER_ID);
+  const discovered = f.service.responseView(await f.service.syncUser(USER_ID));
+  assert.equal(discovered.config.accounts_connected, false);
+  assert.equal(discovered.config.future_setting, config.future_setting);
+  await f.service.syncUser(USER_ID);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+  assert.equal(f.parseCalls(), 1);
+});
+
+test('Save and sync connects the source, retains configuration and adds later new accounts exactly once', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  const config = JSON.parse(f.db.prepare('SELECT config_encrypted FROM homebank_snapshots').get().config_encrypted);
+  config.accounts_connected = false;
+  config.future_setting = 'Preserve this';
+  f.db.prepare('UPDATE homebank_snapshots SET config_encrypted=?').run(JSON.stringify(config));
+  await f.service.syncUser(USER_ID);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+  const connected = f.service.responseView(await f.service.saveSettings(USER_ID,
+    { directory: path.dirname(f.source), selectedFile: path.basename(f.source) }));
+  assert.equal(connected.last_error, null);
+  assert.equal(connected.config.accounts_connected, true);
+  assert.equal(connected.config.future_setting, config.future_setting);
+  const first = f.db.prepare('SELECT * FROM vault_entries').all();
+  assert.equal(first.length, 1);
+  assert.equal(first[0].homebank_account_id, 1);
+  await fsp.writeFile(f.source, xml(250).replace('</homebank>',
+    '<account key="2" name="New connected fixture" type="6"/></homebank>'));
+  const later = f.service.responseView(await f.service.syncUser(USER_ID));
+  assert.equal(later.last_error, null);
+  assert.equal(later.snapshot.accounts.length, 2);
+  const added = f.db.prepare('SELECT * FROM vault_entries ORDER BY homebank_account_id').all();
+  assert.equal(added.length, 2);
+  assert.deepEqual(added[0], first[0]);
+  assert.equal(added[1].homebank_account_id, 2);
+  await f.service.syncUser(USER_ID);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries ORDER BY homebank_account_id').all(), added);
+});
+
+test('a saved source adds new active accounts while preserving existing owner edits and skipping hidden accounts', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  await f.service.syncUser(USER_ID, true);
+  const ownerFields = vaultCrypto.encrypt(JSON.stringify({ owner_reference: 'Keep this private owner detail' }));
+  f.db.prepare("UPDATE vault_entries SET title='Owner chosen title',fields_encrypted=?,updated_at='2020-01-01'")
+    .run(ownerFields);
+  const original = f.db.prepare('SELECT * FROM vault_entries WHERE homebank_account_id=1').get();
+  // Native XHB flags: closed=2, excluded from summary=16.
+  await fsp.writeFile(f.source, xml(500).replace('Fixture bank', 'Source renamed bank')
+    .replace('</homebank>', '<account key="2" name="New fixture bank" type="6"/>' +
+      '<account key="3" name="Closed fixture bank" type="1" flags="2"/>' +
+      '<account key="4" name="Excluded fixture bank" type="1" flags="16"/></homebank>'));
+  const sourceBefore = await fsp.readFile(f.source);
+  const result = f.service.responseView(await f.service.syncUser(USER_ID));
+  assert.equal(result.last_error, null);
+  assert.equal(result.snapshot.accounts.find(account => account.id === 1).today, 500);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries WHERE homebank_account_id=1').get(), original);
+  assert.deepEqual(f.db.prepare('SELECT homebank_account_id FROM vault_entries ORDER BY homebank_account_id').all(),
+    [{ homebank_account_id: 1 }, { homebank_account_id: 2 }]);
+  const entries = f.db.prepare('SELECT * FROM vault_entries ORDER BY id').all();
+  await f.service.syncUser(USER_ID);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries ORDER BY id').all(), entries);
+  assert.equal(f.parseCalls(), 2);
+  assert.deepEqual(await fsp.readFile(f.source), sourceBefore);
+});
+
+test('an active source account deleted from the vault returns on sync without duplicating other accounts', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  await f.service.syncUser(USER_ID, true);
+  f.db.prepare('DELETE FROM vault_entries WHERE user_id=? AND homebank_account_id=1').run(USER_ID);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+  await f.service.syncUser(USER_ID);
+  const recreated = f.db.prepare('SELECT * FROM vault_entries').all();
+  assert.equal(recreated.length, 1);
+  assert.equal(recreated[0].homebank_account_id, 1);
+  assert.equal(recreated[0].title, 'Fixture bank');
+  await f.service.syncUser(USER_ID);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries').all(), recreated);
+  assert.equal(f.parseCalls(), 1, 'Restoring a missing source identity uses the validated unchanged snapshot');
+});
+
+test('another registered user cannot receive accounts from the configured owner source', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, 'other@example.test');
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID + 1, OWNER_EMAIL);
+  await f.service.syncUser(USER_ID, true);
+  await f.service.syncUser(USER_ID);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+});
+
+test('an invalid cached account list cannot partially import accounts or rewrite existing entries', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  const row = f.db.prepare('SELECT snapshot_encrypted FROM homebank_snapshots').get();
+  const badSnapshot = JSON.parse(row.snapshot_encrypted);
+  badSnapshot.accounts.push({ ...badSnapshot.accounts[0], name: 'Duplicate source identity' });
+  f.db.prepare('UPDATE homebank_snapshots SET snapshot_encrypted=?').run(JSON.stringify(badSnapshot));
+  const result = f.service.responseView(await f.service.syncUser(USER_ID));
+  assert.match(result.last_error, /Invalid HomeBank account snapshot/);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM vault_entries').get().count, 0);
+  assert.equal(f.parseCalls(), 0);
+  assert.equal(JSON.stringify(result.snapshot), JSON.stringify(badSnapshot));
+});
+
+test('a failed import rolls back the new snapshot, existing reclassification and earlier inserts', async t => {
+  const f = await fixture(t, 3);
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  f.db.prepare(`INSERT INTO vault_entries
+    (id,user_id,section,title,fields_encrypted,homebank_account_id,updated_at)
+    VALUES (1,?,'bank_accounts','Owner title',?,1,'2020-01-01')`)
+    .run(USER_ID, vaultCrypto.encrypt(JSON.stringify({ owner_reference: 'Preserve owner fields' })));
+  const originalEntries = f.db.prepare('SELECT * FROM vault_entries').all();
+  const originalSnapshot = f.db.prepare('SELECT * FROM homebank_snapshots').get();
+  f.db.exec(`CREATE TRIGGER reject_source_account BEFORE INSERT ON vault_entries
+    WHEN new.homebank_account_id=3 BEGIN SELECT RAISE(ABORT,'Synthetic account failure'); END;`);
+  await fsp.writeFile(f.source, xml(250).replace('Savings Accounts', 'Retirement Annuity')
+    .replace('</homebank>', '<account key="2" name="New fixture bank" type="1"/>' +
+      '<account key="3" name="Failed fixture bank" type="1"/></homebank>'));
+  const result = f.service.responseView(await f.service.syncUser(USER_ID, true));
+  assert.match(result.last_error, /Synthetic account failure/);
+  assert.equal(f.parseCalls(), 1);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries').all(), originalEntries);
+  const afterSnapshot = f.db.prepare('SELECT * FROM homebank_snapshots').get();
+  for (const key of ['snapshot_encrypted', 'fingerprint', 'source_file', 'source_saved_at', 'synced_at', 'content_hash']) {
+    assert.equal(afterSnapshot[key], originalSnapshot[key], `${key} must roll back with the failed import`);
+  }
 });

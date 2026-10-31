@@ -50,7 +50,7 @@ function classifyAccount(account, existingSection) {
     if (type) fields.account_type = type;
   }
   if (section === 'debts' && kind === 4) fields.type = 'Credit Card';
-  else if (group?.section === section && group.type) fields.type = group.type;
+  else if (group && group.section === section && group.type) fields.type = group.type;
   return { section, fields };
 }
 
@@ -137,4 +137,60 @@ function reconcileHomebankClassifications(db, userId, snapshot, options = {}) {
   })();
 }
 
-module.exports = { accountTypeId, classifyAccount, alignHomebankEntry, reconcileHomebankClassifications };
+function importableAccounts(snapshot) {
+  if (snapshot?.snapshot_schema_version !== 3 || !Array.isArray(snapshot.accounts)) {
+    throw new Error('Invalid HomeBank account snapshot; keeping previous validated snapshot');
+  }
+  const accounts = new Map();
+  for (const account of snapshot.accounts) {
+    if (!account || !Number.isSafeInteger(account.id) || account.id <= 0 || accounts.has(account.id) ||
+        typeof account.closed !== 'boolean' || typeof account.excluded_from_summary !== 'boolean' ||
+        typeof account.name !== 'string' ||
+        (account.group_name != null && typeof account.group_name !== 'string') ||
+        (account.type_id != null && (!Number.isSafeInteger(account.type_id) || account.type_id < 0)) ||
+        (account.type != null && typeof account.type !== 'string')) {
+      throw new Error('Invalid HomeBank account snapshot; keeping previous validated snapshot');
+    }
+    accounts.set(account.id, account);
+  }
+  return accounts;
+}
+
+function reconcileHomebankAccounts(db, userId, snapshot, options = {}) {
+  // Validate every account before any existing record is changed or a missing
+  // record is created. The service includes this in its snapshot transaction.
+  const accounts = importableAccounts(snapshot);
+  const empty = () => ({ created: 0, changed: 0, skipped: 0 });
+  const email = String(options.ownerEmail ?? process.env.HOMEBANK_OWNER_EMAIL ?? '').trim().toLowerCase();
+  if (!email) return empty();
+  const owner = db.prepare('SELECT id FROM users WHERE lower(trim(email)) = ?').get(email);
+  if (!owner || Number(owner.id) !== Number(userId)) return empty();
+  const { encrypt } = require('./crypto');
+  // An immediate transaction also serializes cache-path imports across app
+  // processes. Existing links are checked under that same write lock.
+  return db.transaction(() => {
+    const aligned = reconcileHomebankClassifications(db, userId, snapshot, options);
+    const linked = new Set(db.prepare(`SELECT homebank_account_id FROM vault_entries
+      WHERE user_id=? AND homebank_account_id IS NOT NULL`).all(userId).map(row => row.homebank_account_id));
+    const insert = db.prepare(`INSERT INTO vault_entries
+      (user_id,section,title,fields_encrypted,notes_encrypted,homebank_account_id)
+      VALUES (?,?,?,?,NULL,?)`);
+    let created = 0;
+    for (const account of accounts.values()) {
+      if (account.closed || account.excluded_from_summary || linked.has(account.id)) continue;
+      // An ungrouped asset needs a generic asset form; other unclassified
+      // ledgers use a bank account form until HomeBank supplies a purpose.
+      // Names, transaction categories and balance signs never infer purpose.
+      const fallback = accountTypeId(account) === 3 ? 'investments' : 'bank_accounts';
+      const { section } = classifyAccount(account, fallback);
+      if (!options.dryRun) insert.run(userId, section, account.name.trim() || `HomeBank account ${account.id}`,
+        encrypt('{}'), account.id);
+      linked.add(account.id);
+      created++;
+    }
+    return { created, ...aligned };
+  }).immediate();
+}
+
+module.exports = { accountTypeId, classifyAccount, alignHomebankEntry, reconcileHomebankClassifications,
+  reconcileHomebankAccounts };
