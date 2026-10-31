@@ -99,7 +99,9 @@ app.get('{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-getDb();
+const startupDb = getDb();
+const beneficiaryWishes = require('./beneficiary-final-wishes').backfillBeneficiaryFinalWishes(startupDb);
+if (beneficiaryWishes.created) log.info('Created missing private beneficiary wishes', { count: beneficiaryWishes.created });
 app.listen(PORT, process.env.LISTEN_HOST || '0.0.0.0', () => {
   log.info("Wolf's Vault started", { port: PORT });
   checkDeadSwitches();

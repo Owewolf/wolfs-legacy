@@ -50,7 +50,11 @@ adds a beneficiary. The draft is titled **Final Wishes for {beneficiary name}**,
 starts with empty wish details and content, and has that beneficiary selected.
 It uses the protected content store with `draft` status and the `owner_only`
 release policy. Creating it grants no access, releases no content and sends no
-message. Existing beneficiaries are not backfilled.
+message. At startup, existing beneficiaries without an assigned protected wish
+receive the same draft. Existing wishes, including edited, released and archived
+items, are retained; repeated startups do not create duplicates. The check runs
+before the server accepts requests and shares the new-beneficiary creation
+logic. Creating all missing drafts is transactional.
 
 The beneficiary, encrypted wish, recipient mapping and creation audits are saved
 in one transaction. A failure rolls the whole addition back, so retrying a failed
@@ -77,6 +81,23 @@ start without these links; editing an existing wish preserves its saved links
 and other unknown metadata. Existing linked-record displays and authorised
 recipient access to those records retain their behaviour. No schema or release
 policy migration is required.
+
+### Existing-beneficiary repair
+
+Startup now uses the same draft-creation helper as Add Beneficiary. It creates a
+wish only when the beneficiary has no assigned protected content belonging to
+that owner. Existing wishes of every status count, so edited, released and
+archived items are never replaced. Immediate SQLite transactions serialize
+concurrent checks and roll back every new draft/event/audit if any creation fails.
+Normal list requests remain read-only. No schema change is required.
+
+Verification: 258 JavaScript and 7 Python tests pass. The production-entrypoint
+integration starts with an existing beneficiary without a wish, confirms the
+automatic draft appears in the owner API, adds a new beneficiary, edits both
+wishes and restarts again. IDs, edits and revisions persist without duplicates.
+Separate tests cover concurrent checks, owner isolation, encryption, and rollback.
+Synthetic Chromium checks at 390px and 1440px confirm both kinds of draft appear
+in Final Wishes and can be opened and saved on their existing IDs.
 
 ### Current verification
 

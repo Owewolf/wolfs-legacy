@@ -10,6 +10,7 @@ const homebank = require('../homebank-service');
 const { recordBeneficiaryEvent } = require('../notifications/service');
 const { utc } = require('../notifications/time');
 const legacy = require('../legacy-content');
+const { ensureBeneficiaryFinalWish } = require('../beneficiary-final-wishes');
 
 const router = express.Router();
 
@@ -50,14 +51,7 @@ router.post('/', authenticateToken, (req, res) => {
       'INSERT INTO beneficiaries (user_id, name, email, phone, relationship, access_token, token_expires_at, emergency_waiting_days) VALUES (?,?,?,?,?,?,?,?)'
     ).run(req.user.id, name.trim(), email || null, phone || null, relationship || null, hashToken(token), expires, waitDays);
     const beneficiaryId = Number(result.lastInsertRowid);
-    const wish = legacy.save(db, req.user.id, {
-      type: 'instruction', title: `Final Wishes for ${name.trim()}`, body_markdown: '',
-      status: 'draft', release_policy: 'owner_only', beneficiary_ids: [beneficiaryId],
-      metadata: {
-        final_wishes: { category: '', details: '', contact_person: '', contact_phone: '', notes: '' },
-        origin: { type: 'beneficiary', beneficiary_id: beneficiaryId }
-      }
-    });
+    const wish = ensureBeneficiaryFinalWish(db, req.user.id, beneficiaryId);
     // This creation audit must be durable alongside both records; the general
     // audit helper is intentionally best effort and cannot protect this write.
     db.prepare('INSERT INTO audit_log (user_id, action, target_type, target_id, detail, ip_address) VALUES (?,?,?,?,?,?)')
