@@ -119,6 +119,35 @@ and 71 workflow checks at 390px. Tests include in-place upgrades, review-history
 preservation, schedule removal, unchanged authored content, idempotency, rollback,
 blank normal forms, preselected recipients and all saved search choices.
 
+### Name-only beneficiary wish deployment
+
+Verified on **31 October 2026 at 16:00:43 SAST** at
+`http://asus.local:4444`. Runtime revision
+`d9a4e00314d8c2a67c46e82b68584e4b07a8ae08` follows
+`c79d47bf67b27aed3eec774d8a5223aa3c293a13`.
+
+All three beneficiary wishes now have exactly the beneficiary name as title,
+**Beneficiary Instructions** as wish category, the original selected recipient
+and the plain optional-content selection. Review scheduling is off with no next
+review date. Existing authored details, status, IDs, recipient mappings, review
+history, other records, keys and configuration are retained. Original generated
+payloads remain available through revision history. New beneficiary creation
+uses the same name/category/defaults without a title prefix.
+
+Complete stopped snapshots passed SQLite integrity/foreign-key checks, encrypted
+value authentication and managed-file verification. Final checks compare the
+current records with the last stopped snapshot and confirm all three intended
+titles/categories, plain/private presentation and preserved content and state.
+Service `wolfs-legacy.service` is active with PID `459009`, started at
+15:59:59 SAST. Health and exact served-asset checks pass over loopback and the
+hostname, and unauthenticated vault/wish/beneficiary APIs return 401.
+
+Private source rollback, complete snapshots and verification records are at
+`/home/wolf/backups/wolfs-legacy/pre-plain-beneficiary-wishes-20261031T134012Z/`.
+The final comparison uses `snapshot-before-requested-title`. Refresh existing
+browsers to load the updated form and saved-recipient list. Later documentation
+commits do not change runtime files.
+
 ### Existing-beneficiary repair
 
 Startup now uses the same draft-creation helper as Add Beneficiary. It creates a
