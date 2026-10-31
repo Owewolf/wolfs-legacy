@@ -1,12 +1,20 @@
 {
   "synthetic_data_only": true,
+  "category_buttons_present": false,
+  "content_types_available_inside_entry": [
+    "letter",
+    "recording",
+    "family_history",
+    "instruction",
+    "review"
+  ],
   "chromium_engines": [
     {
       "name": "chromium",
       "version": "153.0.8010.12"
     }
   ],
-  "chromium_screens_verified": 40,
+  "chromium_screens_verified": 30,
   "chromium_mobile_workflows": [
     {
       "width": 390,

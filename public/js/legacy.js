@@ -113,7 +113,7 @@ const Legacy = (() => {
 
   async function mountOwner(root,finalEntries=[],options={}) {
     if(!root)return;
-    let items=[],beneficiaries=[],vaultEntries=[],group='all',filter={q:'',status:'',from:'',to:''},detail=null,widget=null,sequence=0;
+    let items=[],beneficiaries=[],vaultEntries=[],filter={q:'',status:''},detail=null,widget=null,sequence=0;
     let uploadConfig={max_file_bytes:25*1024*1024,accepted:mediaAccept};
     const alive=()=>root.isConnected;
     const message=(text,error=false)=>{if(!alive())return;const target=root.querySelector('[data-legacy-feedback]');if(target){target.textContent=text;target.hidden=false;target.className='alert alert-'+(error?'error':'success');}else (error?showError:showSuccess)(text);};
@@ -129,14 +129,14 @@ const Legacy = (() => {
       for(let page=2;page<=Number(first.pages || 1);page++)entries.push(...arrayResult(await API.request('GET','/vault/entries?limit=100&page='+page)));
       return entries;
     }
-    function card(item,timeline=false) {
+    function card(item,timeline=item.type==='family_history') {
       const metadata=item.metadata || {};
       const recipients=(item.beneficiaries || []).map(recipient=>recipient.name).filter(Boolean);
       const timelineDate=timeline?`<p class="legacy-timeline-date">${escape(metadata.event_date?`${metadata.date_precision==='approximate'?'Approx. ':''}${metadata.event_date}`:'Unknown date')}</p>`:'';
       return RecordCards.render({
         title:item.title,section:'final_wishes',category:types[item.type] || item.type,iconName:recordIcons[item.type] || 'file-earmark-text',
         badges:`<div class="legacy-badges">${badge(item.status)}${item.review_enabled?badge(item.review_state):''}</div>`,
-        className:`legacy-item ${timeline?'legacy-timeline-item':''}`,
+        className:'legacy-item',
         body:`<div class="record-card-body">${timelineDate}${metadata.final_wishes?.category?`<p class="legacy-help">${escape(metadata.final_wishes.category)}</p>`:''}${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)} · ${recipients.length?`For ${escape(recipients.join(', '))}`:`${(item.beneficiary_ids || item.beneficiaries || []).length} recipient(s)`}${metadata.people?.length?` · ${escape(textList(metadata.people))}`:''}${metadata.tags?.length?`<br>Tags: ${escape(textList(metadata.tags))}`:''}</p><p class="legacy-help">Updated ${escape(date(item.updated_at))}${item.next_review_at?` · Review ${escape(date(item.next_review_at))}`:''}</p></div>`,
         footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-legacy-action="open" data-item-id="${escape(item.id)}"`})})
       });
@@ -144,11 +144,18 @@ const Legacy = (() => {
     function drawList() {
       if(!alive())return;
       detail=null;
-      const reviews=group==='reviews';
-      const visible=reviews?items.filter(item=>item.review_enabled || item.type==='review'):group==='all'?items:items.filter(item=>item.type===group);
-      const arrangements=group==='all' && !filter.status ? finalEntries.filter(entry=>!filter.q || [entry.title,entry.notes,...Object.values(entry.fields || {})].join(' ').toLowerCase().includes(filter.q.toLowerCase())) : [];
-      root.innerHTML=`${feedback}<div class="legacy-tabs" role="group" aria-label="Final Wishes entry groups">${[['all','All Final Wishes'],...Object.entries(types).filter(([key])=>key!=='review'),['reviews','Information Reviews']].map(([key,label])=>`<button type="button" class="btn btn-${group===key?'primary':'outline'} btn-sm" data-legacy-group="${key}" aria-pressed="${group===key}">${label}</button>`).join('')}</div><form class="legacy-filters" id="legacy-filter-form"><div class="form-group"><label for="legacy-search">Search title, people, tags or text</label><input id="legacy-search" name="q" value="${escape(filter.q)}" type="search" placeholder="Search Final Wishes"></div><div class="form-group"><label for="legacy-filter-status">Status</label><select id="legacy-filter-status" name="status"><option value="">All statuses</option>${selectOptions({draft:'Draft',ready:'Ready',released:'Released',archived:'Archived'},filter.status)}</select></div>${group==='family_history'?`<div class="form-group"><label for="legacy-from">From date</label><input id="legacy-from" name="from" type="date" value="${escape(filter.from)}"></div><div class="form-group"><label for="legacy-to">To date</label><input id="legacy-to" name="to" type="date" value="${escape(filter.to)}"></div>`:''}<button type="submit" class="btn btn-outline btn-sm">Search</button></form>${reviews?'<p class="legacy-help">Reviewing information records its accuracy. Use the Dead Man’s Switch section for your separate check-in.</p>':''}<div class="legacy-list ${group==='family_history'?'legacy-timeline':''}">${arrangements.map(entry=>RecordCards.entry(entry,{section:'final_wishes',documentCount:options.documentCounts?.[entry.id] || 0})).join('')}${visible.length?(group==='family_history'?[...visible].sort((a,b)=>String(a.metadata?.event_date || '9999').localeCompare(String(b.metadata?.event_date || '9999'))):visible).map(item=>card(item,group==='family_history')).join(''):arrangements.length?'':`<div class="empty-state"><h3>No ${escape(group==='all'?'Final Wishes entries':reviews?'scheduled reviews':types[group].toLowerCase())} yet</h3><p>${filter.q || filter.status?'Try changing your search filters.':'Use Add Final Wishes Entry to prepare wishes and content for your recipients.'}</p></div>`}</div>`;
-      root.querySelectorAll('[data-legacy-group]').forEach(control=>control.onclick=()=>{group=control.dataset.legacyGroup;drawList();});
+      const arrangements=!filter.status ? finalEntries.filter(entry=>!filter.q || [entry.title,entry.notes,...Object.values(entry.fields || {})].join(' ').toLowerCase().includes(filter.q.toLowerCase())) : [];
+      root.innerHTML=`${feedback}
+        <form class="legacy-filters" id="legacy-filter-form">
+          <div class="form-group"><label for="legacy-search">Search title, people, tags or text</label><input id="legacy-search" name="q" value="${escape(filter.q)}" type="search" placeholder="Search Final Wishes"></div>
+          <div class="form-group"><label for="legacy-filter-status">Status</label><select id="legacy-filter-status" name="status"><option value="">All statuses</option>${selectOptions({draft:'Draft',ready:'Ready',released:'Released',archived:'Archived'},filter.status)}</select></div>
+          <button type="submit" class="btn btn-outline btn-sm">Search</button>
+        </form>
+        <div class="legacy-list">
+          ${arrangements.map(entry=>RecordCards.entry(entry,{section:'final_wishes',documentCount:options.documentCounts?.[entry.id] || 0})).join('')}
+          ${items.map(item=>card(item)).join('')}
+          ${!items.length && !arrangements.length?`<div class="empty-state"><h3>No Final Wishes entries yet</h3><p>${filter.q || filter.status?'Try changing your search filters.':'Use Add Final Wishes Entry to prepare wishes and content for your recipients.'}</p></div>`:''}
+        </div>`;
       root.querySelector('#legacy-filter-form').onsubmit=async event=>{event.preventDefault();filter=Object.fromEntries(new FormData(event.target));await load();};
       bindActions();
       options.onRender?.();
@@ -295,7 +302,6 @@ const Legacy = (() => {
       root.querySelectorAll('[data-legacy-action]').forEach(control=>control.onclick=async()=>{
         const action=control.dataset.legacyAction;
         try{
-          if(action==='new'){window.location.hash='add/final_wishes?type='+urlId(Object.hasOwn(types,group)?group:'instruction');return;}
           if(action==='back'){if(window.location.hash!=='#section/final_wishes'){window.location.hash='section/final_wishes';return;}return load();}
           if(action==='reload'){if(await load() && options.entryForm)return showEditor(newWish());return;}
           if(action==='open')return showDetail(control.dataset.itemId || detail.id);

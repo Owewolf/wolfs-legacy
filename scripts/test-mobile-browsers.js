@@ -24,7 +24,7 @@ const screens = [
   ['login', '#login', '#login-form'],
   ['dashboard', '#vault', '.vault-grid'],
   ['bank-accounts', '#section/bank_accounts', '[data-edit="13"]'],
-  ['final-wishes', '#section/final_wishes', '.legacy-tabs'],
+  ['final-wishes', '#section/final_wishes', '.legacy-list'],
   ['letter-editor', '#add/final_wishes?type=letter', '#legacy-editor'],
   ['beneficiaries', '#beneficiaries', '#add-ben-btn'],
   ['homebank', '#homebank', '.hb-account'],

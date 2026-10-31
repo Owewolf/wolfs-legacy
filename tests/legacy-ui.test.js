@@ -21,8 +21,10 @@ const fixtureEntries=[{id:11,title:'Memorial arrangements',section:'final_wishes
 const common={body_markdown:'A personal message',introduction:'',description:'',release_policy:'owner_only',status:'draft',beneficiary_ids:[1],metadata:{},links:[],beneficiaries:[],attachments:[],versions:[],reviews:[],release_events:[],review_enabled:false,revision:1,created_at:'2026-10-20T10:00:00Z',updated_at:'2026-10-28T10:00:00Z'};
 const fixtureItems=[
 {...structuredClone(common),id:'letter-1',title:'A letter for Alex',type:'letter',description:'A private letter for a future birthday'},
+{...structuredClone(common),id:'recording-2',title:'A recorded family story',type:'recording'},
 {...structuredClone(common),id:'memory-1',title:'Family picnic',type:'family_history',metadata:{event_date:'1985',date_precision:'approximate',people:['Alex Example'],tags:['family'],place:'Example park'}},
 {...structuredClone(common),id:'memory-2',title:'An undated photograph',type:'family_history',metadata:{date_precision:'unknown',people:['Jamie Example']}},
+{...structuredClone(common),id:'review-1',title:'Review estate information',type:'review',review_enabled:true},
 {...structuredClone(common),id:'instructions-1',title:'Household handover',type:'instruction',body_markdown:'Check the garden each week.',status:'released',release_policy:'manual_release',review_enabled:true,review_interval_months:12,next_review_at:'2026-11-01T00:00:00Z',review_state:'due_soon',metadata:{category:'maintenance',priority:'normal',checklist:[{id:'water-garden',text:'Water the garden'},{id:'call-service',text:'Contact the maintenance service'}]},links:[{entry_id:12}],attachments:[{id:'recording-1',display_name:'Garden instructions.wav',mime_type:'audio/wav',size_bytes:128,sha256:'a'.repeat(64)}],beneficiaries:[{beneficiary_id:1,name:'Alex Example',released_at:'2026-10-28T10:00:00Z',revoked_at:null,release_scope:'manual_release'}]}
 ];
 const fixtureCopy=value=>structuredClone(value);
@@ -85,16 +87,18 @@ const browserChecks = `
  async function until(predicate,label){for(let n=0;n<120;n++){if(predicate())return;await flush();}throw new Error('Timed out: '+label);}
  const workspace=()=>document.getElementById('legacy-workspace');
  const action=name=>workspace()?.querySelector('[data-legacy-action="'+name+'"]');
- await until(()=>workspace()?.querySelector('.legacy-tabs'),'owner content groups');
- check(document.querySelectorAll('.legacy-tabs button').length===6,'extends Final Wishes with five groups and All content');
+ await until(()=>workspace()?.querySelector('.legacy-list'),'owner content list');
+ check(!workspace().querySelector('.legacy-tabs,[data-legacy-group]'),'Final Wishes list has no separate content category buttons');
+ check(fixtureItems.every(item=>workspace().querySelector('.legacy-list').textContent.includes(item.title)),'one Final Wishes list displays letters, recordings, family history, instructions and reviews');
  check(document.querySelector('.final-wishes-entries').textContent.includes('Existing final wish retained'),'preserves existing Final Wishes fields and arrangements');
  check(!Array.from(document.querySelectorAll('.sidebar .nav-item')).some(item=>item.textContent.includes('Personal Legacy')),'adds no top-level legacy section');
- check(!action('new')&&!workspace().querySelector('.legacy-heading'),'Final Wishes list has one page-level authoring entry point');
+ check(document.querySelectorAll('.page-header [data-nav="add/final_wishes"]').length===1&&!action('new')&&!workspace().querySelector('.legacy-heading'),'Final Wishes list has one page-level Add Final Wishes Entry action');
  document.querySelector('.page-header [data-nav="add/final_wishes"]').click();
  await until(()=>document.getElementById('legacy-editor'),'unified Final Wishes editor');
  let form=document.getElementById('legacy-editor');
  check(location.hash==='#add/final_wishes'&&document.querySelector('.page-header h1').textContent==='Add Final Wishes Entry','page-level action opens the unified Final Wishes form');
  check(workspace().contains(form)&&!document.getElementById('entry-form')&&form.elements.type.value==='instruction','new wishes use one protected editor with personal instructions selected');
+ check(['letter','recording','family_history','instruction','review'].every(type=>Array.from(form.querySelector('#legacy-type').options).some(option=>option.value===type)),'the unified entry editor retains every content type');
  check(form.elements.release_policy.value==='owner_only'&&form.elements.status.value==='draft','new content defaults to private draft');
  form.elements.wish_category.value='Memorial Preferences';
  form.elements.wish_details.value='Share family stories at the memorial.';
@@ -142,10 +146,12 @@ const browserChecks = `
  check(fixtureCalls.some(call=>call.route.endsWith('/review')&&call.body.action==='updated'),'Reviewed and Updated saves the revision and review history');
  action('review-no-change').click();await flush();
  check(fixtureCalls.some(call=>call.route.endsWith('/review')&&call.body.action==='no_change')&&!fixtureCalls.some(call=>/deadswitch|checkin/.test(call.route)),'information reviews remain separate from Dead Man’s Switch check-in');
- action('back').click();await until(()=>workspace().querySelector('[data-legacy-group="family_history"]'),'content list');workspace().querySelector('[data-legacy-group="family_history"]').click();
- check(workspace().querySelector('.legacy-timeline')&&workspace().textContent.includes('Approx. 1985')&&workspace().textContent.includes('Unknown date'),'family timeline preserves approximate and unknown dates');
- workspace().querySelector('#legacy-search').value='family';workspace().querySelector('#legacy-from').value='1980-01-01';workspace().querySelector('#legacy-to').value='1990-12-31';workspace().querySelector('#legacy-filter-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
- check(fixtureCalls.some(call=>call.route.includes('q=family')&&call.route.includes('from=1980-01-01')&&call.route.includes('to=1990-12-31')),'family search sends people or tag text and date filters');
+ action('back').click();await until(()=>workspace().querySelector('.legacy-list'),'content list');
+ const familyDates=Array.from(workspace().querySelectorAll('.legacy-timeline-date')).map(element=>element.textContent);
+ check(familyDates.includes('Approx. 1985')&&familyDates.includes('Unknown date'),'family history cards preserve approximate and unknown dates in the shared list');
+ check(!workspace().querySelector('#legacy-from,#legacy-to,.legacy-timeline'),'the shared list has no separate family timeline or date range controls');
+ workspace().querySelector('#legacy-search').value='family';workspace().querySelector('#legacy-filter-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
+ check(fixtureCalls.some(call=>call.route.includes('q=family')),'shared Final Wishes search sends people or tag text');
  window.location.hash='beneficiaries';await until(()=>document.querySelector('[data-legacy-beneficiary]'),'existing beneficiaries view');
  document.querySelector('[data-legacy-beneficiary="1"]').open=true;await until(()=>document.querySelector('[data-legacy-recipient-items]').textContent.includes('A letter for Alex'),'recipient content summary');
  check(document.querySelector('[data-legacy-recipient-items]').textContent.includes('private')&&document.querySelector('[data-legacy-recipient-items]').textContent.includes('Household handover'),'beneficiary record shows its private and released content alongside existing access controls');

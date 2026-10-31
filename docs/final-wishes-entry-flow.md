@@ -7,11 +7,13 @@ the wish title, category, details, contact person/phone and notes with recipient
 content type, written content, protected attachments, release policy and optional
 information reviews. The former outer Add Content heading/action is removed.
 
-Existing arrangements and protected entries appear in the same list. The type,
-status and text controls filter that list; ordinary arrangements appear in All
-Final Wishes and text search, while lifecycle statuses apply to protected
-entries. Existing Edit/Documents/Delete handlers on arrangements remain intact.
-Dashboard and navigation counts include active protected wishes.
+Existing arrangements and protected entries appear in the same list. The page
+has no All Final Wishes, Personal Letters, Audio & Video, Family History,
+Personal Instructions or Information Reviews category buttons. Choose content
+types inside Add Final Wishes Entry instead. Existing text/status search and
+Edit/Documents/Delete handlers remain available; lifecycle status filters apply
+to protected entries. Family dates remain on their cards. Dashboard and
+navigation counts include active protected wishes.
 
 ## Privacy and compatibility
 
@@ -70,3 +72,18 @@ database operation or migration was needed. Refresh existing browsers to load
 the combined form. The previous public source archive and private verification
 record are retained at `/home/wolf/backups/wolfs-legacy/pre-final-wishes-entry-20261031T130016Z/`. This is a source-only rollback archive,
 not a database backup. Later documentation commits do not change runtime assets.
+
+### Category button removal
+
+Verified on **31 October 2026 at 15:11:21 SAST**: all six category
+buttons are removed from the list. The Add Final Wishes Entry form retains
+Personal Letters, Audio & Video Messages, Family History, Personal Instructions
+and Information Reviews. Existing search, status, recipient, file and release
+controls remain available.
+
+Firefox desktop/phone/tablet interaction tests pass. Chromium covers 30 screen
+captures at 390/820/1440px plus 60 workflow checks at each mobile/tablet width;
+WebKitGTK covers ten screens plus 59 workflow checks at 390px. Updated list
+screenshots show the category-free page. Live health and script-byte checks
+pass through loopback and the hostname, with the service still active and no
+restart. Private rollback source and verification: `/home/wolf/backups/wolfs-legacy/pre-final-wishes-buttons-20261031T131121Z/`.

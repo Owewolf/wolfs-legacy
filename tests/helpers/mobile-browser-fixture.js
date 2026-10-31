@@ -172,7 +172,7 @@ async function runMobileWorkflow() {
   entryForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   await until(() => document.querySelector('[data-edit="13"]'), 'saved bank account');
   check(fixtureCalls.some(call => call.method === 'updateEntry' && call.body.title === 'Updated example savings account'), 'mobile entry form saves through the existing API');
-  await route('section/final_wishes', '.legacy-tabs');
+  await route('section/final_wishes', '.legacy-list');
   check(!document.querySelector('#legacy-workspace [data-legacy-action="new"]'), 'Final Wishes provides a single page-level Add Final Wishes Entry action');
   document.querySelector('.page-header [data-nav="add/final_wishes"]').click();
   await until(() => location.hash === '#add/final_wishes' && document.querySelector('#legacy-editor'), 'unified Final Wishes entry form');
