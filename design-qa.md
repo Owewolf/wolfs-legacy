@@ -76,4 +76,5 @@ theme requirement. The existing app's fonts and navigation are retained.
 The zoom check uses equivalent reflow and separate text doubling, not browser
 chrome zoom automation. Physical devices, native Safari and real screen-reader
 applications were not run; engine layout, semantic states, accessible names and
-keyboard operation were checked. No deployment was performed.
+keyboard operation were checked. Live deployment verification is recorded in
+[deployment notes](docs/record-cards-deployment.md).

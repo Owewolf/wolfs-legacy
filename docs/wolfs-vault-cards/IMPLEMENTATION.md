@@ -90,3 +90,5 @@ equivalent of 1440px at 200%, plus separately doubled text. Browser-chrome zoom,
 physical phones, native Safari, and actual screen-reader applications were not
 run. Roles, accessible names/states, focus, and keyboard behaviour were checked
 in real browser engines. No remaining known layout or workflow issue was found.
+
+The update is live on the existing service; see [deployment verification](../record-cards-deployment.md).
