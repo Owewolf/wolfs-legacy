@@ -18,6 +18,83 @@ function ago(d) {
 }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
 
+// Shared presentation for owner, search, recipient and personal-content records.
+// Data mapping and action handlers stay with their existing views.
+const RecordCards = (() => {
+  const text = value => esc(String(value ?? ''));
+  const attr = value => text(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const categories = {
+    personal: ['person', 'blue'], bank_accounts: ['bank', 'teal'],
+    investments: ['bar-chart-fill', 'violet'], retirement: ['bank', 'teal'],
+    insurance: ['shield-check', 'blue'], real_estate: ['house', 'teal'],
+    debts: ['credit-card', 'orange'], digital: ['laptop', 'blue'],
+    vehicles: ['car-front', 'teal'], valuables: ['gem', 'violet'],
+    contacts: ['telephone', 'teal'], legal: ['file-earmark-text', 'blue'],
+    final_wishes: ['chat-heart', 'violet'], secure_notes: ['lock', 'blue'],
+    pet_care: ['heart', 'orange'], beneficiaries: ['people', 'teal']
+  };
+  function icon(name) {
+    return `<svg class="record-icon" aria-hidden="true" focusable="false"><use href="/icons/record-icons.svg#${attr(name)}"></use></svg>`;
+  }
+  function heading({ title, section, category, iconName, tone, badges = '' }) {
+    const defaults = categories[section] || ['journal-text', 'blue'];
+    return `<header class="record-card-header">
+      <span class="record-category-icon record-tone-${attr(tone || defaults[1])}">${icon(iconName || defaults[0])}</span>
+      <div class="record-title"><h3>${text(title)}</h3>${category ? `<span class="record-category-chip">${text(category)}</span>` : ''}${badges}</div>
+    </header>`;
+  }
+  function action({ label, iconName, attributes = '', danger = false }) {
+    return `<button type="button" class="btn btn-outline record-action${danger ? ' record-action-danger' : ''}" ${attributes}>${iconName ? icon(iconName) : ''}<span>${text(label)}</span></button>`;
+  }
+  function footer({ primary = '', secondary = '' }) {
+    if (!primary && !secondary) return '';
+    return `<footer class="record-card-footer"><div class="record-card-actions">${primary}</div>${secondary ? `<div class="record-card-secondary">${secondary}</div>` : ''}</footer>`;
+  }
+  function render({ title, section, category, iconName, tone, badges, body = '', footer: actions = '', id, className = '' }) {
+    return `<article class="card record-card ${attr(className)}"${id ? ` id="${attr(id)}"` : ''}>${heading({ title, section, category, iconName, tone, badges })}${body}${actions}</article>`;
+  }
+  function fieldsHTML(fields, conceal = true) {
+    if (!fields.length) return '';
+    return `<dl class="field-grid record-details">${fields.map(field => `<div class="field-item"><dt>${text(field.label)}</dt><dd class="value${conceal && field.sensitive ? ' sensitive' : ''}"${conceal && field.sensitive ? ` role="button" tabindex="0" aria-pressed="false" aria-label="Reveal ${attr(field.label)}" data-sensitive-label="${attr(field.label)}"` : ''}>${text(field.value)}</dd></div>`).join('')}</dl>`;
+  }
+  function entry(entry, { section = entry.section, documentCount = 0, readonly = false, search = false, attachments = '' } = {}) {
+    const schema = SECTIONS[section];
+    const values = entry.fields || {};
+    const fields = search ? Object.entries(values).slice(0, 4).map(([key, value]) => ({
+      label: key, value: String(value).substring(0, 80),
+      sensitive: schema?.fields.find(field => field.key === key)?.sensitive
+    })) : (schema?.fields || []).filter(field => values[field.key]).map(field => ({ ...field, value: values[field.key] }));
+    let [iconName, tone] = categories[section] || ['journal-text', 'blue'];
+    if (/cryptocurrency|crypto exchange/i.test([values.type, values.investment_type].join(' '))) {
+      iconName = 'currency-bitcoin'; tone = 'orange';
+    } else if (section === 'retirement' && values.investment_type) {
+      iconName = 'bar-chart-fill'; tone = 'violet';
+    }
+    const category = search ? (schema?.name || section) : (values.account_type || values.type || values.category || values.species || values.role);
+    const body = fieldsHTML(fields, !readonly) + (entry.notes ? `<div class="record-notes"><h4>Notes</h4><div>${text(entry.notes)}</div></div>` : '') + attachments;
+    const editAttributes = search ? `data-nav="edit/${attr(section)}/${attr(entry.id)}"` : `data-edit="${attr(entry.id)}"`;
+    return render({ title: entry.title, section, category, iconName, tone, body,
+      id: readonly ? `beneficiary-vault-entry-${entry.id}` : undefined,
+      footer: readonly ? '' : footer({
+        primary: action({ label: 'Edit', iconName: 'pencil', attributes: editAttributes }) + (search ? '' : action({ label: `Documents (${documentCount})`, iconName: 'file-earmark-text', attributes: editAttributes })),
+        secondary: search ? '' : action({ label: 'Delete', iconName: 'trash', attributes: `data-delete="${attr(entry.id)}"`, danger: true })
+      })
+    });
+  }
+  function bindSensitive(root = app) {
+    root.querySelectorAll('.value.sensitive').forEach(el => {
+      const toggle = () => {
+        const revealed = el.classList.toggle('revealed');
+        el.setAttribute('aria-pressed', String(revealed));
+        el.setAttribute('aria-label', revealed ? `${el.dataset.sensitiveLabel}: ${el.textContent}. Activate to conceal.` : `Reveal ${el.dataset.sensitiveLabel}`);
+      };
+      el.onclick = toggle;
+      el.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(); } };
+    });
+  }
+  return { icon, heading, action, footer, render, entry, bindSensitive };
+})();
+
 // ── Theme toggle ──
 function getTheme() { return localStorage.getItem('lv_theme') || 'dark'; }
 function setTheme(t) { document.documentElement.setAttribute('data-theme', t); localStorage.setItem('lv_theme', t); }
@@ -350,24 +427,14 @@ async function renderSearchResults(query, refreshedResults, shouldRender = () =>
   if (window.location.hash !== expectedHash || !shouldRender()) return;
   displayedSearchResults = results;
 
-  const resultsHTML = results.length ? results.map(e => {
-    const sec = SECTIONS[e.section];
-    return `<div class="card" style="cursor:pointer" data-nav="edit/${e.section}/${e.id}">
-      <div class="card-header">
-        <h3>${sec ? sec.icon + ' ' : ''}${esc(e.title)}</h3>
-        <span style="font-size:12px;color:var(--text-muted)">${sec ? sec.name : e.section}</span>
-      </div>
-      <div class="field-grid">${Object.entries(e.fields || {}).slice(0, 4).map(([k, v]) =>
-        `<div class="field-item"><label>${esc(k)}</label><div class="value">${esc(String(v).substring(0, 80))}</div></div>`
-      ).join('')}</div>
-    </div>`;
-  }).join('') : `<div class="empty-state"><h3>No results</h3><p>Nothing matched "${esc(q)}" in your vault.</p></div>`;
+  const resultsHTML = results.length ? results.map(e => RecordCards.entry(e, { search: true })).join('') : `<div class="empty-state"><h3>No results</h3><p>Nothing matched "${esc(q)}" in your vault.</p></div>`;
 
   app.innerHTML = layoutHTML('search', `
     <div class="page-header"><h1>Search: "${esc(q)}"</h1><span style="color:var(--text-muted)">${results.length} results</span></div>
     ${resultsHTML}
   `);
   bindSidebar();
+  RecordCards.bindSensitive();
   const si = $('#global-search');
   if (si) si.value = q;
   return true;
@@ -393,26 +460,7 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
   if (window.location.hash !== expectedHash || !shouldRender()) return;
   state.entries = entries;
   state.counts = counts;
-  const entriesHTML = entries.length ? entries.map(e => {
-    const fieldsHTML = sec.fields.filter(f => e.fields[f.key]).map(f => `
-      <div class="field-item">
-        <label>${esc(f.label)}</label>
-        <div class="value ${f.sensitive ? 'sensitive' : ''}">${esc(e.fields[f.key])}</div>
-      </div>`).join('');
-
-    return `<div class="card">
-      <div class="card-header">
-        <h3>${esc(e.title)}</h3>
-        <div class="actions">
-          <button class="btn btn-outline btn-sm" data-edit="${e.id}">Edit</button>
-          <button class="btn btn-outline btn-sm" data-edit="${e.id}">Documents (${docCounts[e.id] || 0})</button>
-          <button class="btn btn-danger btn-sm" data-delete="${e.id}">Delete</button>
-        </div>
-      </div>
-      <div class="field-grid">${fieldsHTML}</div>
-      ${e.notes ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><label style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">Notes</label><div style="font-size:14px;white-space:pre-wrap;margin-top:4px">${esc(e.notes)}</div></div>` : ''}
-    </div>`;
-  }).join('') : `<div class="empty-state">
+  const entriesHTML = entries.length ? entries.map(e => RecordCards.entry(e, { section: key, documentCount: docCounts[e.id] || 0 })).join('') : `<div class="empty-state">
     <div class="icon">${sec.icon}</div>
     <h3>No ${sec.name} entries yet</h3>
     <p>Add your first entry to start building your Wolf's Vault.</p>
@@ -430,12 +478,21 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
   `);
 
   bindSidebar();
-  document.querySelectorAll('.value.sensitive').forEach(el => { el.onclick = () => el.classList.toggle('revealed'); });
+  RecordCards.bindSensitive();
   document.querySelectorAll('[data-edit]').forEach(el => { el.onclick = () => navigate('edit/' + key + '/' + el.dataset.edit); });
   document.querySelectorAll('[data-delete]').forEach(el => {
     el.onclick = async () => {
       if (!confirm('Delete this entry? This cannot be undone.')) return;
-      try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); renderSection(key); } catch (err) { showError(err.message); }
+      const card = el.closest('.record-card');
+      const controls = [...card.querySelectorAll('button')];
+      card.setAttribute('aria-busy', 'true');
+      controls.forEach(control => { control.disabled = true; });
+      try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); await renderSection(key); } catch (err) {
+        showError(err.message);
+      } finally {
+        card.removeAttribute('aria-busy');
+        controls.forEach(control => { control.disabled = false; });
+      }
     };
   });
   if(key==='final_wishes')void Legacy.mountOwner($('#legacy-workspace'),entries);
@@ -551,22 +608,18 @@ async function renderBeneficiaries() {
     const expired = b.token_expires_at && new Date() > new Date(b.token_expires_at);
     if (expired) statusBadge += ' <span class="badge badge-danger">Token Expired</span>';
 
-    return `<div class="card">
-      <div class="beneficiary-card">
-        <div class="beneficiary-info">
-          <div class="name">${esc(b.name)} ${statusBadge}</div>
-          <div class="meta">${esc(b.relationship || '')} ${b.email ? '&middot; ' + esc(b.email) : ''} ${b.phone ? '&middot; ' + esc(b.phone) : ''}</div>
-          <div class="meta">Wait: ${b.emergency_waiting_days}d &middot; Token expires: ${b.token_expires_at ? fmtDate(b.token_expires_at) : 'never'} &middot; Added ${fmtDate(b.created_at)}</div>
-        </div>
-        <div class="beneficiary-actions">
-          ${b.emergency_access_requested && !b.access_granted ? `<button class="btn btn-danger btn-sm" data-deny="${b.id}">Deny Emergency</button>` : ''}
-          ${!b.access_granted ? `<button class="btn btn-success btn-sm" data-grant="${b.id}">Grant Access</button>` : `<button class="btn btn-warning btn-sm" data-revoke="${b.id}">Revoke</button>`}
-          <button class="btn btn-outline btn-sm" data-regen="${b.id}">New Token</button>
-          <button class="btn btn-danger btn-sm" data-remove="${b.id}">Remove</button>
-        </div>
-      </div>
-      ${Legacy.beneficiaryPanel(b)}
-    </div>`;
+    return RecordCards.render({ title: b.name, section: 'beneficiaries', category: b.relationship, badges: statusBadge,
+      body: `<div class="beneficiary-info record-card-body">
+        <div class="meta">${esc(b.relationship || '')} ${b.email ? '&middot; ' + esc(b.email) : ''} ${b.phone ? '&middot; ' + esc(b.phone) : ''}</div>
+        <div class="meta">Wait: ${b.emergency_waiting_days}d &middot; Token expires: ${b.token_expires_at ? fmtDate(b.token_expires_at) : 'never'} &middot; Added ${fmtDate(b.created_at)}</div>
+      </div>${Legacy.beneficiaryPanel(b)}`,
+      footer: RecordCards.footer({
+        primary: (b.emergency_access_requested && !b.access_granted ? RecordCards.action({ label: 'Deny Emergency', attributes: `data-deny="${b.id}"`, danger: true }) : '') +
+          RecordCards.action({ label: b.access_granted ? 'Revoke' : 'Grant Access', attributes: b.access_granted ? `data-revoke="${b.id}"` : `data-grant="${b.id}"` }) +
+          RecordCards.action({ label: 'New Token', attributes: `data-regen="${b.id}"` }),
+        secondary: RecordCards.action({ label: 'Remove', iconName: 'trash', attributes: `data-remove="${b.id}"`, danger: true })
+      })
+    });
   }).join('') : '<div class="empty-state"><div class="icon">\u{1F465}</div><h3>No beneficiaries</h3><p>Add someone you trust to receive your vault data.</p></div>';
 
   const tokenHTML = state.newToken ? `
@@ -886,12 +939,7 @@ function renderVaultReadonly(data, token) {
     if (!sec) continue;
     html += `<div class="section-group"><h2 class="section-title">${sec.icon} ${esc(sec.name)}</h2>`;
     for (const e of entries) {
-      const fieldsHTML = (sec.fields || []).filter(f => e.fields[f.key]).map(f =>
-        `<div class="field-item"><label>${esc(f.label)}</label><div class="value">${esc(e.fields[f.key])}</div></div>`
-      ).join('');
-      html += `<div class="card" id="beneficiary-vault-entry-${e.id}"><h3 style="margin-bottom:12px">${esc(e.title)}</h3><div class="field-grid">${fieldsHTML}</div>
-        ${e.notes ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><label style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">Notes</label><div style="white-space:pre-wrap;margin-top:4px">${esc(e.notes)}</div></div>` : ''}
-        ${Docs.beneficiaryCards(e.documents)}</div>`;
+      html += RecordCards.entry(e, { section: sectionKey, readonly: true, attachments: Docs.beneficiaryCards(e.documents) });
     }
     html += '</div>';
   }

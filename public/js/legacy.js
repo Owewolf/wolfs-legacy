@@ -1,4 +1,4 @@
-/* global API, Docs, SECTIONS, showError, showSuccess */
+/* global API, Docs, RecordCards, SECTIONS, showError, showSuccess */
 'use strict';
 
 // These records belong to Final Wishes. They are fetched separately from the
@@ -7,6 +7,7 @@ const Legacy = (() => {
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const types = {letter:'Personal Letters',recording:'Audio & Video Messages',family_history:'Family History',instruction:'Personal Instructions',review:'Information Reviews'};
   const singular = {letter:'letter',recording:'recording',family_history:'family memory',instruction:'instruction',review:'review record'};
+  const recordIcons = {letter:'envelope',recording:'chat-heart',family_history:'clock-history',instruction:'tools',review:'journal-text'};
   const policies = {owner_only:'Private — owner only',manual_release:'Release manually',dead_switch_release:'Release when the Dead Man’s Switch triggers',emergency_access_release:'Release after emergency access is granted'};
   const reviewNames = {current:'Current',due_soon:'Due soon',overdue:'Overdue',archived:'Archived',disabled:'Not scheduled'};
   const mediaAccept = '.pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.txt,.mp3,.m4a,.wav,.mp4,.mov';
@@ -121,7 +122,14 @@ const Legacy = (() => {
     }
     function card(item,timeline=false) {
       const metadata=item.metadata || {};
-      return `<article class="card legacy-item ${timeline?'legacy-timeline-item':''}">${timeline?`<p class="legacy-timeline-date">${escape(metadata.event_date?`${metadata.date_precision==='approximate'?'Approx. ':''}${metadata.event_date}`:'Unknown date')}</p>`:''}<div class="legacy-card-heading"><div><p class="legacy-eyebrow">${escape(types[item.type] || item.type)}</p><h3>${escape(item.title)}</h3></div><div class="legacy-badges">${badge(item.status)}${item.review_enabled?badge(item.review_state):''}</div></div>${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)} · ${(item.beneficiary_ids || item.beneficiaries || []).length} recipient(s)${metadata.people?.length?` · ${escape(textList(metadata.people))}`:''}${metadata.tags?.length?`<br>Tags: ${escape(textList(metadata.tags))}`:''}</p><div class="legacy-card-footer"><small>Updated ${escape(date(item.updated_at))}${item.next_review_at?` · Review ${escape(date(item.next_review_at))}`:''}</small>${button('open','Open','outline',`data-item-id="${escape(item.id)}"`)}</div></article>`;
+      const timelineDate=timeline?`<p class="legacy-timeline-date">${escape(metadata.event_date?`${metadata.date_precision==='approximate'?'Approx. ':''}${metadata.event_date}`:'Unknown date')}</p>`:'';
+      return RecordCards.render({
+        title:item.title,section:'final_wishes',category:types[item.type] || item.type,iconName:recordIcons[item.type] || 'file-earmark-text',
+        badges:`<div class="legacy-badges">${badge(item.status)}${item.review_enabled?badge(item.review_state):''}</div>`,
+        className:`legacy-item ${timeline?'legacy-timeline-item':''}`,
+        body:`<div class="record-card-body">${timelineDate}${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)} · ${(item.beneficiary_ids || item.beneficiaries || []).length} recipient(s)${metadata.people?.length?` · ${escape(textList(metadata.people))}`:''}${metadata.tags?.length?`<br>Tags: ${escape(textList(metadata.tags))}`:''}</p><p class="legacy-help">Updated ${escape(date(item.updated_at))}${item.next_review_at?` · Review ${escape(date(item.next_review_at))}`:''}</p></div>`,
+        footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-legacy-action="open" data-item-id="${escape(item.id)}"`})})
+      });
     }
     function drawList() {
       if(!alive())return;
@@ -157,8 +165,9 @@ const Legacy = (() => {
         if(item.links?.length && !vaultEntries.length)vaultEntries=await allVaultEntries();
         if(!alive() || current!==sequence)return;
         detail=item;
-        const controls=recipientPreview?button('open','Return to management','outline',`data-item-id="${escape(item.id)}"`):button('edit','Edit')+button('preview','Preview recipient view')+(item.status==='draft'?button('ready','Mark ready','success'):'')+(item.release_policy==='manual_release' && ['ready','released'].includes(item.status)?button('release','Release…','primary'):'')+((item.beneficiaries || []).some(recipient=>recipient.released_at && !recipient.revoked_at)?button('revoke','Revoke release…','warning'):'')+(item.status!=='archived'?button('archive','Archive','danger'):'');
-        root.innerHTML=heading(item.title,button('back','← All content'))+feedback+`<div class="card legacy-detail">${recipientPreview?'<div class="alert alert-info">Owner preview of the recipient’s content. Actual recipient access depends on their current authorisation and this item’s release.</div>':`<div class="legacy-badges">${badge(item.status)}<span class="legacy-eyebrow">${escape(types[item.type])}</span></div>`}<div class="actions legacy-detail-actions">${controls}</div>${contentView(item,html)}${!recipientPreview?ownerRecipientSummary(item)+renderLinks(item)+reviewControls(item)+`<p class="legacy-help">Created ${escape(date(item.created_at,true))} · Updated ${escape(date(item.updated_at,true))} · Revision ${Number(item.revision) || 1}</p>`+historyView(item):''}</div>`;
+        const controls=recipientPreview?button('open','Return to management','outline',`data-item-id="${escape(item.id)}"`):RecordCards.action({label:'Edit',iconName:'pencil',attributes:'data-legacy-action="edit"'})+button('preview','Preview recipient view')+(item.status==='draft'?button('ready','Mark ready','success'):'')+(item.release_policy==='manual_release' && ['ready','released'].includes(item.status)?button('release','Release…','primary'):'')+((item.beneficiaries || []).some(recipient=>recipient.released_at && !recipient.revoked_at)?button('revoke','Revoke release…','warning'):'');
+        const archiveControl=!recipientPreview && item.status!=='archived'?RecordCards.action({label:'Archive',iconName:'archive',attributes:'data-legacy-action="archive"',danger:true}):'';
+        root.innerHTML=heading(item.title,button('back','← All content'))+feedback+`<div class="card record-card legacy-detail">${RecordCards.heading({title:item.title,section:'final_wishes',category:types[item.type],iconName:recordIcons[item.type],badges:recipientPreview?'':`<div class="legacy-badges">${badge(item.status)}</div>`})}${recipientPreview?'<div class="alert alert-info">Owner preview of the recipient’s content. Actual recipient access depends on their current authorisation and this item’s release.</div>':''}${contentView(item,html)}${!recipientPreview?ownerRecipientSummary(item)+renderLinks(item)+reviewControls(item)+`<p class="legacy-help">Created ${escape(date(item.created_at,true))} · Updated ${escape(date(item.updated_at,true))} · Revision ${Number(item.revision) || 1}</p>`+historyView(item):''}${RecordCards.footer({primary:controls,secondary:archiveControl})}</div>`;
         bindActions();bindFiles(root,item);
       }catch(error){message(error.message,true);}
     }
@@ -282,7 +291,16 @@ const Legacy = (() => {
     const header='<h2 class="section-title">🕊 Final Wishes — Personal messages, memories and instructions</h2>';
     async function load() {
       const current=++sequence;
-      try{const items=arrayResult(await recipientRequest(token,'GET'));if(!alive() || current!==sequence)return;root.innerHTML=header+(items.length?items.map(item=>`<article class="card legacy-item"><p class="legacy-eyebrow">${escape(types[item.type] || item.type)}</p><h3>${escape(item.title)}</h3>${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<div class="legacy-card-footer"><small>Released content · Updated ${escape(date(item.updated_at))}</small><button type="button" class="btn btn-outline btn-sm" data-recipient-content="${escape(item.id)}">Open</button></div></article>`).join(''):'<div class="card"><p>No personal content has been released to you.</p></div>');root.querySelectorAll('[data-recipient-content]').forEach(control=>control.onclick=()=>open(control.dataset.recipientContent));}
+      try{
+        const items=arrayResult(await recipientRequest(token,'GET'));
+        if(!alive() || current!==sequence)return;
+        root.innerHTML=header+(items.length?items.map(item=>RecordCards.render({
+          title:item.title,section:'final_wishes',category:types[item.type] || item.type,iconName:recordIcons[item.type] || 'file-earmark-text',className:'legacy-item',
+          body:`<div class="record-card-body">${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">Released content · Updated ${escape(date(item.updated_at))}</p></div>`,
+          footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-recipient-content="${escape(item.id)}"`})})
+        })).join(''):'<div class="card"><p>No personal content has been released to you.</p></div>');
+        root.querySelectorAll('[data-recipient-content]').forEach(control=>control.onclick=()=>open(control.dataset.recipientContent));
+      }
       catch(error){if(alive() && current===sequence)root.innerHTML=header+`<div class="alert alert-error">${escape(error.message)}</div>`;}
     }
     async function open(id) {
@@ -294,7 +312,11 @@ const Legacy = (() => {
         // call the owner-only preview route using a beneficiary token.
         const html=safeHtml(item.body_html || item.html || '');
         const linked=(item.links || []).map(link=>entries.find(entry=>String(entry.id)===String(link.entry_id))).filter(Boolean);
-        root.innerHTML=header+`<article class="card legacy-detail"><div class="legacy-heading"><h3>${escape(item.title)}</h3><button type="button" class="btn btn-outline btn-sm" data-recipient-back>← All messages</button></div><p class="legacy-eyebrow">${escape(types[item.type] || item.type)}</p>${contentView(item,html || `<p>${escape(item.body_markdown).replace(/\n/g,'<br>')}</p>`,true)}${linked.length?`<section class="legacy-subsection"><h3>Related vault records</h3><div class="actions">${linked.map(entry=>`<button type="button" class="btn btn-outline btn-sm" data-recipient-linked-entry="${escape(entry.id)}">${escape(entry.title)}</button>`).join('')}</div></section>`:''}<p class="legacy-help">Updated ${escape(date(item.updated_at,true))}</p><div data-recipient-feedback class="legacy-help" role="status" aria-live="polite"></div></article>`;
+        root.innerHTML=header+RecordCards.render({
+          title:item.title,section:'final_wishes',category:types[item.type] || item.type,iconName:recordIcons[item.type] || 'file-earmark-text',className:'legacy-detail',
+          body:`${contentView(item,html || `<p>${escape(item.body_markdown).replace(/\n/g,'<br>')}</p>`,true)}${linked.length?`<section class="legacy-subsection"><h3>Related vault records</h3><div class="actions">${linked.map(entry=>`<button type="button" class="btn btn-outline btn-sm" data-recipient-linked-entry="${escape(entry.id)}">${escape(entry.title)}</button>`).join('')}</div></section>`:''}<p class="legacy-help">Updated ${escape(date(item.updated_at,true))}</p><div data-recipient-feedback class="legacy-help" role="status" aria-live="polite"></div>`,
+          footer:RecordCards.footer({primary:RecordCards.action({label:'All messages',iconName:'envelope',attributes:'data-recipient-back'})})
+        });
         root.querySelector('[data-recipient-back]').onclick=load;bindFiles(root,item,token);
         root.querySelectorAll('[data-recipient-linked-entry]').forEach(control=>control.onclick=()=>document.getElementById('beneficiary-vault-entry-'+control.dataset.recipientLinkedEntry)?.scrollIntoView({behavior:'smooth',block:'start'}));
         root.querySelectorAll('[data-legacy-step]').forEach(control=>control.onchange=async()=>{const checked=control.checked;control.disabled=true;try{await recipientRequest(token,'POST','/'+urlId(item.id)+'/acknowledgements',{step_id:control.dataset.legacyStep,acknowledged:checked});if(alive() && current===sequence)root.querySelector('[data-recipient-feedback]').textContent=checked?'Step acknowledged.':'Acknowledgement removed.';}catch(error){control.checked=!checked;if(alive() && current===sequence)root.querySelector('[data-recipient-feedback]').textContent=error.message;}finally{control.disabled=false;}});
