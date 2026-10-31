@@ -95,9 +95,35 @@ policy migration is required.
   keyboard navigation, removing recipients, existing recipient shortcuts, and
   preserving saved links while hiding the related-record selector.
 
-These checks use synthetic local fixtures. This section records the current
-implementation and does not record a live deployment. The deployments below
-describe the earlier combined-entry and category-button changes.
+These checks use synthetic local fixtures. Production wishes were not created
+or released during verification.
+
+### Beneficiary draft deployment
+
+Verified on **31 October 2026 at 15:25:00 SAST** at
+`http://asus.local:4444`. Runtime revision
+`bfadc40cee32974b5f75eb4ac999f7afd4a9dd3e` follows
+`2dafe410c31f963922d2e03633497515c25829ff`. The service was stopped for a complete
+snapshot and restarted to load the backend changes. It is active/running with
+PID `398911`, started at 15:24:31 SAST.
+
+The complete snapshot passed SQLite integrity/foreign-key checks, encrypted
+value authentication and managed-file checksum verification. Before/after
+fingerprints confirm existing users, beneficiaries/tokens, vault entries,
+protected wishes, revisions, recipient mappings, saved links, managed-document
+records, keys and configuration are unchanged. No existing beneficiary backfill
+or schema migration was introduced.
+
+Both loopback and the hostname return healthy status; HTML, app/legacy/section
+scripts and legacy CSS match the source byte for byte. Unauthenticated vault,
+wish and beneficiary endpoints return 401. Live Chromium login checks at 390px
+and 1440px pass without horizontal overflow or script errors.
+
+The previous complete source archive, stopped snapshot and private verification
+records are retained at
+`/home/wolf/backups/wolfs-legacy/pre-beneficiary-wish-recipients-20261031T132344Z/`.
+Refresh existing browsers to load the new picker. Later documentation commits
+do not change runtime assets. The records below describe earlier deployments.
 
 ## Original combined-entry verification
 
