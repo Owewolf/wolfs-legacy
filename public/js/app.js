@@ -226,7 +226,7 @@ function renderRegister() {
 
 // ── Sidebar ──
 function sidebarHTML(activeKey) {
-  const sectionItems = Object.entries(SECTIONS).map(([k, s]) => {
+  const sectionItems = Object.entries(SECTIONS).filter(([, s]) => !s.retired).map(([k, s]) => {
     const cnt = state.counts[k] || 0;
     return `<button class="nav-item ${activeKey === k ? 'active' : ''}" data-nav="section/${k}">
       <span class="icon">${s.icon}</span>${esc(s.name)}${cnt ? `<span class="count">${cnt}</span>` : ''}
@@ -315,7 +315,7 @@ async function renderDashboard(refreshedSummary, shouldRender = () => true) {
   let counts = {};
   try {
     const summary = refreshedSummary || await API.getSummary();
-    summary.forEach(s => counts[s.section] = s.count);
+    summary.filter(s => !SECTIONS[s.section]?.retired).forEach(s => counts[s.section] = s.count);
   } catch { counts = {}; }
   if (window.location.hash !== expectedHash || !shouldRender()) return;
   state.counts = counts;
@@ -339,7 +339,7 @@ async function renderDashboard(refreshedSummary, shouldRender = () => true) {
       </div>
     </div>` : '';
 
-  const cards = Object.entries(SECTIONS).map(([k, s]) => {
+  const cards = Object.entries(SECTIONS).filter(([, s]) => !s.retired).map(([k, s]) => {
     const cnt = state.counts[k] || 0;
     return `<div class="card vault-card" data-nav="section/${k}">
       <div class="vault-card-icon">${s.icon}</div>
@@ -444,7 +444,7 @@ async function renderSearchResults(query, refreshedResults, shouldRender = () =>
 async function renderSection(key, refreshedData, shouldRender = () => true) {
   const expectedHash = window.location.hash;
   const sec = SECTIONS[key];
-  if (!sec) return navigate('vault');
+  if (!sec || sec.retired) return navigate('vault');
 
   let data;
   let counts = {};
@@ -503,7 +503,7 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
 async function renderEntryForm(sectionKey, entryId) {
   const expectedHash = window.location.hash;
   const sec = SECTIONS[sectionKey];
-  if (!sec) return navigate('vault');
+  if (!sec || (sec.retired && !entryId)) return navigate('vault');
 
   let existing = null;
   if (entryId) {
@@ -1012,7 +1012,7 @@ async function refreshLiveVault() {
       }
     } else {
       const fresh = await API.getSummary();
-      const counts = Object.fromEntries(fresh.map(row => [row.section, row.count]));
+      const counts = Object.fromEntries(fresh.filter(row => !SECTIONS[row.section]?.retired).map(row => [row.section, row.count]));
       if (canRender() && JSON.stringify(counts) !== JSON.stringify(state.counts)) await renderDashboard(fresh, canRender);
     }
   } catch (err) { console.warn('HomeBank refresh unavailable', err); }

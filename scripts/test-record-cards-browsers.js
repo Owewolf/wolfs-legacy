@@ -28,7 +28,7 @@ const cardFixtureValue = (section, field) => {
  if(field.type==='textarea') return 'Synthetic '+section+' '+field.key+'\nSecond line with <private & unchanged> content.';
  return 'Synthetic '+section+' '+field.key+' <private & unchanged>';
 };
-const cardFixtureAllEntries=Object.entries(SECTIONS).map(([section,schema],index)=>({
+const cardFixtureAllEntries=Object.entries(SECTIONS).filter(([,schema])=>!schema.retired).map(([section,schema],index)=>({
  id:501+index,section,title:'Synthetic '+schema.name+' record with a deliberately long account name '+ 'UnbrokenAccountName'.repeat(3),
  fields:Object.fromEntries(schema.fields.map(field=>[field.key,cardFixtureValue(section,field)])),
  notes:'Synthetic private notes for '+section+'.\nPreserve this second line and <escaped & unchanged> characters.'
@@ -216,7 +216,7 @@ async function checkActionWorkflows(page, origin) {
 
   await page.evaluate(() => { window.setRecordCardFixtures('all'); location.hash = 'search/Synthetic'; });
   await page.waitForSelector('.main-content .record-card');
-  assert.equal(await page.locator('.main-content .record-card').count(), await page.evaluate(() => Object.keys(SECTIONS).length));
+  assert.equal(await page.locator('.main-content .record-card').count(), await page.evaluate(() => Object.values(SECTIONS).filter(section => !section.retired).length));
   assert.equal(await page.locator('.main-content .record-card [data-delete]').count(), 0);
   const searchEdit = page.locator('.record-card-footer [data-nav^="edit/"]').first();
   assert.equal(await searchEdit.count(), 1);

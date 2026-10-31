@@ -26,7 +26,7 @@ Wolf's Vault solves this by providing a single, encrypted store for all critical
 
 ## Features
 
-### Vault Storage (15 Sections)
+### Vault Storage (14 Sections)
 - **Personal Identity** -- IDs, passport, tax numbers
 - **Bank Accounts** -- account numbers, branches, nominees
 - **Investments** -- stocks, mutual funds, crypto, PPF
@@ -40,8 +40,11 @@ Wolf's Vault solves this by providing a single, encrypted store for all critical
 - **Important Contacts** -- lawyer, CA, doctor, financial advisor
 - **Legal Documents** -- will, power of attorney, certificates
 - **Final Wishes** -- funeral, organ donation, messages to family
-- **Secure Notes** -- WiFi passwords, alarm codes, anything else
 - **Pet Care** -- pet profiles, vet contacts, food and medication needs, daily care, preferred carers and rehoming plans; supports the existing document attachments, search, export and beneficiary access. See [Pet Care](docs/pet-care.md).
+
+Secure Notes is retired from navigation, the dashboard and new-entry routes.
+Its existing schema and API compatibility remain so older records and backups
+can still be read, edited, exported and restored without deleting their content.
 
 ### Three Handover Mechanisms
 

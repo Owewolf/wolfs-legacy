@@ -1,9 +1,14 @@
 # Universal record cards — implementation
 
 Implemented on 31 October 2026 in the existing plain JavaScript web application.
-All 15 vault record sections use the same presentational renderer; the design is
+All vault record sections use the same presentational renderer; the design is
 also shared by search previews, authorised beneficiary records, beneficiary
 management, and Final Wishes personal-content lists, timelines, and detail views.
+
+Secure Notes was retired from navigation, dashboard and new-entry routes on
+31 October 2026, leaving 14 active sections. Its schema and API compatibility
+remain for older records, exports and backups. The original 15-section browser
+verification below records the redesign before that retirement.
 
 Records now have a contextual category icon before the title, an optional existing
 type chip, a readable detail grid, and compact actions below the information.

@@ -187,6 +187,9 @@ const SECTIONS = {
   secure_notes: {
     name: 'Secure Notes',
     icon: '\u{1F512}',
+    // Keep the schema for existing records and old backups, without offering
+    // this category in navigation, the dashboard or new-entry routes.
+    retired: true,
     fields: [
       { key: 'content', label: 'Note Content', type: 'textarea' }
     ]
