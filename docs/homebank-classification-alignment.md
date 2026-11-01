@@ -119,3 +119,15 @@ Synthetic regressions cover exact and nonmatching institutions, invalid and
 conflicting rules, source-group precedence, fresh and cached sync, new matching
 accounts, retained connection settings, owner isolation, stale form submissions,
 projected values, hidden accounts and preservation of owner finance/documents.
+
+Activated on **1 November 2026 at 15:54 SAST**, runtime revision
+`7914547fd8ab4c9ccf660046b956dffcd3f57410`; final live verification passed at
+15:55 SAST. The latest selected source has 24 active, included accounts, each
+with one linked card. Its owner-designated vehicle institution identifies seven
+active Assets, all verified in Vehicles with matching Current Values after two
+syncs. Five closed/excluded matches remain hidden. The seventh vehicle's original
+record was moved without changing its identity or details. Stored records and
+document associations were unchanged across repeated syncs, as was the source
+file. Live Chromium checks display seven vehicle cards at 390px and 1440px
+without horizontal overflow or script errors. Health and database integrity
+checks pass. The later verification-only commit preserves the runtime code.
