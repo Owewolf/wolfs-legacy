@@ -1,6 +1,6 @@
 # HomeBank classifications and vault forms
 
-The saved HomeBank account **group** and **type** drive linked vault records and their source-managed form fields. Once a source is connected, sync also creates missing active account cards and checks for newly added source accounts. Saving a HomeBank file refreshes classifications through the normal watcher/read path. Snapshot version 3 includes each account's group ID/name and reparses older snapshots even when the source file has not changed.
+The saved HomeBank account **group** and **type**, together with explicit owner institution allocations, drive linked vault records and their source-managed form fields. Once a source is connected, sync also creates missing active account cards and checks for newly added source accounts. Saving a HomeBank file refreshes classifications through the normal watcher/read path. Snapshot version 3 includes each account's group ID/name and reparses older snapshots even when the source file has not changed.
 
 | Source classification | Vault allocation / field |
 | --- | --- |
@@ -9,6 +9,7 @@ The saved HomeBank account **group** and **type** drive linked vault records and
 | Checking / Savings / Bank / Cash | Corresponding bank account type; existing purposeful investment/retirement allocations are retained for generic Bank/Savings without a recognized purpose group |
 | Credit card / Liability | Debts & Liabilities; credit cards use the Credit Card subtype |
 | Asset in Vehicles / Real Estate | Current Value; owner-entered loan/mortgage values stay separate |
+| Asset with an explicit owner institution allocation | Vehicles or Real Estate as designated; takes priority over a source group |
 | Explicit finance on a historical vehicle/property placement | Loan Balance / Outstanding Mortgage, with the normal reconciliation moving credit/liability records into Debts |
 | Other ownership/personal groups | Display the exact group without inferring legal ownership or a new investment purpose |
 
@@ -89,3 +90,32 @@ property cards at 390px and 1440px without horizontal overflow or script errors.
 The synthetic regression also checks vehicle placement through fresh and cached
 syncs, preservation of owner loan details and attachments, and duplicate prevention.
 Subsequent test/documentation commits do not change the deployed runtime code.
+
+## Explicit institution allocations
+
+An owner can designate an exact source institution as Vehicles or Real Estate.
+The private rule is stored in the existing encrypted HomeBank connection config
+as `institution_allocations`, for example
+`[{"institution":"Example Fleet Office","section":"vehicles"}]`. Real institution
+names and account IDs stay out of source control. Ordinary source settings saves
+preserve these allocations.
+
+Only Asset ledgers use these rules. Credit cards and liabilities remain debts;
+bank and savings ledgers retain their existing classification rules. Matching
+allows case, spacing and typographic apostrophe differences, with no substring,
+account-name or transaction-category guesses. Invalid rules are ignored;
+conflicting destinations for the same normalized institution are ignored rather
+than selected by rule order. Institutions without a valid matching rule retain
+the normal source-group and existing-placement behavior.
+
+Fresh and cached syncs apply the same rule to existing and newly discovered
+accounts. Visibility, form saves and restores share the owner's allocation
+context, keeping stale forms consistent with sync. Source valuations remain
+Current Value and do not become loan balances or lender associations. Closed and
+excluded source accounts retain their normal import and visibility filters.
+
+Verification on **1 November 2026**: **298 JavaScript and 7 Python tests pass**.
+Synthetic regressions cover exact and nonmatching institutions, invalid and
+conflicting rules, source-group precedence, fresh and cached sync, new matching
+accounts, retained connection settings, owner isolation, stale form submissions,
+projected values, hidden accounts and preservation of owner finance/documents.

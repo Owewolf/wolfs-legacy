@@ -62,9 +62,9 @@ function sourceBalanceField(section, account) {
   return undefined;
 }
 
-function classificationFields(section, account, fields) {
+function classificationFields(section, account, options) {
   if (!FINANCIAL_SECTIONS.has(section)) return {};
-  const classification = classifyAccount(account, section, fields);
+  const classification = classifyAccount(account, section, options);
   if (classification.section === section) return classification.fields;
   // Reconciliation normally moves this record before reads. Keep group
   // metadata usable on a historical placement without leaking a source debt
@@ -124,7 +124,7 @@ function sanitizeHomebankEntry(entry, visibility, options = {}) {
   delete fields.homebank_balance;
   if (account) {
     for (const key of Object.keys(sourceDetailFields(entry.section, account))) delete fields[key];
-    for (const key of Object.keys(classificationFields(entry.section, account, fields))) delete fields[key];
+    for (const key of Object.keys(classificationFields(entry.section, account, visibility?.classificationOptions))) delete fields[key];
   }
   const result = { ...entry, fields, notes: '' };
   delete result.homebank_managed_fields;
@@ -145,7 +145,7 @@ function projectHomebankEntry(entry, visibility) {
     }
     const details = {
       ...sourceDetailFields(entry.section, account),
-      ...classificationFields(entry.section, account, fieldsOf(entry)),
+      ...classificationFields(entry.section, account, visibility?.classificationOptions),
     };
     Object.assign(projected.fields, details);
     managed.push(...Object.keys(details));

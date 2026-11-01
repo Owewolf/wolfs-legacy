@@ -594,6 +594,61 @@ test('linked updates canonicalize a stale section while retaining the record lin
   assertStoredAlignedAnnuity(updated.id, 'Mutual Funds');
 });
 
+test('stale linked edits use the owner institution allocation for vehicle and property forms while retaining finance and documents', async () => {
+  const allocations = [{ institution: 'Example Owner’s Garage', section: 'vehicles' },
+    { institution: 'Example Property Office', section: 'real_estate' }];
+  setSnapshot(SOURCE_ACCOUNTS.map(account => account.id === 101 || account.id === 105 ? {
+    ...account, type_id: 3, type: 'Asset', group_name: 'Investments', currency: 'ZAR',
+    today: account.id === 101 ? 250 : 1100,
+    bank_name: account.id === 101 ? "  EXAMPLE   Owner's Garage  " : 'example property office',
+  } : account));
+  const configRow = db.prepare('SELECT config_encrypted FROM homebank_snapshots WHERE user_id=?').get(OWNER_ID);
+  const config = JSON.parse(crypto.decrypt(configRow.config_encrypted));
+  db.prepare('UPDATE homebank_snapshots SET config_encrypted=? WHERE user_id=?')
+    .run(crypto.encrypt(JSON.stringify({ ...config, institution_allocations: allocations })), OWNER_ID);
+  assert.deepEqual(visibility.getVaultVisibility(OWNER_ID).classificationOptions, { institutionAllocations: allocations });
+  assert.deepEqual(visibility.getVaultVisibility(OTHER_ID).classificationOptions, {}, 'Another owner cannot acquire the allocation rules');
+  const docId = '00000000-0000-4000-8000-000000000009';
+  db.prepare(`INSERT INTO managed_documents
+    (id,user_id,original_name_encrypted,display_name_encrypted,stored_filename,mime_type,size_bytes,sha256)
+    VALUES (?, ?, ?, ?, ?, 'application/pdf', 0, ?)`)
+    .run(docId, OWNER_ID, crypto.encrypt('example-allocation.pdf'), crypto.encrypt('Example allocation document'),
+      `owner-${OWNER_ID}/${docId}.pdf`, '0'.repeat(64));
+  db.prepare('INSERT INTO document_associations (document_id,entry_id) VALUES (?,?)').run(docId, fixture.current);
+  const documents = db.prepare('SELECT * FROM document_associations').all();
+  const targets = [{ id: fixture.current, accountId: 101, section: 'vehicles', value: 'ZAR 250.00',
+    fields: { registration: 'EXAMPLE-123', loan_balance: 'ZAR 900.00', loan_provider: 'Example owner lender',
+      owner_reference: 'Keep the owner vehicle reference' } },
+  { id: fixture.property, accountId: 105, section: 'real_estate', value: 'ZAR 1100.00',
+    fields: { address: '12 Example Lane', mortgage_balance: 'ZAR 800.00', mortgage_provider: 'Example owner mortgage',
+      owner_reference: 'Keep the owner property reference' } }];
+  for (const target of targets) {
+    const original = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(target.id);
+    const updated = await request(`/api/vault/entries/${target.id}`, { method: 'PUT', body: {
+      section: 'investments', title: `Example edited ${target.section}`, homebank_account_id: target.accountId,
+      fields: { ...target.fields, value_approx: 'ZAR 999.00', current_value: 'ZAR 999.00', homebank_group: 'Old group' },
+      notes: 'Old copied source notes',
+    } });
+    assert.equal(updated.id, target.id);
+    assert.equal(updated.section, target.section, 'A stale investment form must use the configured owner allocation');
+    assert.equal(updated.homebank_account_id, target.accountId);
+    assert.equal(updated.fields.current_value, target.value);
+    assert.equal(updated.fields.value_approx, undefined);
+    assert.equal(updated.fields.homebank_group, 'Investments');
+    for (const [key, value] of Object.entries(target.fields)) assert.deepEqual(updated.fields[key], value);
+    const stored = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(target.id);
+    assert.equal(stored.created_at, original.created_at);
+    assert.equal(stored.homebank_account_id, target.accountId);
+    assert.equal(stored.section, target.section);
+    assert.deepEqual(JSON.parse(crypto.decrypt(stored.fields_encrypted)), target.fields,
+      'Finance and owner details are retained while source values remain projected');
+    assert.equal(stored.notes_encrypted, null);
+    assert.equal((await request(`/api/vault/entries/${target.id}`)).section, target.section);
+  }
+  assert.deepEqual(db.prepare('SELECT * FROM document_associations').all(), documents);
+  assert.equal((await request(`/api/documents?entryId=${fixture.current}`)).length, 1);
+});
+
 test('restoring stale bank and investment backups creates correctly aligned annuities without copied ledgers', async () => {
   setAnnuityAlignmentSource();
   for (const [section, investmentType] of [['bank_accounts', 'Fixed Deposit'], ['investments', 'Mutual Funds']]) {

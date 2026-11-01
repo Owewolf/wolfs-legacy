@@ -117,13 +117,15 @@ async function syncUser(userId, force = false) {
       current = row(userId);
     }
     const reconcile = connected ? reconcileHomebankAccounts : reconcileHomebankClassifications;
+    const classificationOptions = { ownerEmail: process.env.HOMEBANK_OWNER_EMAIL,
+      institutionAllocations: cfg.institution_allocations };
     try {
       const files = await listing(cfg.directory);
       const file = cfg.selectedFile ? files.find(f => f.name === cfg.selectedFile) : files[0];
       if (!file) throw new Error('No HomeBank .xhb file found in the selected directory');
       if (!force && current.fingerprint === file.fingerprint && current.snapshot_encrypted && !current.last_error &&
           existing?.snapshot_schema_version === SNAPSHOT_SCHEMA_VERSION && existing?.exported_date === localDay()) {
-        const aligned = reconcile(getDb(), userId, existing, { ownerEmail: process.env.HOMEBANK_OWNER_EMAIL });
+        const aligned = reconcile(getDb(), userId, existing, classificationOptions);
         if (aligned.changed) audit(userId, 'homebank_classification_realign', 'homebank', null, `entries=${aligned.changed}`, null);
         if (aligned.created) audit(userId, 'homebank_accounts_imported', 'homebank', null, `entries=${aligned.created}`, null);
         return current;
@@ -141,7 +143,7 @@ async function syncUser(userId, force = false) {
         db.prepare(`UPDATE homebank_snapshots SET snapshot_encrypted=?,fingerprint=?,source_file=?,
           source_saved_at=?,synced_at=?,last_error=NULL,content_hash=? WHERE user_id=?`)
           .run(encrypt(JSON.stringify(snap)), file.fingerprint, file.name, file.mtime, syncedAt, hash, userId);
-        return reconcile(db, userId, snap, { ownerEmail: process.env.HOMEBANK_OWNER_EMAIL });
+        return reconcile(db, userId, snap, classificationOptions);
       })();
       if (aligned.changed) audit(userId, 'homebank_classification_realign', 'homebank', null, `entries=${aligned.changed}`, null);
       if (aligned.created) audit(userId, 'homebank_accounts_imported', 'homebank', null, `entries=${aligned.created}`, null);

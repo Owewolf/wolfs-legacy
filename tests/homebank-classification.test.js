@@ -73,6 +73,84 @@ test('a source without an allocation or recognized group has no inferred product
   assert.deepEqual(classifyAccount({ type_id: 0 }), { section: undefined, fields: {} });
 });
 
+test('explicit institution allocations match asset institutions with presentation differences only', () => {
+  const options = Object.freeze({ institutionAllocations: Object.freeze([
+    Object.freeze({ institution: " Example's   Fleet ", section: 'vehicles' }),
+    Object.freeze({ institution: 'Example Property Holdings', section: 'real_estate' })
+  ]) });
+  for (const bank_name of ["EXAMPLE'S FLEET", ' Example’s\tFleet ', 'Ｅｘａｍｐｌｅʼｓ　Ｆｌｅｅｔ']) {
+    const source = Object.freeze({ type_id: 3, bank_name, group_name: 'Personal', today: -50 });
+    assert.deepEqual(classifyAccount(source, 'investments', options), {
+      section: 'vehicles', fields: { homebank_group: 'Personal' }
+    });
+  }
+  assert.equal(classifyAccount({ type_id: 3, bank_name: 'EXAMPLE PROPERTY HOLDINGS' },
+    'investments', options).section, 'real_estate');
+  for (const bank_name of ["Example's Fleet Loans", "New Example's Fleet", "Example's-Fleet", null, '']) {
+    assert.equal(classifyAccount({ type_id: 3, bank_name, name: "Example's Fleet" },
+      'investments', options).section, 'investments');
+  }
+  assert.equal(classifyAccount({ type_id: 3, institution: "Example's Fleet" },
+    'investments', options).section, 'investments', 'Only the parsed source institution can match');
+  assert.equal(classifyAccount({ type_id: 3, bank_name: "Example's Fleet" },
+    'investments').section, 'investments', 'An institution name has no inferred purpose without a rule');
+});
+
+test('owner institution allocations override groups for assets without converting debts or bank ledgers', () => {
+  const options = { institutionAllocations: [{ institution: 'Example Fleet', section: 'vehicles' }] };
+  assert.deepEqual(classifyAccount({ type_id: 3, bank_name: 'Example Fleet',
+    group_name: 'Retirement Annuity' }, 'investments', options), {
+    section: 'vehicles', fields: { homebank_group: 'Retirement Annuity' }
+  });
+  for (const [type_id, existing, expected] of [[0, 'investments', 'investments'],
+    [1, 'bank_accounts', 'bank_accounts'], [2, 'investments', 'bank_accounts'],
+    [4, 'vehicles', 'debts'], [5, 'vehicles', 'debts'],
+    [6, 'investments', 'bank_accounts'], [7, 'bank_accounts', 'bank_accounts'],
+    [99, 'investments', 'investments']]) {
+    assert.equal(classifyAccount({ type_id, bank_name: 'Example Fleet' },
+      existing, options).section, expected);
+  }
+  for (const type_id of [4, 5]) {
+    assert.equal(classifyAccount({ type_id, bank_name: 'Example Fleet', group_name: 'Vehicles' },
+      'vehicles', options).section, 'debts');
+  }
+});
+
+test('invalid or conflicting institution rules cannot guess a purpose or depend on rule order', () => {
+  const source = { type_id: 3, bank_name: 'Example Fleet', group_name: 'Personal' };
+  const invalid = [null, false, {}, 'vehicles', [], { section: 'vehicles' },
+    { institution: {}, section: 'vehicles' }, { institution: '', section: 'vehicles' },
+    { institution: 'Example Fleet', section: 'retirement' },
+    { institution: 'Example Fleet', section: 'Vehicles' }];
+  for (const institutionAllocations of [undefined, null, false, {}, 'vehicles', ...invalid.map(rule => [rule])]) {
+    assert.equal(classifyAccount(source, 'investments', { institutionAllocations }).section, 'investments');
+  }
+  assert.equal(classifyAccount(source, 'investments', null).section, 'investments');
+  const vehicle = { institution: 'Example Fleet', section: 'vehicles' };
+  const property = { institution: ' EXAMPLE\tFLEET ', section: 'real_estate' };
+  for (const institutionAllocations of [[vehicle, property], [property, vehicle], [vehicle, vehicle, property]]) {
+    assert.equal(classifyAccount(source, 'investments', { institutionAllocations }).section, 'investments');
+  }
+  assert.equal(classifyAccount(source, 'investments',
+    { institutionAllocations: [...invalid, vehicle, { ...vehicle }] }).section, 'vehicles',
+  'Malformed rules are ignored and duplicate equivalent allocations remain valid');
+});
+
+test('stale entry alignment uses the same institution allocation as reconciliation', () => {
+  const source = { id: 101, type_id: 3, bank_name: 'Example Fleet', group_name: 'Retirement Annuity' };
+  const entry = { id: 7, homebank_account_id: 101, section: 'investments',
+    fields: { value_approx: 'Stale source valuation', loan_balance: 'Owner vehicle loan',
+      registration: 'EXAMPLE-123' } };
+  const visibility = {
+    accountForEntry: () => source,
+    classificationOptions: { institutionAllocations: [{ institution: 'Example Fleet', section: 'vehicles' }] }
+  };
+  const aligned = classification.alignHomebankEntry(entry, visibility);
+  assert.equal(aligned.section, 'vehicles');
+  assert.deepEqual(aligned.fields, { loan_balance: 'Owner vehicle loan', registration: 'EXAMPLE-123' });
+  assert.equal(entry.section, 'investments', 'Aligning a view must not mutate its original input');
+});
+
 function fixture(t) {
   const db = new Database(':memory:');
   t.after(() => db.close());
@@ -309,4 +387,40 @@ test('a dry run reports missing accounts and classifications without modifying t
     { ...options, dryRun: true });
   assert.deepEqual(result, { created: 1, changed: 1, skipped: 0 });
   assert.deepEqual(rows(), original);
+});
+
+test('institution allocations reconcile existing and new assets while preserving unrelated owner records', t => {
+  const { db, add, rows } = fixture(t);
+  add(1, 'investments', { registration: 'EXAMPLE-123', loan_balance: 'Owner loan balance' }, 101);
+  add(2, 'investments', { owner_reference: 'Other owner detail' }, 101, 43);
+  add(3, 'investments', { owner_reference: 'Manual owner detail' }, null);
+  const before = rows();
+  const documents = db.prepare('SELECT * FROM document_associations').all();
+  const allocations = { ...options, institutionAllocations: [
+    { institution: 'Example Fleet', section: 'vehicles' },
+    { institution: 'Example Properties', section: 'real_estate' }
+  ] };
+  const source = snapshot([
+    namedAccount(101, { type_id: 3, bank_name: 'EXAMPLE FLEET', group_name: 'Retirement Annuity' }),
+    namedAccount(102, { type_id: 3, bank_name: 'Example Properties' }),
+    namedAccount(103, { type_id: 3, bank_name: 'Example Fleet' }),
+    namedAccount(104, { type_id: 3, bank_name: 'Example Fleet', closed: true }),
+    namedAccount(105, { type_id: 3, bank_name: 'Example Fleet', excluded_from_summary: true }),
+    namedAccount(106, { type_id: 3, bank_name: 'Unrelated institution' })
+  ]);
+  assert.deepEqual(classification.reconcileHomebankAccounts(db, 42, source, allocations),
+    { created: 3, changed: 1, skipped: 0 });
+  const after = rows();
+  assert.deepEqual(after[0], { ...before[0], section: 'vehicles' },
+    'Changing the purpose preserves the existing identity, encrypted owner fields and timestamps');
+  assert.deepEqual(after.slice(1, 3), before.slice(1, 3));
+  assert.deepEqual(after.slice(3).map(row => [row.homebank_account_id, row.section]),
+    [[102, 'real_estate'], [103, 'vehicles'], [106, 'investments']]);
+  assert.deepEqual(db.prepare('SELECT * FROM document_associations').all(), documents);
+  assert.deepEqual(classification.reconcileHomebankAccounts(db, 42, source, allocations),
+    { created: 0, changed: 0, skipped: 0 });
+  assert.deepEqual(rows(), after, 'A repeated connected sync must not rewrite corrected owner records');
+  assert.deepEqual(classification.reconcileHomebankAccounts(db, 43, source, allocations),
+    { created: 0, changed: 0, skipped: 0 });
+  assert.deepEqual(rows(), after, 'Institution rules do not authorize another user to receive source accounts');
 });

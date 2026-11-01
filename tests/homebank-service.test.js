@@ -323,6 +323,79 @@ test('an explicitly allocated vehicle survives fresh and cached sync with its so
   assert.deepEqual(await fsp.readFile(f.source), sourceBefore);
 });
 
+test('saved institution allocations apply on fresh and cached sync without moving unmatched assets or losing owner data', async t => {
+  const f = await fixture(t, 3);
+  const allocations = [{ institution: 'Example Owner’s Garage', section: 'vehicles' },
+    { institution: 'Example Property Office', section: 'real_estate' }];
+  f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);
+  const config = JSON.parse(f.db.prepare('SELECT config_encrypted FROM homebank_snapshots').get().config_encrypted);
+  f.db.prepare('UPDATE homebank_snapshots SET config_encrypted=?')
+    .run(JSON.stringify({ ...config, institution_allocations: allocations }));
+  const ownerFields = { registration: 'EXAMPLE-ALLOCATION', loan_balance: 'ZAR 900.00',
+    loan_provider: 'Example owner lender', owner_reference: 'Keep this allocation detail' };
+  const insert = f.db.prepare(`INSERT INTO vault_entries
+    (id,user_id,section,title,fields_encrypted,homebank_account_id,updated_at)
+    VALUES (?,?,'investments',?,?,?,'2020-01-01')`);
+  insert.run(1, USER_ID, 'Owner vehicle title', vaultCrypto.encrypt(JSON.stringify(ownerFields)), 1);
+  insert.run(2, USER_ID, 'Owner unmatched asset', vaultCrypto.encrypt(JSON.stringify({ owner_reference: 'Unmatched owner detail' })), 2);
+  f.db.exec('CREATE TABLE document_associations (document_id TEXT, entry_id INTEGER)');
+  f.db.prepare('INSERT INTO document_associations VALUES (?,1)').run('synthetic-allocation-document');
+  const documents = f.db.prepare('SELECT * FROM document_associations').all();
+  const originalVehicle = f.db.prepare('SELECT * FROM vault_entries WHERE id=1').get();
+  const unmatched = f.db.prepare('SELECT * FROM vault_entries WHERE id=2').get();
+  const source = `<homebank v="1.6"><grp key="7" name="Investments"/>
+    <account key="1" type="3" name="Synthetic mapped asset" grp="7"
+      bankname="  eXAMPLE   Owner's   Garage  " initial="250"/>
+    <account key="2" type="3" name="Synthetic unmatched asset" grp="7"
+      bankname="Example Owner's Garage West" initial="500"/>
+    <account key="3" type="3" name="Synthetic closed mapped asset" grp="7"
+      bankname="Example Owner's Garage" flags="2" initial="10"/>
+    <account key="4" type="3" name="Synthetic excluded mapped asset" grp="7"
+      bankname="Example Owner's Garage" flags="16" initial="20"/>
+    <account key="5" type="5" name="Synthetic mapped liability" grp="7"
+      bankname="Example Owner's Garage" initial="-30"/></homebank>`;
+  await fsp.writeFile(f.source, source);
+  const fresh = f.service.responseView(await f.service.syncUser(USER_ID, true));
+  assert.equal(fresh.last_error, null);
+  const vehicle = f.db.prepare('SELECT * FROM vault_entries WHERE id=1').get();
+  assert.equal(vehicle.section, 'vehicles', 'Explicit institution allocation overrides the source investment group');
+  for (const key of ['id', 'user_id', 'title', 'homebank_account_id', 'updated_at']) assert.equal(vehicle[key], originalVehicle[key]);
+  assert.deepEqual(JSON.parse(vaultCrypto.decrypt(vehicle.fields_encrypted)), ownerFields);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries WHERE id=2').get(), unmatched,
+    'Institution matching is exact rather than a provider-name prefix');
+  assert.deepEqual(f.db.prepare('SELECT homebank_account_id,section FROM vault_entries ORDER BY homebank_account_id').all(),
+    [{ homebank_account_id: 1, section: 'vehicles' }, { homebank_account_id: 2, section: 'investments' },
+      { homebank_account_id: 5, section: 'debts' }]);
+  assert.deepEqual(f.db.prepare('SELECT * FROM document_associations').all(), documents);
+
+  // An older restored section must be repaired even when the source is cached.
+  f.db.prepare("UPDATE vault_entries SET section='investments' WHERE id=1").run();
+  await f.service.syncUser(USER_ID);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries WHERE id=1').get(), vehicle);
+  assert.equal(f.parseCalls(), 1);
+
+  await fsp.writeFile(f.source, source.replace('</homebank>',
+    '<account key="6" type="3" name="New synthetic mapped vehicle" grp="7" bankname="Example Owner’s Garage"/>' +
+    '<account key="7" type="3" name="New synthetic mapped property" grp="7" bankname="EXAMPLE PROPERTY OFFICE"/>' +
+    '<account key="8" type="3" name="New synthetic unmatched asset" grp="7" bankname="Other Example Office"/></homebank>'));
+  const sourceBefore = await fsp.readFile(f.source);
+  const saved = f.service.responseView(await f.service.saveSettings(USER_ID,
+    { directory: path.dirname(f.source), selectedFile: path.basename(f.source) }));
+  assert.equal(saved.last_error, null);
+  assert.equal(JSON.stringify(saved.config.institution_allocations), JSON.stringify(allocations),
+    'Save and sync retains the encrypted owner institution allocations');
+  assert.deepEqual(f.db.prepare('SELECT homebank_account_id,section FROM vault_entries ORDER BY homebank_account_id').all(),
+    [{ homebank_account_id: 1, section: 'vehicles' }, { homebank_account_id: 2, section: 'investments' },
+      { homebank_account_id: 5, section: 'debts' }, { homebank_account_id: 6, section: 'vehicles' },
+      { homebank_account_id: 7, section: 'real_estate' }, { homebank_account_id: 8, section: 'investments' }]);
+  const entries = f.db.prepare('SELECT * FROM vault_entries ORDER BY id').all();
+  await f.service.syncUser(USER_ID);
+  await f.service.syncUser(USER_ID);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_entries ORDER BY id').all(), entries);
+  assert.deepEqual(f.db.prepare('SELECT * FROM document_associations').all(), documents);
+  assert.deepEqual(await fsp.readFile(f.source), sourceBefore);
+});
+
 test('an active source account deleted from the vault returns on sync without duplicating other accounts', async t => {
   const f = await fixture(t, 3);
   f.db.prepare('INSERT INTO users (id,email) VALUES (?,?)').run(USER_ID, OWNER_EMAIL);

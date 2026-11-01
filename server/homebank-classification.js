@@ -32,14 +32,41 @@ function groupClassification(value) {
   return null;
 }
 
-function classifyAccount(account, existingSection) {
+function institutionName(value) {
+  // Match a saved owner rule exactly, allowing only presentation differences.
+  // Punctuation such as hyphens remains significant; an institution's name
+  // alone never establishes an allocation without an explicit matching rule.
+  return typeof value === 'string' ? value.normalize('NFKC').replace(/[‘’‛ʼ]/g, "'")
+    .trim().toLowerCase().replace(/\s+/g, ' ') : '';
+}
+
+function institutionAllocation(account, options) {
+  const rules = options?.institutionAllocations;
+  const name = institutionName(account?.bank_name);
+  if (!name || !Array.isArray(rules)) return undefined;
+  let section;
+  for (const rule of rules) {
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule) ||
+        !['vehicles', 'real_estate'].includes(rule.section) ||
+        institutionName(rule.institution) !== name) continue;
+    // Equivalent rules are harmless, but conflicting allocations must never
+    // choose a purpose based on their order in the private configuration.
+    if (section && section !== rule.section) return undefined;
+    section = rule.section;
+  }
+  return section;
+}
+
+function classifyAccount(account, existingSection, options = {}) {
   const kind = accountTypeId(account);
   const group = groupClassification(account?.group_name);
+  const allocation = kind === 3 ? institutionAllocation(account, options) : undefined;
   let section = existingSection;
   // Credit/liability ledgers remain debts even when their group names describe
   // the asset they finance. Generic Savings alone cannot distinguish a cash
   // account from an investment or pension already deliberately categorized.
   if (kind === 4 || kind === 5) section = 'debts';
+  else if (allocation) section = allocation;
   else if (group) section = group.section;
   else if (kind === 6 || kind === 2) section = 'bank_accounts';
   else if ((kind === 1 || kind === 7) && !['investments', 'retirement'].includes(existingSection)) section = 'bank_accounts';
@@ -86,7 +113,7 @@ function alignHomebankEntry(entry, visibility) {
   if (entry?.homebank_account_id == null) return entry;
   const account = visibility?.accountForEntry?.(entry);
   if (!account) return entry;
-  const { section } = classifyAccount(account, entry.section);
+  const { section } = classifyAccount(account, entry.section, visibility?.classificationOptions);
   if (section === entry.section) return entry;
   const fields = reallocatedFields(entry.fields || {}, entry.section, section);
   const previousBalance = require('./homebank-vault').sourceBalanceField(entry.section, account);
@@ -121,13 +148,14 @@ function reconcileHomebankClassifications(db, userId, snapshot, options = {}) {
       let original;
       try { original = JSON.parse(decrypt(row.fields_encrypted)); } catch { skipped++; continue; }
       if (!original || typeof original !== 'object' || Array.isArray(original)) { skipped++; continue; }
-      const { section } = classifyAccount(account, row.section);
+      const { section } = classifyAccount(account, row.section, options);
       const fields = reallocatedFields(original, row.section, section);
       if (section !== row.section) {
         const formerBalance = sourceBalanceField(row.section, account);
         if (formerBalance) delete fields[formerBalance];
       }
-      const clean = sanitizeHomebankEntry({ ...row, section, fields }, { accountForEntry: () => account });
+      const clean = sanitizeHomebankEntry({ ...row, section, fields },
+        { accountForEntry: () => account, classificationOptions: options });
       const serialized = JSON.stringify(clean.fields);
       if (section === row.section && serialized === JSON.stringify(original)) continue;
       if (!options.dryRun) update.run(section, serialized === JSON.stringify(original) ? row.fields_encrypted : encrypt(serialized), row.id, userId);
@@ -182,7 +210,7 @@ function reconcileHomebankAccounts(db, userId, snapshot, options = {}) {
       // ledgers use a bank account form until HomeBank supplies a purpose.
       // Names, transaction categories and balance signs never infer purpose.
       const fallback = accountTypeId(account) === 3 ? 'investments' : 'bank_accounts';
-      const { section } = classifyAccount(account, fallback);
+      const { section } = classifyAccount(account, fallback, options);
       if (!options.dryRun) insert.run(userId, section, account.name.trim() || `HomeBank account ${account.id}`,
         encrypt('{}'), account.id);
       linked.add(account.id);

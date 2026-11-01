@@ -50,8 +50,15 @@ function createVaultVisibility(options = {}) {
     const allowed = new Set();
     const accounts = new Map();
     let ledgerDate = null;
+    let classificationOptions = {};
     if (owner && Number(owner.id) === Number(userId)) {
-      const row = db.prepare('SELECT snapshot_encrypted FROM homebank_snapshots WHERE user_id = ?').get(userId);
+      const row = db.prepare('SELECT snapshot_encrypted, config_encrypted FROM homebank_snapshots WHERE user_id = ?').get(userId);
+      if (row?.config_encrypted) {
+        try {
+          const config = JSON.parse(decrypt(row.config_encrypted));
+          classificationOptions = { institutionAllocations: config?.institution_allocations };
+        } catch { /* Invalid optional allocations do not discard a validated ledger. */ }
+      }
       if (row && row.snapshot_encrypted) {
         try {
           // The sync service retains the previous validated snapshot on source
@@ -89,7 +96,7 @@ function createVaultVisibility(options = {}) {
       return isVisible(entry) && entry.homebank_account_id != null
         ? accounts.get(entry.homebank_account_id) || null : null;
     }
-    return { isVisible, filter: entries => entries.filter(isVisible), accountForEntry, ledgerDate };
+    return { isVisible, filter: entries => entries.filter(isVisible), accountForEntry, ledgerDate, classificationOptions };
   }
 
   return { forUser, backfillHomeBankLinks };
