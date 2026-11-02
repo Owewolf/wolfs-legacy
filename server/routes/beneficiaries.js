@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb, audit } = require('../db');
-const { generateAccessToken, hashToken, decrypt } = require('../crypto');
+const { generateAccessToken, hashToken, decrypt, encrypt } = require('../crypto');
 const { authenticateToken } = require('../middleware/auth');
 const { listForEntry } = require('../document-store');
 const { validateString, validateEmail, validateInt, validationError } = require('../validate');
@@ -42,12 +42,33 @@ router.post('/', authenticateToken, (req, res) => {
   const db = getDb();
   const token = generateAccessToken();
   const expires = tokenExpiresAt();
-  const result = db.prepare(
-    'INSERT INTO beneficiaries (user_id, name, email, phone, relationship, access_token, token_expires_at, emergency_waiting_days) VALUES (?,?,?,?,?,?,?,?)'
-  ).run(req.user.id, name.trim(), email || null, phone || null, relationship || null, hashToken(token), expires, waitDays);
+  const beneficiaryName = name.trim();
+  const beneficiaryEmail = email || null;
+  const beneficiaryPhone = phone || null;
+  const beneficiaryRelationship = relationship || null;
 
-  audit(req.user.id, 'add_beneficiary', 'beneficiary', result.lastInsertRowid, name.trim(), req.ip);
-  res.json({ id: result.lastInsertRowid, name: name.trim(), email, phone, relationship, accessToken: token, token_expires_at: expires, emergency_waiting_days: waitDays });
+  const result = db.transaction(() => {
+    const inserted = db.prepare(
+      'INSERT INTO beneficiaries (user_id, name, email, phone, relationship, access_token, token_expires_at, emergency_waiting_days) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(req.user.id, beneficiaryName, beneficiaryEmail, beneficiaryPhone, beneficiaryRelationship, hashToken(token), expires, waitDays);
+
+    const finalWishFields = {
+      category: 'Message to Family',
+      details: '',
+      contact_person: beneficiaryName,
+      contact_phone: beneficiaryPhone || ''
+    };
+
+    const finalWish = db.prepare(
+      'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted) VALUES (?, ?, ?, ?, NULL)'
+    ).run(req.user.id, 'final_wishes', beneficiaryName, encrypt(JSON.stringify(finalWishFields)));
+
+    return { inserted, finalWishId: finalWish.lastInsertRowid };
+  })();
+
+  audit(req.user.id, 'add_beneficiary', 'beneficiary', result.inserted.lastInsertRowid, beneficiaryName, req.ip);
+  audit(req.user.id, 'create_entry', 'vault_entry', result.finalWishId, 'final_wishes:auto_from_beneficiary', req.ip);
+  res.json({ id: result.inserted.lastInsertRowid, name: beneficiaryName, email, phone, relationship, accessToken: token, token_expires_at: expires, emergency_waiting_days: waitDays });
 });
 
 router.put('/:id', authenticateToken, (req, res) => {
