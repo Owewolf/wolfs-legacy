@@ -5,6 +5,20 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+// Install the guard before importing application code. Even an accidentally
+// uninjected database/audit dependency must never open the checkout's vault.
+let persistentDatabaseAttempts = 0;
+require.cache[require.resolve('better-sqlite3')].exports = function FixtureDatabase(filename, ...options) {
+  if (filename !== ':memory:') {
+    persistentDatabaseAttempts++;
+    throw new Error('Persistent databases are forbidden in authentication route tests');
+  }
+  return new Database(filename, ...options);
+};
+test.after(() => assert.equal(persistentDatabaseAttempts, 0, 'all route database dependencies remain synthetic'));
+
 const { initSmsOtpSchema } = require('../server/sms-otp');
 const { createAuthRouter } = require('../server/routes/auth');
 
@@ -61,6 +75,10 @@ async function createServer(db, smsProvider, env = {}) {
   process.env.JWT_SECRET = mergedEnv.JWT_SECRET;
   app.use('/api/auth', createAuthRouter({
     dbGetter: () => db,
+    auditWriter(userId, action, targetType, targetId, detail, ip) {
+      db.prepare('INSERT INTO audit_log(user_id,action,target_type,target_id,detail,ip_address) VALUES(?,?,?,?,?,?)')
+        .run(userId, action, targetType || null, targetId || null, detail || null, ip || null);
+    },
     env: mergedEnv,
     smsProvider
   }));
@@ -97,6 +115,7 @@ test('register does not auto-issue jwt', async () => {
     assert.equal(res.status, 201);
     assert.equal(Boolean(res.data.token), false);
     assert.equal(res.data.success, true);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='register'").get().n, 1);
   } finally {
     server.close();
     db.close();
@@ -183,6 +202,16 @@ test('2fa enrollment endpoints work with authenticated user', async () => {
     assert.equal(verify.status, 200);
     assert.equal(Array.isArray(verify.data.recovery_codes), true);
     assert.equal(verify.data.recovery_codes.length, 10);
+    assert.equal(typeof verify.data.token, 'string');
+    assert.equal(jwt.verify(verify.data.token, 'test-secret').mfa, 'sms_otp');
+    assert.equal(verify.data.user.email, 'owner@example.test');
+    assert.equal((await requestJson(server, 'GET', '/api/auth/me', null, token)).status, 403,
+      'enrollment invalidates the password-only session');
+    const authorised = await requestJson(server, 'GET', '/api/auth/me', null, verify.data.token);
+    assert.equal(authorised.status, 200);
+    assert.equal(authorised.data.id, Number(r.lastInsertRowid));
+    assert.equal(authorised.data.sms_2fa_enabled, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='sms_2fa_enabled'").get().n, 1);
 
     const me = db.prepare('SELECT sms_2fa_enabled FROM users WHERE id=?').get(r.lastInsertRowid);
     assert.equal(me.sms_2fa_enabled, 1);

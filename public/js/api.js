@@ -2,13 +2,21 @@ const API = {
   token: localStorage.getItem('lv_token'),
 
   async request(method, path, body) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const opts = { method, headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' } };
     if (this.token) opts.headers['Authorization'] = 'Bearer ' + this.token;
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch('/api' + path, opts);
-    const data = await res.json();
+    const contentType = (res.headers.get('Content-Type') || '').split(';', 1)[0].trim().toLowerCase();
+    if (!/^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json$/.test(contentType)) {
+      throw new Error(/^\/notifications(?:\/|\?|$)/.test(path)
+        ? 'Email setup is not available on this server yet.'
+        : 'The server returned an unexpected response. Refresh the page and try again.');
+    }
+    let data;
+    try { data = await res.json(); }
+    catch { throw new Error('The server returned an unreadable response. Refresh the page and try again.'); }
     if (!res.ok) {
-      const err = new Error(data.error || 'Request failed');
+      const err = new Error(typeof data?.error === 'string' && data.error ? data.error : 'Request failed');
       err.data = data;
       throw err;
     }

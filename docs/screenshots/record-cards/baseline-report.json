@@ -1,0 +1,78 @@
+{
+  "phase": "baseline",
+  "synthetic_data_only": true,
+  "physical_devices_tested": false,
+  "public_root": "/tmp/wolfs-record-cards-before",
+  "engines": [
+    {
+      "name": "chromium",
+      "version": "153.0.8010.12"
+    }
+  ],
+  "workflows": [],
+  "screenshots": [
+    {
+      "name": "retirement-reference",
+      "theme": "dark",
+      "width": 320,
+      "file": "baseline-chromium-retirement-reference-dark-320.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "dark",
+      "width": 390,
+      "file": "baseline-chromium-retirement-reference-dark-390.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "dark",
+      "width": 820,
+      "file": "baseline-chromium-retirement-reference-dark-820.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "dark",
+      "width": 1122,
+      "file": "baseline-chromium-retirement-reference-dark-1122.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "dark",
+      "width": 1440,
+      "file": "baseline-chromium-retirement-reference-dark-1440.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "light",
+      "width": 320,
+      "file": "baseline-chromium-retirement-reference-light-320.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "light",
+      "width": 390,
+      "file": "baseline-chromium-retirement-reference-light-390.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "light",
+      "width": 820,
+      "file": "baseline-chromium-retirement-reference-light-820.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "light",
+      "width": 1122,
+      "file": "baseline-chromium-retirement-reference-light-1122.png"
+    },
+    {
+      "name": "retirement-reference",
+      "theme": "light",
+      "width": 1440,
+      "file": "baseline-chromium-retirement-reference-light-1440.png"
+    }
+  ],
+  "limitations": [
+    "The 200% zoom reflow check uses half the CSS viewport width and a 2x device scale, plus a separate explicit 200% text resize check. It does not automate the browser chrome zoom setting."
+  ]
+}

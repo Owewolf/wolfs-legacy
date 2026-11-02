@@ -1,0 +1,71 @@
+/* Shared record presentation. Loaded after the mobile shell so card details
+   and actions keep the same hierarchy in every section and viewport. */
+:root, [data-theme="dark"] {
+  --record-label: #9aa9bf;
+  --record-detail-bg: #131a24;
+  --record-detail-border: #263241;
+  --record-chip-bg: #283451;
+  --record-chip-text: #ccdaff;
+}
+[data-theme="light"] {
+  --record-label: #56657a;
+  --record-detail-bg: #f6f8fb;
+  --record-detail-border: #dce2eb;
+  --record-chip-bg: #e8edfa;
+  --record-chip-text: #354d85;
+}
+
+.card.record-card { min-width: 0; padding: 22px 24px 14px; border-radius: 14px; }
+.record-card-header { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; min-width: 0; }
+.record-icon { display: block; width: 16px; height: 16px; flex: 0 0 auto; fill: currentColor; }
+.record-category-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; }
+.record-category-icon .record-icon { width: 21px; height: 21px; }
+.record-tone-blue { background: #243858; color: #b9d5ff; }
+.record-tone-teal { background: #174b4c; color: #9ce5dd; }
+.record-tone-violet { background: #44356c; color: #dfd0ff; }
+.record-tone-orange { background: #603d17; color: #ffd29b; }
+.record-title { display: flex; align-items: center; flex: 1; flex-wrap: wrap; gap: 8px 16px; min-width: 0; }
+.record-title h3 { font-size: 20px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+.record-category-chip { display: inline-block; max-width: 100%; padding: 4px 13px; border: 1px solid var(--border); border-radius: 20px; background: var(--record-chip-bg); color: var(--record-chip-text); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.record-card .record-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; margin: 0; padding: 16px 18px; border: 1px solid var(--record-detail-border); border-radius: 10px; background: var(--record-detail-bg); }
+.record-details .field-item { min-width: 0; }
+.record-details dt, .record-notes h4 { margin: 0 0 4px; color: var(--record-label); font-size: 11px; font-weight: 400; text-transform: uppercase; letter-spacing: .5px; line-height: 1.5; overflow-wrap: anywhere; }
+.record-details .value { margin: 0; color: var(--text); font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.record-notes { margin-top: 16px; padding: 14px 18px 0; border-top: 1px solid var(--record-detail-border); }
+.record-notes > div { font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.record-card-body { min-width: 0; overflow-wrap: anywhere; }
+.record-card-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--record-detail-border); }
+.record-card-actions, .record-card-secondary { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; max-width: 100%; }
+.record-card-secondary { margin-left: auto; }
+.record-card .record-action { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; min-width: 44px; max-width: 100%; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 13px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; touch-action: manipulation; }
+/* The outline is 36px high at the normal font size; its button keeps a 44px
+   hit area without obscuring adjacent content or overlapping another target. */
+.record-action::before { content: ''; position: absolute; z-index: -1; inset: 4px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); transition: background .15s, border-color .15s; }
+.record-card .record-action:hover { background: transparent; }
+.record-action:hover::before { background: var(--surface2); border-color: var(--text-muted); }
+.record-card .record-action-danger { color: var(--danger); }
+.record-action-danger::before { border-color: var(--danger); }
+.record-action-danger:hover::before { border-color: var(--danger); background: var(--record-detail-bg); }
+.record-card .record-action:disabled { opacity: .5; cursor: wait; }
+.record-card-footer .btn { min-height: 44px; font-size: 13px; max-width: 100%; white-space: normal; }
+.record-card button:focus-visible, .record-card [tabindex]:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.record-details .value.sensitive { filter: none; color: transparent; text-shadow: 0 0 6px var(--text); }
+.record-details .value.sensitive.revealed { color: var(--text); text-shadow: none; }
+.record-title .legacy-badges { margin-left: auto; }
+
+@media (max-width: 600px) {
+  .card.record-card { padding: 18px 16px 12px; }
+  .record-card-header { gap: 12px; margin-bottom: 16px; align-items: flex-start; }
+  .record-title { gap: 8px 12px; }
+  .record-title h3 { font-size: 18px; }
+  .record-category-chip { font-size: 11px; }
+  .record-card .record-details { grid-template-columns: minmax(0, 1fr); padding: 14px; gap: 14px; }
+  .record-card-footer { gap: 8px 12px; }
+  .record-card-actions { gap: 6px 8px; }
+  .record-card .record-action { padding-inline: 10px; }
+  .record-notes { padding-inline: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .record-action::before { transition: none; }
+}

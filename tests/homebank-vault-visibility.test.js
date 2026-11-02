@@ -508,3 +508,251 @@ test('a debt creditor inferred from an explicit source-name prefix changes with 
   sourceUpdateOnSync = () => setSnapshot(accounts);
   assert.equal((await request(`/api/vault/entries/${debt.id}`)).fields.creditor, 'Investec');
 });
+
+// Canonical write regressions exercise the real create/update/restore routes.
+// The service stub intentionally does not reconcile existing rows, so these
+// requests must independently align stale form/backup sections before saving.
+function setAnnuityAlignmentSource() {
+  setSnapshot(SOURCE_ACCOUNTS.map(account => account.id === 101 ? {
+    ...account, type_id: 7, type: 'Savings', group_id: 3, group_name: 'Retirement Annuity',
+    bank_name: 'Fixture current annuity provider', account_number: 'FIXTURE-ANNUITY-101',
+    website: 'https://annuity.example.test/', currency: 'ZAR', today: 2468.13,
+  } : account));
+}
+
+function staleAnnuityPayload(section, title) {
+  return {
+    section, title, homebank_account_id: 101, notes: provenance(101),
+    fields: {
+      ...(section === 'bank_accounts' ? {
+        bank_name: 'Old copied bank', account_type: 'Fixed Deposit', online_url: 'https://old-bank.example.test/',
+        balance_approx: 'ZAR 998.87',
+      } : {
+        institution: 'Old copied investment platform', type: 'Mutual Funds', login_url: 'https://old-fund.example.test/',
+      }),
+      account_number: 'OLD-COPIED-ACCOUNT', value_approx: 'ZAR 998.87', homebank_balance: 'ZAR 998.87',
+      homebank_group: 'Old copied group', nominee: 'Fixture owner nominee',
+      owner_reference: 'Fixture retained customer reference', owner_extra: { review: 'Fixture owner detail' },
+    },
+  };
+}
+
+function assertStoredAlignedAnnuity(id, investmentType) {
+  const stored = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(id);
+  assert.equal(stored.section, 'retirement');
+  assert.equal(stored.homebank_account_id, 101);
+  assert.deepEqual(JSON.parse(crypto.decrypt(stored.fields_encrypted)), {
+    investment_type: investmentType, beneficiary: 'Fixture owner nominee',
+    owner_reference: 'Fixture retained customer reference', owner_extra: { review: 'Fixture owner detail' },
+  }, 'Only owner details belong in storage; canonical and former source fields must be projected');
+  assert.equal(stored.notes_encrypted, null);
+}
+
+function assertProjectedAlignedAnnuity(entry, investmentType) {
+  assert.equal(entry.section, 'retirement');
+  assert.equal(entry.homebank_account_id, 101);
+  assert.equal(entry.fields.type, 'Annuity');
+  assert.equal(entry.fields.homebank_group, 'Retirement Annuity');
+  assert.equal(entry.fields.provider, 'Fixture current annuity provider');
+  assert.equal(entry.fields.account_number, 'FIXTURE-ANNUITY-101');
+  assert.equal(entry.fields.login_url, 'https://annuity.example.test/');
+  assert.equal(entry.fields.value_approx, 'ZAR 2468.13');
+  assert.equal(entry.fields.investment_type, investmentType);
+  assert.equal(entry.fields.beneficiary, 'Fixture owner nominee');
+  assert.equal(entry.fields.owner_reference, 'Fixture retained customer reference');
+  assert.deepEqual(entry.fields.owner_extra, { review: 'Fixture owner detail' });
+  for (const key of ['type', 'homebank_group', 'provider', 'account_number', 'login_url', 'value_approx']) {
+    assert.ok(entry.homebank_managed_fields.includes(key), `${key} must use the current source`);
+  }
+  assert.ok(!entry.homebank_managed_fields.includes('investment_type'));
+  assert.ok(!entry.homebank_managed_fields.includes('beneficiary'));
+  assert.equal(entry.fields.bank_name, undefined);
+  assert.equal(entry.fields.institution, undefined);
+  assert.equal(entry.fields.online_url, undefined);
+  assert.equal(entry.fields.account_type, undefined);
+  assert.equal(entry.fields.balance_approx, undefined);
+  assert.equal(entry.fields.nominee, undefined);
+}
+
+test('linked creates canonicalize stale bank and investment forms to the source retirement annuity', async () => {
+  setAnnuityAlignmentSource();
+  for (const [section, investmentType] of [['bank_accounts', 'Fixed Deposit'], ['investments', 'Mutual Funds']]) {
+    const created = await request('/api/vault/entries', { method: 'POST',
+      body: staleAnnuityPayload(section, `Fixture created annuity from ${section}`) });
+    assertProjectedAlignedAnnuity(created, investmentType);
+    assertStoredAlignedAnnuity(created.id, investmentType);
+  }
+});
+
+test('linked updates canonicalize a stale section while retaining the record link and owner fields', async () => {
+  setAnnuityAlignmentSource();
+  const updated = await request(`/api/vault/entries/${fixture.current}`, {
+    method: 'PUT', body: staleAnnuityPayload('investments', 'Fixture updated canonical annuity'),
+  });
+  assert.equal(updated.id, fixture.current);
+  assertProjectedAlignedAnnuity(updated, 'Mutual Funds');
+  assertStoredAlignedAnnuity(updated.id, 'Mutual Funds');
+});
+
+test('stale linked edits use the owner institution allocation for vehicle and property forms while retaining finance and documents', async () => {
+  const allocations = [{ institution: 'Example Owner’s Garage', section: 'vehicles' },
+    { institution: 'Example Property Office', section: 'real_estate' }];
+  setSnapshot(SOURCE_ACCOUNTS.map(account => account.id === 101 || account.id === 105 ? {
+    ...account, type_id: 3, type: 'Asset', group_name: 'Investments', currency: 'ZAR',
+    today: account.id === 101 ? 250 : 1100,
+    bank_name: account.id === 101 ? "  EXAMPLE   Owner's Garage  " : 'example property office',
+  } : account));
+  const configRow = db.prepare('SELECT config_encrypted FROM homebank_snapshots WHERE user_id=?').get(OWNER_ID);
+  const config = JSON.parse(crypto.decrypt(configRow.config_encrypted));
+  db.prepare('UPDATE homebank_snapshots SET config_encrypted=? WHERE user_id=?')
+    .run(crypto.encrypt(JSON.stringify({ ...config, institution_allocations: allocations })), OWNER_ID);
+  assert.deepEqual(visibility.getVaultVisibility(OWNER_ID).classificationOptions, { institutionAllocations: allocations });
+  assert.deepEqual(visibility.getVaultVisibility(OTHER_ID).classificationOptions, {}, 'Another owner cannot acquire the allocation rules');
+  const docId = '00000000-0000-4000-8000-000000000009';
+  db.prepare(`INSERT INTO managed_documents
+    (id,user_id,original_name_encrypted,display_name_encrypted,stored_filename,mime_type,size_bytes,sha256)
+    VALUES (?, ?, ?, ?, ?, 'application/pdf', 0, ?)`)
+    .run(docId, OWNER_ID, crypto.encrypt('example-allocation.pdf'), crypto.encrypt('Example allocation document'),
+      `owner-${OWNER_ID}/${docId}.pdf`, '0'.repeat(64));
+  db.prepare('INSERT INTO document_associations (document_id,entry_id) VALUES (?,?)').run(docId, fixture.current);
+  const documents = db.prepare('SELECT * FROM document_associations').all();
+  const targets = [{ id: fixture.current, accountId: 101, section: 'vehicles', value: 'ZAR 250.00',
+    fields: { registration: 'EXAMPLE-123', loan_balance: 'ZAR 900.00', loan_provider: 'Example owner lender',
+      owner_reference: 'Keep the owner vehicle reference' } },
+  { id: fixture.property, accountId: 105, section: 'real_estate', value: 'ZAR 1100.00',
+    fields: { address: '12 Example Lane', mortgage_balance: 'ZAR 800.00', mortgage_provider: 'Example owner mortgage',
+      owner_reference: 'Keep the owner property reference' } }];
+  for (const target of targets) {
+    const original = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(target.id);
+    const updated = await request(`/api/vault/entries/${target.id}`, { method: 'PUT', body: {
+      section: 'investments', title: `Example edited ${target.section}`, homebank_account_id: target.accountId,
+      fields: { ...target.fields, value_approx: 'ZAR 999.00', current_value: 'ZAR 999.00', homebank_group: 'Old group' },
+      notes: 'Old copied source notes',
+    } });
+    assert.equal(updated.id, target.id);
+    assert.equal(updated.section, target.section, 'A stale investment form must use the configured owner allocation');
+    assert.equal(updated.homebank_account_id, target.accountId);
+    assert.equal(updated.fields.current_value, target.value);
+    assert.equal(updated.fields.value_approx, undefined);
+    assert.equal(updated.fields.homebank_group, 'Investments');
+    for (const [key, value] of Object.entries(target.fields)) assert.deepEqual(updated.fields[key], value);
+    const stored = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(target.id);
+    assert.equal(stored.created_at, original.created_at);
+    assert.equal(stored.homebank_account_id, target.accountId);
+    assert.equal(stored.section, target.section);
+    assert.deepEqual(JSON.parse(crypto.decrypt(stored.fields_encrypted)), target.fields,
+      'Finance and owner details are retained while source values remain projected');
+    assert.equal(stored.notes_encrypted, null);
+    assert.equal((await request(`/api/vault/entries/${target.id}`)).section, target.section);
+  }
+  assert.deepEqual(db.prepare('SELECT * FROM document_associations').all(), documents);
+  assert.equal((await request(`/api/documents?entryId=${fixture.current}`)).length, 1);
+});
+
+test('restoring stale bank and investment backups creates correctly aligned annuities without copied ledgers', async () => {
+  setAnnuityAlignmentSource();
+  for (const [section, investmentType] of [['bank_accounts', 'Fixed Deposit'], ['investments', 'Mutual Funds']]) {
+    const title = `Fixture restored annuity from ${section}`;
+    const result = await request('/api/vault/restore', {
+      method: 'POST', body: { mode: 'skip', entries: [staleAnnuityPayload(section, title)] },
+    });
+    assert.deepEqual(result, { success: true, added: 1, skipped: 0 });
+    const stored = db.prepare('SELECT id FROM vault_entries WHERE user_id=? AND title=?').get(OWNER_ID, title);
+    assertStoredAlignedAnnuity(stored.id, investmentType);
+    assertProjectedAlignedAnnuity(await request(`/api/vault/entries/${stored.id}`), investmentType);
+  }
+});
+
+test('skip restore checks the canonical section and does not duplicate an existing reallocated record', async () => {
+  setAnnuityAlignmentSource();
+  const title = 'Fixture existing canonical annuity';
+  const id = addEntry({ title, section: 'retirement', accountId: 101,
+    fields: { investment_type: 'Owner existing fund', owner_reference: 'Owner existing reference' } });
+  const before = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(id);
+  const result = await request('/api/vault/restore', { method: 'POST',
+    body: { mode: 'skip', entries: [staleAnnuityPayload('bank_accounts', title)] } });
+  assert.deepEqual(result, { success: true, added: 0, skipped: 1 });
+  assert.deepEqual(db.prepare('SELECT * FROM vault_entries WHERE user_id=? AND title=?').all(OWNER_ID, title), [before]);
+});
+
+test('overwrite restore targets the canonical existing record and retains its durable source link', async () => {
+  setAnnuityAlignmentSource();
+  const title = 'Fixture overwritten canonical annuity';
+  addEntry({ title, section: 'retirement', accountId: 101, fields: { owner_reference: 'Old owner detail' } });
+  const result = await request('/api/vault/restore', { method: 'POST',
+    body: { mode: 'overwrite', entries: [staleAnnuityPayload('bank_accounts', title)] } });
+  assert.deepEqual(result, { success: true, added: 1, skipped: 0 });
+  const rows = db.prepare('SELECT * FROM vault_entries WHERE user_id=? AND title=?').all(OWNER_ID, title);
+  assert.equal(rows.length, 1);
+  assertStoredAlignedAnnuity(rows[0].id, 'Fixed Deposit');
+  assertProjectedAlignedAnnuity(await request(`/api/vault/entries/${rows[0].id}`), 'Fixed Deposit');
+
+  // A canonical backup predating explicit link fields must not unlink a record
+  // when it overwrites the same owner/section/title identity.
+  const oldBackup = { section: 'retirement', title, fields: {
+    investment_type: 'Fixed Deposit', beneficiary: 'Fixture owner nominee',
+    owner_reference: 'Fixture retained customer reference', owner_extra: { review: 'Fixture owner detail' },
+    type: 'Other', value_approx: 'ZAR 123.00',
+  } };
+  await request('/api/vault/restore', { method: 'POST', body: { mode: 'overwrite', entries: [oldBackup] } });
+  const retained = db.prepare('SELECT * FROM vault_entries WHERE user_id=? AND title=?').all(OWNER_ID, title);
+  assert.equal(retained.length, 1);
+  assertStoredAlignedAnnuity(retained[0].id, 'Fixed Deposit');
+});
+
+test('other owners cannot acquire source links or redirect records through canonical write paths', async () => {
+  setAnnuityAlignmentSource();
+  const ownerBefore = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(fixture.current);
+  const payload = staleAnnuityPayload('bank_accounts', 'Fixture other owner manual account');
+  const created = await request('/api/vault/entries', { method: 'POST', userId: OTHER_ID, body: payload });
+  assert.equal(created.section, 'bank_accounts');
+  assert.equal(created.homebank_account_id, null);
+  assert.deepEqual(created.fields, payload.fields);
+  assert.equal(created.notes, payload.notes);
+
+  const edited = await request(`/api/vault/entries/${created.id}`, { method: 'PUT', userId: OTHER_ID,
+    body: { ...payload, fields: { ...payload.fields, owner_reference: 'Other owner updated reference' } } });
+  assert.equal(edited.section, 'bank_accounts');
+  assert.equal(edited.homebank_account_id, null);
+  assert.equal(edited.fields.owner_reference, 'Other owner updated reference');
+  await request(`/api/vault/entries/${fixture.current}`, { method: 'PUT', userId: OTHER_ID, body: payload, status: 404 });
+
+  const restoredTitle = 'Fixture other owner restored manual account';
+  await request('/api/vault/restore', { method: 'POST', userId: OTHER_ID,
+    body: { mode: 'overwrite', entries: [{ ...payload, title: restoredTitle }] } });
+  const restored = db.prepare('SELECT * FROM vault_entries WHERE user_id=? AND title=?').get(OTHER_ID, restoredTitle);
+  assert.equal(restored.section, 'bank_accounts');
+  assert.equal(restored.homebank_account_id, null);
+  assert.deepEqual(JSON.parse(crypto.decrypt(restored.fields_encrypted)), payload.fields);
+  assert.deepEqual(db.prepare('SELECT * FROM vault_entries WHERE id=?').get(fixture.current), ownerBefore);
+});
+
+test('canonical writes map owner provider and URL details when HomeBank has no corresponding source metadata', async () => {
+  setSnapshot(SOURCE_ACCOUNTS.map(account => account.id === 101 ? {
+    ...account, type_id: 7, type: 'Savings', group_id: 3, group_name: 'Retirement Annuity',
+    currency: 'ZAR', today: 2468.13,
+  } : account));
+  for (const section of ['bank_accounts', 'investments']) {
+    const payload = staleAnnuityPayload(section, `Fixture owner detail annuity from ${section}`);
+    payload.fields.investment_type = 'Fixture owner selected balanced fund';
+    const created = await request('/api/vault/entries', { method: 'POST', body: payload });
+    const provider = section === 'bank_accounts' ? 'Old copied bank' : 'Old copied investment platform';
+    const login = section === 'bank_accounts' ? 'https://old-bank.example.test/' : 'https://old-fund.example.test/';
+    const stored = db.prepare('SELECT * FROM vault_entries WHERE id=?').get(created.id);
+    assert.equal(stored.section, 'retirement');
+    assert.equal(stored.homebank_account_id, 101);
+    assert.deepEqual(JSON.parse(crypto.decrypt(stored.fields_encrypted)), {
+      provider, account_number: 'OLD-COPIED-ACCOUNT', login_url: login,
+      investment_type: 'Fixture owner selected balanced fund', beneficiary: 'Fixture owner nominee',
+      owner_reference: 'Fixture retained customer reference', owner_extra: { review: 'Fixture owner detail' },
+    });
+    assert.equal(created.fields.provider, provider);
+    assert.equal(created.fields.account_number, 'OLD-COPIED-ACCOUNT');
+    assert.equal(created.fields.login_url, login);
+    assert.equal(created.fields.type, 'Annuity');
+    assert.equal(created.fields.investment_type, 'Fixture owner selected balanced fund');
+    for (const key of ['provider', 'login_url', 'account_number', 'beneficiary', 'investment_type']) {
+      assert.ok(!created.homebank_managed_fields.includes(key), `${key} must remain owner managed without a source value`);
+    }
+  }
+});

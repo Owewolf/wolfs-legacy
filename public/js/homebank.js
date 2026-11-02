@@ -1,7 +1,8 @@
-/* global API, app, layoutHTML, bindSidebar, showError, esc */
+/* global API, app, state, vaultCounts, layoutHTML, bindSidebar, showError, esc */
 'use strict';
 const HomeBank = (() => {
   let detailsShown = false;
+  let renderVersion = 0;
   function attr(v) { return esc(v).replaceAll('"','&quot;').replaceAll("'", '&#39;'); }
   function currency(v, iso) {
     try { return new Intl.NumberFormat('en-ZA',{style:'currency',currency:iso||'ZAR'}).format(v||0); }
@@ -24,9 +25,20 @@ const HomeBank = (() => {
     </section>`;
   }
   async function render() {
+    const version = ++renderVersion;
+    const expectedHash = window.location.hash;
+    const isCurrent = () => version === renderVersion && window.location.hash === expectedHash;
     let info;
     try { info = await API.request('GET','/homebank/overview'); }
-    catch(e) { return showError(e.message); }
+    catch(e) { if (isCurrent()) showError(e.message); return; }
+    if (!isCurrent()) return;
+    // Reading the overview may sync linked vault records, so refresh navigation
+    // counts after it completes rather than reusing the previous page's totals.
+    let counts = state.counts;
+    try { counts = await vaultCounts(await API.getSummary()); }
+    catch { /* Keep the last known counts if the summary is unavailable. */ }
+    if (!isCurrent()) return;
+    state.counts = counts;
     const {config, snapshot:s} = info;
     const all = s?.accounts || [];
     const accounts = all.filter(a=>!a.closed && (!a.excluded_from_summary || detailsShown));
@@ -56,32 +68,36 @@ const HomeBank = (() => {
     bindSidebar();
     const dir = document.querySelector('#hb-dir');
     const file = document.querySelector('#hb-file');
+    const browser = document.querySelector('#hb-folder-browser');
     async function loadFiles() {
       const data = await API.request('GET','/homebank/files?directory='+encodeURIComponent(dir.value));
+      if (!isCurrent()) return;
       file.innerHTML='<option value="">Automatic — newest saved .xhb</option>' +
         data.files.map(x=>`<option value="${attr(x.name)}" ${config.selectedFile===x.name?'selected':''}>${esc(x.name)} (${new Date(x.mtime).toLocaleDateString('en-ZA')})</option>`).join('');
     }
-    try { await loadFiles(); } catch(e) { document.querySelector('#hb-folder-browser').textContent=e.message; }
+    try { await loadFiles(); } catch(e) { if (isCurrent()) browser.textContent=e.message; }
+    if (!isCurrent()) return;
     document.querySelector('#hb-sync').onclick=async()=>{
-      try { await API.request('POST','/homebank/sync'); await render(); }
-      catch(e) {showError(e.message);}
+      try { await API.request('POST','/homebank/sync'); if (isCurrent()) await render(); }
+      catch(e) {if (isCurrent()) showError(e.message);}
     };
     document.querySelector('#hb-settings-form').onsubmit=async e=>{
       e.preventDefault();
-      try { await API.request('PUT','/homebank/settings',{directory:dir.value,selectedFile:file.value}); await render(); }
-      catch(e) {showError(e.message);}
+      try { await API.request('PUT','/homebank/settings',{directory:dir.value,selectedFile:file.value}); if (isCurrent()) await render(); }
+      catch(e) {if (isCurrent()) showError(e.message);}
     };
     document.querySelector('#hb-browse').onclick=async()=>{
       const target=document.querySelector('#hb-folder-browser');
       try {
         const data=await API.request('GET','/homebank/directories?directory='+encodeURIComponent(dir.value));
+        if (!isCurrent()) return;
         target.innerHTML=`<p>${esc(data.current)}</p>` +
           (data.parent?`<button type="button" class="btn btn-outline btn-sm hb-folder" data-path="${attr(data.parent)}">⬆ Parent</button>`:'')+
           data.folders.map(f=>`<button type="button" class="btn btn-outline btn-sm hb-folder" data-path="${attr(f.path)}">📁 ${esc(f.name)}</button>`).join('')+
           '<button type="button" class="btn btn-outline btn-sm" id="hb-select-folder">Use this folder</button>';
         target.querySelectorAll('.hb-folder').forEach(btn=>btn.onclick=()=>{dir.value=btn.dataset.path;document.querySelector('#hb-browse').click();});
-        target.querySelector('#hb-select-folder').onclick=()=>{loadFiles().catch(showError);target.innerHTML='';};
-      } catch(e) {target.textContent=e.message;}
+        target.querySelector('#hb-select-folder').onclick=()=>{loadFiles().catch(e=>{if (isCurrent()) showError(e.message);});target.innerHTML='';};
+      } catch(e) {if (isCurrent()) target.textContent=e.message;}
     };
     const extra=document.querySelector('#hb-extra');
     if(extra) extra.onchange=()=>{detailsShown=extra.checked;render();};

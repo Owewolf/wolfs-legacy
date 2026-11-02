@@ -5,6 +5,7 @@ const { authenticateToken } = require('../middleware/auth');
 const { validateSection, validateString, validationError } = require('../validate');
 const { getVaultVisibility, homebankAccountIdFromNotes } = require('../vault-visibility');
 const { projectHomebankEntry, sanitizeHomebankEntry } = require('../homebank-vault');
+const { alignHomebankEntry } = require('../homebank-classification');
 const homebank = require('../homebank-service');
 
 const router = express.Router();
@@ -85,12 +86,12 @@ router.post('/entries', (req, res) => {
 
   const db = getDb();
   const homebankAccountId = sourceAccountId(db, req.user.id, req.body.homebank_account_id, notes);
-  const stored = sanitizeHomebankEntry({ user_id: req.user.id, section, fields, notes, homebank_account_id: homebankAccountId }, req.vaultVisibility);
+  const stored = sanitizeHomebankEntry(alignHomebankEntry({ user_id: req.user.id, section, fields, notes, homebank_account_id: homebankAccountId }, req.vaultVisibility), req.vaultVisibility);
   const result = db.prepare(
     'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted, homebank_account_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(req.user.id, section, title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, homebankAccountId);
+  ).run(req.user.id, stored.section, title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, homebankAccountId);
 
-  audit(req.user.id, 'create_entry', 'vault_entry', result.lastInsertRowid, section, req.ip);
+  audit(req.user.id, 'create_entry', 'vault_entry', result.lastInsertRowid, stored.section, req.ip);
   res.json(decryptEntry(db.prepare('SELECT * FROM vault_entries WHERE id=? AND user_id=?').get(result.lastInsertRowid, req.user.id), req.vaultVisibility));
 });
 
@@ -104,12 +105,12 @@ router.put('/entries/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM vault_entries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!existing || !req.vaultVisibility.isVisible(existing)) return res.status(404).json({ error: 'Not found' });
-  const stored = sanitizeHomebankEntry({ ...existing, section, fields, notes }, req.vaultVisibility);
+  const stored = sanitizeHomebankEntry(alignHomebankEntry({ ...existing, section, fields, notes }, req.vaultVisibility), req.vaultVisibility);
   db.prepare(
     'UPDATE vault_entries SET section=?, title=?, fields_encrypted=?, notes_encrypted=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?'
-  ).run(section, title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, req.params.id, req.user.id);
+  ).run(stored.section, title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, req.params.id, req.user.id);
 
-  audit(req.user.id, 'update_entry', 'vault_entry', +req.params.id, section, req.ip);
+  audit(req.user.id, 'update_entry', 'vault_entry', +req.params.id, stored.section, req.ip);
   res.json(decryptEntry(db.prepare('SELECT * FROM vault_entries WHERE id=? AND user_id=?').get(req.params.id, req.user.id), req.vaultVisibility));
 });
 
@@ -192,28 +193,34 @@ router.post('/restore', (req, res) => {
       if (typeof e.fields !== 'object') { skipped++; continue; }
 
       let homebankAccountId = sourceAccountId(db, req.user.id, e.homebank_account_id, e.notes);
+      if (mode === 'overwrite' && homebankAccountId == null) {
+        const previous = db.prepare('SELECT homebank_account_id FROM vault_entries WHERE user_id = ? AND section = ? AND title = ?')
+          .get(req.user.id, e.section, e.title);
+        if (previous?.homebank_account_id != null) homebankAccountId = previous.homebank_account_id;
+      }
+      const aligned = alignHomebankEntry({ ...e, user_id: req.user.id, homebank_account_id: homebankAccountId }, req.vaultVisibility);
       // In 'skip' mode, skip entries with the same section+title
       if (mode !== 'overwrite') {
         const existing = db.prepare(
           'SELECT id FROM vault_entries WHERE user_id = ? AND section = ? AND title = ?'
-        ).get(req.user.id, e.section, e.title);
+        ).get(req.user.id, aligned.section, e.title);
         if (existing) { skipped++; continue; }
       } else {
         // Retain a durable source link when overwriting an older backup that
         // predates link metadata. Editing notes must not bypass source filters.
         const existing = db.prepare('SELECT homebank_account_id FROM vault_entries WHERE user_id = ? AND section = ? AND title = ?')
-          .get(req.user.id, e.section, e.title);
+          .get(req.user.id, aligned.section, e.title);
         if (existing?.homebank_account_id != null) homebankAccountId = existing.homebank_account_id;
         // In 'overwrite' mode, delete the existing entry first
         db.prepare(
           'DELETE FROM vault_entries WHERE user_id = ? AND section = ? AND title = ?'
-        ).run(req.user.id, e.section, e.title);
+        ).run(req.user.id, aligned.section, e.title);
       }
 
-      const stored = sanitizeHomebankEntry({ ...e, user_id: req.user.id, homebank_account_id: homebankAccountId }, req.vaultVisibility);
+      const stored = sanitizeHomebankEntry({ ...aligned, homebank_account_id: homebankAccountId }, req.vaultVisibility);
       db.prepare(
         'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted, homebank_account_id) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(req.user.id, e.section, e.title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, homebankAccountId);
+      ).run(req.user.id, stored.section, e.title.trim(), encrypt(JSON.stringify(stored.fields)), stored.notes ? encrypt(stored.notes) : null, homebankAccountId);
       added++;
     }
     return { added, skipped };

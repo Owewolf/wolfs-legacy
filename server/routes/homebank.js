@@ -7,7 +7,7 @@ router.use(authenticateToken);
 // private HomeBank file. The operator must designate the owner in .env.
 router.use((req,res,next) => {
   const owner = (process.env.HOMEBANK_OWNER_EMAIL || '').trim().toLowerCase();
-  if (!owner) return res.status(503).json({error:'Set HOMEBANK_OWNER_EMAIL in the server .env to your Legacy Vault sign-in email'});
+  if (!owner) return res.status(503).json({error:"Set HOMEBANK_OWNER_EMAIL in the server .env to your Wolf's Vault sign-in email"});
   if (String(req.user.email||'').trim().toLowerCase() !== owner) return res.status(403).json({error:'HomeBank financial overview is restricted to the configured vault owner'});
   next();
 });

@@ -1,12 +1,16 @@
 const express = require('express');
 const { getDb, audit } = require('../db');
-const { generateAccessToken, hashToken, decrypt, encrypt } = require('../crypto');
+const { generateAccessToken, hashToken, decrypt } = require('../crypto');
 const { authenticateToken } = require('../middleware/auth');
 const { listForEntry } = require('../document-store');
 const { validateString, validateEmail, validateInt, validationError } = require('../validate');
 const { getVaultVisibility } = require('../vault-visibility');
 const { projectHomebankEntry } = require('../homebank-vault');
 const homebank = require('../homebank-service');
+const { recordBeneficiaryEvent } = require('../notifications/service');
+const { utc } = require('../notifications/time');
+const legacy = require('../legacy-content');
+const { ensureBeneficiaryFinalWish } = require('../beneficiary-final-wishes');
 
 const router = express.Router();
 
@@ -42,33 +46,20 @@ router.post('/', authenticateToken, (req, res) => {
   const db = getDb();
   const token = generateAccessToken();
   const expires = tokenExpiresAt();
-  const beneficiaryName = name.trim();
-  const beneficiaryEmail = email || null;
-  const beneficiaryPhone = phone || null;
-  const beneficiaryRelationship = relationship || null;
-
-  const result = db.transaction(() => {
-    const inserted = db.prepare(
+  const created = db.transaction(() => {
+    const result = db.prepare(
       'INSERT INTO beneficiaries (user_id, name, email, phone, relationship, access_token, token_expires_at, emergency_waiting_days) VALUES (?,?,?,?,?,?,?,?)'
-    ).run(req.user.id, beneficiaryName, beneficiaryEmail, beneficiaryPhone, beneficiaryRelationship, hashToken(token), expires, waitDays);
-
-    const finalWishFields = {
-      category: 'Message to Family',
-      details: '',
-      contact_person: beneficiaryName,
-      contact_phone: beneficiaryPhone || ''
-    };
-
-    const finalWish = db.prepare(
-      'INSERT INTO vault_entries (user_id, section, title, fields_encrypted, notes_encrypted) VALUES (?, ?, ?, ?, NULL)'
-    ).run(req.user.id, 'final_wishes', beneficiaryName, encrypt(JSON.stringify(finalWishFields)));
-
-    return { inserted, finalWishId: finalWish.lastInsertRowid };
+    ).run(req.user.id, name.trim(), email || null, phone || null, relationship || null, hashToken(token), expires, waitDays);
+    const beneficiaryId = Number(result.lastInsertRowid);
+    const wish = ensureBeneficiaryFinalWish(db, req.user.id, beneficiaryId);
+    // This creation audit must be durable alongside both records; the general
+    // audit helper is intentionally best effort and cannot protect this write.
+    db.prepare('INSERT INTO audit_log (user_id, action, target_type, target_id, detail, ip_address) VALUES (?,?,?,?,?,?)')
+      .run(req.user.id, 'add_beneficiary', 'beneficiary', beneficiaryId, name.trim(), req.ip || null);
+    return { beneficiaryId, wishId: wish.id };
   })();
-
-  audit(req.user.id, 'add_beneficiary', 'beneficiary', result.inserted.lastInsertRowid, beneficiaryName, req.ip);
-  audit(req.user.id, 'create_entry', 'vault_entry', result.finalWishId, 'final_wishes:auto_from_beneficiary', req.ip);
-  res.json({ id: result.inserted.lastInsertRowid, name: beneficiaryName, email, phone, relationship, accessToken: token, token_expires_at: expires, emergency_waiting_days: waitDays });
+  res.json({ id: created.beneficiaryId, name: name.trim(), email, phone, relationship, accessToken: token, token_expires_at: expires, emergency_waiting_days: waitDays,
+    final_wish_id: created.wishId, final_wish: { id: created.wishId } });
 });
 
 router.put('/:id', authenticateToken, (req, res) => {
@@ -107,22 +98,53 @@ router.delete('/:id', authenticateToken, (req, res) => {
 
 router.post('/:id/deny-emergency', authenticateToken, (req, res) => {
   const db = getDb();
-  db.prepare('UPDATE beneficiaries SET emergency_access_requested = 0, emergency_access_requested_at = NULL WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
-  audit(req.user.id, 'deny_emergency', 'beneficiary', +req.params.id, null, req.ip);
+  const found = db.transaction(() => {
+    const b = db.prepare('SELECT * FROM beneficiaries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!b) return false;
+    if (!b.emergency_access_requested) return true;
+    db.prepare('UPDATE beneficiaries SET emergency_access_requested = 0, emergency_access_requested_at = NULL WHERE id = ?').run(b.id);
+    recordBeneficiaryEvent(db, { type: 'emergency_denied', userId: b.user_id,
+      beneficiary: { ...b, emergency_access_requested: 0, emergency_access_requested_at: null }, ip: req.ip });
+    audit(req.user.id, 'deny_emergency', 'beneficiary', b.id, null, req.ip);
+    return true;
+  })();
+  if (!found) return res.status(404).json({ error: 'Not found' });
   res.json({ success: true });
 });
 
 router.post('/:id/grant', authenticateToken, (req, res) => {
   const db = getDb();
-  db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
-  audit(req.user.id, 'grant_access', 'beneficiary', +req.params.id, null, req.ip);
+  const found = db.transaction(() => {
+    const b = db.prepare('SELECT * FROM beneficiaries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!b) return false;
+    if (b.access_granted) return true;
+    const now = new Date().toISOString();
+    db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = ? WHERE id = ?').run(now, b.id);
+    recordBeneficiaryEvent(db, { type: 'access_granted', userId: b.user_id,
+      beneficiary: { ...b, access_granted: 1, access_granted_at: now }, now, ip: req.ip });
+    if(b.emergency_access_requested) legacy.releaseForEvent(db,{userId:b.user_id,beneficiaryId:b.id,policy:'emergency_access_release',eventKey:`manual-emergency:${b.id}:${now}`,at:now});
+    audit(req.user.id, 'grant_access', 'beneficiary', b.id, null, req.ip);
+    return true;
+  })();
+  if (!found) return res.status(404).json({ error: 'Not found' });
   res.json({ success: true });
 });
 
 router.post('/:id/revoke', authenticateToken, (req, res) => {
   const db = getDb();
-  db.prepare('UPDATE beneficiaries SET access_granted = 0, access_granted_at = NULL, emergency_access_requested = 0, emergency_access_requested_at = NULL WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
-  audit(req.user.id, 'revoke_access', 'beneficiary', +req.params.id, null, req.ip);
+  const found = db.transaction(() => {
+    const b = db.prepare('SELECT * FROM beneficiaries WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!b) return false;
+    legacy.revokeForBeneficiary(db,{userId:b.user_id,beneficiaryId:b.id});
+    if (!b.access_granted && !b.emergency_access_requested) return true;
+    db.prepare('UPDATE beneficiaries SET access_granted = 0, access_granted_at = NULL, emergency_access_requested = 0, emergency_access_requested_at = NULL WHERE id = ?').run(b.id);
+    recordBeneficiaryEvent(db, { type: b.access_granted ? 'access_revoked' : 'emergency_denied', userId: b.user_id,
+      beneficiary: { ...b, access_granted: 0, access_granted_at: null,
+        emergency_access_requested: 0, emergency_access_requested_at: null }, ip: req.ip });
+    audit(req.user.id, 'revoke_access', 'beneficiary', b.id, null, req.ip);
+    return true;
+  })();
+  if (!found) return res.status(404).json({ error: 'Not found' });
   res.json({ success: true });
 });
 
@@ -134,6 +156,18 @@ router.post('/:id/regenerate-token', authenticateToken, (req, res) => {
   if (r.changes === 0) return res.status(404).json({ error: 'Not found' });
   audit(req.user.id, 'regenerate_token', 'beneficiary', +req.params.id, null, req.ip);
   res.json({ accessToken: token, token_expires_at: expires });
+});
+
+router.get('/:id/legacy', authenticateToken, (req,res,next) => {
+  try {
+    const db=getDb();
+    if(!db.prepare('SELECT 1 FROM beneficiaries WHERE id=? AND user_id=?').get(req.params.id,req.user.id)) return res.status(404).json({error:'Not found'});
+    legacy.event(db,{userId:req.user.id,beneficiaryId:Number(req.params.id),type:'owner_recipient_list'});
+    res.json(legacy.list(db,req.user.id,{beneficiary_id:req.params.id}).map(item=>{
+      const mapping=item.beneficiaries.find(b=>b.beneficiary_id===Number(req.params.id));
+      return {...item,released_at:mapping?.released_at,revoked_at:mapping?.revoked_at,release_scope:mapping?.release_scope};
+    }));
+  } catch(e) {next(e);}
 });
 
 // ── Beneficiary endpoints (no auth, uses access token) ──
@@ -152,13 +186,21 @@ router.post('/emergency-access', (req, res) => {
 
   const { beneficiary: b, error } = lookupBeneficiary(accessToken);
   if (error) return res.status(404).json({ error });
-  if (b.access_granted) return res.json({ status: 'already_granted' });
-  if (b.emergency_access_requested) return res.json({ status: 'already_requested', requested_at: b.emergency_access_requested_at });
-
   const db = getDb();
-  db.prepare('UPDATE beneficiaries SET emergency_access_requested = 1, emergency_access_requested_at = CURRENT_TIMESTAMP WHERE id = ?').run(b.id);
-  audit(null, 'emergency_request', 'beneficiary', b.id, b.name, req.ip);
-  res.json({ status: 'requested', waiting_days: b.emergency_waiting_days });
+  const result = db.transaction(() => {
+    const fresh = db.prepare('SELECT * FROM beneficiaries WHERE id = ?').get(b.id);
+    if (!fresh) return null;
+    if (fresh.access_granted) return { status: 'already_granted' };
+    if (fresh.emergency_access_requested) return { status: 'already_requested', requested_at: fresh.emergency_access_requested_at };
+    const now = new Date().toISOString();
+    db.prepare('UPDATE beneficiaries SET emergency_access_requested = 1, emergency_access_requested_at = ? WHERE id = ?').run(now, fresh.id);
+    recordBeneficiaryEvent(db, { type: 'emergency_requested', userId: fresh.user_id,
+      beneficiary: { ...fresh, emergency_access_requested: 1, emergency_access_requested_at: now }, now, ip: req.ip });
+    audit(null, 'emergency_request', 'beneficiary', fresh.id, fresh.name, req.ip);
+    return { status: 'requested', waiting_days: fresh.emergency_waiting_days };
+  })();
+  if (!result) return res.status(404).json({ error: 'Not found' });
+  res.json(result);
 });
 
 router.post('/access', async (req, res) => {
@@ -174,13 +216,18 @@ router.post('/access', async (req, res) => {
   const tryAutoGrant = db.transaction(() => {
     // Re-read inside transaction for consistency
     const fresh = db.prepare('SELECT * FROM beneficiaries WHERE id = ?').get(b.id);
+    if (!fresh) return false;
     if (fresh.access_granted) return true;
 
     // Auto-grant if emergency waiting period elapsed
     if (fresh.emergency_access_requested) {
-      const waitUntil = new Date(new Date(fresh.emergency_access_requested_at).getTime() + fresh.emergency_waiting_days * 86400000);
+      const waitUntil = new Date(utc(fresh.emergency_access_requested_at).getTime() + fresh.emergency_waiting_days * 86400000);
       if (new Date() >= waitUntil) {
-        db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = CURRENT_TIMESTAMP WHERE id = ? AND access_granted = 0').run(fresh.id);
+        const now = new Date().toISOString();
+        db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = ? WHERE id = ? AND access_granted = 0').run(now, fresh.id);
+        recordBeneficiaryEvent(db, { type: 'emergency_granted', userId: fresh.user_id,
+          beneficiary: { ...fresh, access_granted: 1, access_granted_at: now }, now, ip: req.ip });
+        legacy.releaseForEvent(db,{userId:fresh.user_id,beneficiaryId:fresh.id,policy:'emergency_access_release',eventKey:`emergency:${fresh.id}:${now}`,at:now});
         audit(null, 'emergency_auto_grant', 'beneficiary', fresh.id, fresh.name, req.ip);
         return true;
       }
@@ -189,7 +236,10 @@ router.post('/access', async (req, res) => {
     // Auto-grant if dead man's switch triggered
     const sw = db.prepare('SELECT switch_triggered FROM dead_switch_config WHERE user_id = ?').get(fresh.user_id);
     if (sw && sw.switch_triggered) {
-      db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = CURRENT_TIMESTAMP WHERE id = ? AND access_granted = 0').run(fresh.id);
+      const now = new Date().toISOString();
+      db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = ? WHERE id = ? AND access_granted = 0').run(now, fresh.id);
+      recordBeneficiaryEvent(db, { type: 'deadswitch_granted', userId: fresh.user_id,
+        beneficiary: { ...fresh, access_granted: 1, access_granted_at: now }, now, ip: req.ip });
       audit(null, 'deadswitch_auto_grant', 'beneficiary', fresh.id, fresh.name, req.ip);
       return true;
     }
@@ -202,7 +252,7 @@ router.post('/access', async (req, res) => {
   if (!granted) {
     let waitInfo = null;
     if (b.emergency_access_requested) {
-      const waitUntil = new Date(new Date(b.emergency_access_requested_at).getTime() + b.emergency_waiting_days * 86400000);
+      const waitUntil = new Date(utc(b.emergency_access_requested_at).getTime() + b.emergency_waiting_days * 86400000);
       waitInfo = { requested_at: b.emergency_access_requested_at, access_at: waitUntil.toISOString() };
     }
     return res.json({ status: b.emergency_access_requested ? 'waiting' : 'no_access', beneficiary: { name: b.name }, waitInfo });

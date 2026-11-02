@@ -1,4 +1,4 @@
-/* global API, SECTIONS, Docs, HomeBank */
+/* global API, SECTIONS, Docs, HomeBank, Legacy, Mobile */
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -17,6 +17,94 @@ function ago(d) {
   return Math.floor(s / 86400) + 'd ago';
 }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
+
+// Shared presentation for owner, search, recipient and personal-content records.
+// Data mapping and action handlers stay with their existing views.
+const RecordCards = (() => {
+  const text = value => esc(String(value ?? ''));
+  const attr = value => text(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const categories = {
+    personal: ['person', 'blue'], bank_accounts: ['bank', 'teal'],
+    investments: ['bar-chart-fill', 'violet'], retirement: ['bank', 'teal'],
+    insurance: ['shield-check', 'blue'], real_estate: ['house', 'teal'],
+    debts: ['credit-card', 'orange'], digital: ['laptop', 'blue'],
+    vehicles: ['car-front', 'teal'], valuables: ['gem', 'violet'],
+    contacts: ['telephone', 'teal'], legal: ['file-earmark-text', 'blue'],
+    final_wishes: ['chat-heart', 'violet'], secure_notes: ['lock', 'blue'],
+    pet_care: ['heart', 'orange'], beneficiaries: ['people', 'teal']
+  };
+  function icon(name) {
+    return `<svg class="record-icon" aria-hidden="true" focusable="false"><use href="/icons/record-icons.svg#${attr(name)}"></use></svg>`;
+  }
+  function heading({ title, section, category, iconName, tone, badges = '' }) {
+    const defaults = categories[section] || ['journal-text', 'blue'];
+    return `<header class="record-card-header">
+      <span class="record-category-icon record-tone-${attr(tone || defaults[1])}">${icon(iconName || defaults[0])}</span>
+      <div class="record-title"><h3>${text(title)}</h3>${category ? `<span class="record-category-chip">${text(category)}</span>` : ''}${badges}</div>
+    </header>`;
+  }
+  function action({ label, iconName, attributes = '', danger = false }) {
+    return `<button type="button" class="btn btn-outline record-action${danger ? ' record-action-danger' : ''}" ${attributes}>${iconName ? icon(iconName) : ''}<span>${text(label)}</span></button>`;
+  }
+  function footer({ primary = '', secondary = '' }) {
+    if (!primary && !secondary) return '';
+    return `<footer class="record-card-footer"><div class="record-card-actions">${primary}</div>${secondary ? `<div class="record-card-secondary">${secondary}</div>` : ''}</footer>`;
+  }
+  function render({ title, section, category, iconName, tone, badges, body = '', footer: actions = '', id, className = '' }) {
+    return `<article class="card record-card ${attr(className)}"${id ? ` id="${attr(id)}"` : ''}>${heading({ title, section, category, iconName, tone, badges })}${body}${actions}</article>`;
+  }
+  function fieldsHTML(fields, conceal = true) {
+    if (!fields.length) return '';
+    return `<dl class="field-grid record-details">${fields.map(field => `<div class="field-item"><dt>${text(field.label)}</dt><dd class="value${conceal && field.sensitive ? ' sensitive' : ''}"${conceal && field.sensitive ? ` role="button" tabindex="0" aria-pressed="false" aria-label="Reveal ${attr(field.label)}" data-sensitive-label="${attr(field.label)}"` : ''}>${text(field.value)}</dd></div>`).join('')}</dl>`;
+  }
+  function entry(entry, { section = entry.section, documentCount = 0, readonly = false, search = false, attachments = '' } = {}) {
+    const schema = SECTIONS[section];
+    const values = entry.fields || {};
+    const fields = search ? Object.entries(values).slice(0, 4).map(([key, value]) => ({
+      label: key, value: String(value).substring(0, 80),
+      sensitive: schema?.fields.find(field => field.key === key)?.sensitive
+    })) : (schema?.fields || []).filter(field => values[field.key]).map(field => ({ ...field, value: values[field.key] }));
+    let [iconName, tone] = categories[section] || ['journal-text', 'blue'];
+    if (/cryptocurrency|crypto exchange/i.test([values.type, values.investment_type].join(' '))) {
+      iconName = 'currency-bitcoin'; tone = 'orange';
+    } else if (section === 'retirement' && values.investment_type) {
+      iconName = 'bar-chart-fill'; tone = 'violet';
+    }
+    const category = search ? (schema?.name || section) : (values.account_type || values.type || values.category || values.species || values.role);
+    const body = fieldsHTML(fields, !readonly) + (entry.notes ? `<div class="record-notes"><h4>Notes</h4><div>${text(entry.notes)}</div></div>` : '') + attachments;
+    const editAttributes = search ? `data-nav="edit/${attr(section)}/${attr(entry.id)}"` : `data-edit="${attr(entry.id)}"`;
+    return render({ title: entry.title, section, category, iconName, tone, body,
+      id: readonly ? `beneficiary-vault-entry-${entry.id}` : undefined,
+      footer: readonly ? '' : footer({
+        primary: action({ label: 'Edit', iconName: 'pencil', attributes: editAttributes }) + (search ? '' : action({ label: `Documents (${documentCount})`, iconName: 'file-earmark-text', attributes: editAttributes })),
+        secondary: search ? '' : action({ label: 'Delete', iconName: 'trash', attributes: `data-delete="${attr(entry.id)}"`, danger: true })
+      })
+    });
+  }
+  function bindSensitive(root = app) {
+    root.querySelectorAll('.value.sensitive').forEach(el => {
+      const toggle = () => {
+        const revealed = el.classList.toggle('revealed');
+        el.setAttribute('aria-pressed', String(revealed));
+        el.setAttribute('aria-label', revealed ? `${el.dataset.sensitiveLabel}: ${el.textContent}. Activate to conceal.` : `Reveal ${el.dataset.sensitiveLabel}`);
+      };
+      el.onclick = toggle;
+      el.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(); } };
+    });
+  }
+  return { icon, heading, action, footer, render, entry, bindSensitive };
+})();
+
+async function vaultCounts(summary) {
+  const counts = Object.fromEntries(summary.filter(row => !SECTIONS[row.section]?.retired).map(row => [row.section, row.count]));
+  if (typeof Legacy !== 'undefined' && typeof Legacy.countEntries === 'function') {
+    try {
+      const wishes = await Legacy.countEntries();
+      if (wishes) counts.final_wishes = (counts.final_wishes || 0) + wishes;
+    } catch { /* The existing entry list handles protected-content errors. */ }
+  }
+  return counts;
+}
 
 // ── Theme toggle ──
 function getTheme() { return localStorage.getItem('lv_theme') || 'dark'; }
@@ -63,6 +151,7 @@ function hideLoading(target) {
 async function navigate(route) { window.location.hash = route; }
 
 async function handleRoute() {
+  if (typeof Mobile !== 'undefined') Mobile.reset();
   editingHomebankEntry = null;
   const hash = window.location.hash.slice(1) || 'login';
   const [route, p1, p2] = hash.split('/');
@@ -192,11 +281,11 @@ function renderLogin() {
 
   app.innerHTML = `
     <div class="auth-container"><div class="auth-box">
-      <h1>\u{1F512} Legacy Vault</h1>
+      <h1>\u{1F512} Wolf's Vault</h1>
       <p class="subtitle">Secure data vault for your family's future</p>
       <form id="login-form">
-        <div class="form-group"><label>Email</label><input type="email" name="email" required></div>
-        <div class="form-group"><label>Password</label><input type="password" name="password" required></div>
+        <div class="form-group"><label for="login-email">Email</label><input id="login-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
+        <div class="form-group"><label for="login-password">Password</label><input id="login-password" type="password" name="password" autocomplete="current-password" required></div>
         <button type="submit" class="btn btn-primary btn-block">Sign In</button>
       </form>
       <div id="login-2fa-panel"></div>
@@ -228,9 +317,9 @@ function renderRegister() {
       <h1>Create Account</h1>
       <p class="subtitle">Start securing your legacy data</p>
       <form id="reg-form">
-        <div class="form-group"><label>Full Name</label><input type="text" name="name" required></div>
-        <div class="form-group"><label>Email</label><input type="email" name="email" required></div>
-        <div class="form-group"><label>Password (min 8 chars)</label><input type="password" name="password" required minlength="8"></div>
+        <div class="form-group"><label for="register-name">Full Name</label><input id="register-name" type="text" name="name" autocomplete="name" required></div>
+        <div class="form-group"><label for="register-email">Email</label><input id="register-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
+        <div class="form-group"><label for="register-password">Password (min 8 chars)</label><input id="register-password" type="password" name="password" autocomplete="new-password" required minlength="8"></div>
         <button type="submit" class="btn btn-primary btn-block">Create Vault</button>
       </form>
       <div class="link-row">Already have an account? <a href="#login">Sign in</a></div>
@@ -248,7 +337,7 @@ function renderRegister() {
 
 // ── Sidebar ──
 function sidebarHTML(activeKey) {
-  const sectionItems = Object.entries(SECTIONS).map(([k, s]) => {
+  const sectionItems = Object.entries(SECTIONS).filter(([, s]) => !s.retired).map(([k, s]) => {
     const cnt = state.counts[k] || 0;
     return `<button class="nav-item ${activeKey === k ? 'active' : ''}" data-nav="section/${k}">
       <span class="icon">${s.icon}</span>${esc(s.name)}${cnt ? `<span class="count">${cnt}</span>` : ''}
@@ -256,9 +345,10 @@ function sidebarHTML(activeKey) {
   }).join('');
 
   return `
-    <div class="sidebar">
+    <div class="sidebar" id="mobile-navigation">
+      <button type="button" id="mobile-navigation-close" class="mobile-navigation-close" aria-label="Close navigation" hidden>Close <span aria-hidden="true">×</span></button>
       <div class="sidebar-header">
-        <h2 class="sidebar-brand">\u{1F512} Legacy Vault</h2>
+        <h2 class="sidebar-brand">\u{1F512} Wolf's Vault</h2>
         <div class="sidebar-owner">${esc(state.user?.name)}</div>
         <div class="sidebar-actions">
           <button class="header-action-btn" id="home-btn" title="Home" data-nav="vault"><span class="action-icon">\u{2302}</span> Home</button>
@@ -297,7 +387,12 @@ function sidebarHTML(activeKey) {
 }
 
 function layoutHTML(activeKey, content) {
-  return `<div class="app-layout">${sidebarHTML(activeKey)}<div class="main-content">${content}</div></div>`;
+  return `<header class="mobile-header" hidden>
+    <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" aria-controls="mobile-navigation" aria-expanded="false"><span class="mobile-menu-icon" aria-hidden="true">☰</span><span>Menu</span></button>
+    <span class="mobile-brand">Wolf’s Vault</span>
+    <button type="button" id="mobile-search-toggle" class="mobile-search-toggle" aria-label="Search vault"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
+  </header><div class="mobile-nav-backdrop" aria-hidden="true" hidden></div>
+  <div class="app-layout">${sidebarHTML(activeKey)}<div class="main-content" id="main-content">${content}</div></div>`;
 }
 
 function bindSidebar() {
@@ -322,6 +417,7 @@ function bindSidebar() {
       }
     };
   }
+  if (typeof Mobile !== 'undefined') Mobile.mount();
 }
 
 // ── Dashboard ──
@@ -330,7 +426,7 @@ async function renderDashboard(refreshedSummary, shouldRender = () => true) {
   let counts = {};
   try {
     const summary = refreshedSummary || await API.getSummary();
-    summary.forEach(s => counts[s.section] = s.count);
+    counts = await vaultCounts(summary);
   } catch { counts = {}; }
   if (window.location.hash !== expectedHash || !shouldRender()) return;
   state.counts = counts;
@@ -341,7 +437,7 @@ async function renderDashboard(refreshedSummary, shouldRender = () => true) {
   const isNew = totalEntries === 0;
   const onboardingHTML = isNew ? `
     <div class="card" style="border-color:var(--primary);margin-bottom:24px">
-      <h3 style="margin-bottom:12px">Welcome to Legacy Vault</h3>
+      <h3 style="margin-bottom:12px">Welcome to Wolf's Vault</h3>
       <p style="color:var(--text-muted);margin-bottom:16px">
         This vault stores your personal and financial information so your family can access it when needed.
         Here's how to get started:
@@ -354,7 +450,7 @@ async function renderDashboard(refreshedSummary, shouldRender = () => true) {
       </div>
     </div>` : '';
 
-  const cards = Object.entries(SECTIONS).map(([k, s]) => {
+  const cards = Object.entries(SECTIONS).filter(([, s]) => !s.retired).map(([k, s]) => {
     const cnt = state.counts[k] || 0;
     return `<div class="card vault-card" data-nav="section/${k}">
       <div class="vault-card-icon">${s.icon}</div>
@@ -394,15 +490,16 @@ function showExportView(data) {
     grouped[e.section].push(e);
   });
 
-  let html = `<html><head><meta charset="utf-8"><title>Legacy Vault Export - ${esc(data.owner.name)}</title>
+  let html = `<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Wolf's Vault Export - ${esc(data.owner.name)}</title>
     <style>body{font-family:sans-serif;max-width:800px;margin:40px auto;color:#222;line-height:1.5}
     h1{border-bottom:2px solid #333;padding-bottom:8px}h2{margin-top:32px;color:#444;border-bottom:1px solid #ccc;padding-bottom:4px}
     .entry{margin:16px 0;padding:12px;border:1px solid #ddd;border-radius:6px}
     .entry h3{margin:0 0 8px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
     .field label{font-size:11px;text-transform:uppercase;color:#888}.field .val{font-size:14px}
     .notes{margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:13px;color:#555}
+    @media(max-width:700px){body{margin:20px 16px;overflow-wrap:anywhere}.fields{grid-template-columns:1fr}}
     @media print{body{margin:20px}}</style></head><body>
-    <h1>Legacy Vault - ${esc(data.owner.name)}</h1>
+    <h1>Wolf's Vault - ${esc(data.owner.name)}</h1>
     <p>Exported: ${new Date(data.exported_at).toLocaleString()}</p>
     <p><strong>CONFIDENTIAL</strong> - This document contains sensitive personal and financial information.</p>`;
 
@@ -423,6 +520,7 @@ function showExportView(data) {
   html += '</body></html>';
 
   const blob = new Blob([html], { type: 'text/html' });
+  if (typeof Mobile !== 'undefined' && Mobile.isCompact()) return Mobile.showExport(blob);
   const url = URL.createObjectURL(blob);
   const win = window.open(url, '_blank');
   if (win) { showSuccess('Export opened in new tab. Use Ctrl+P to print/save as PDF.'); }
@@ -440,24 +538,14 @@ async function renderSearchResults(query, refreshedResults, shouldRender = () =>
   if (window.location.hash !== expectedHash || !shouldRender()) return;
   displayedSearchResults = results;
 
-  const resultsHTML = results.length ? results.map(e => {
-    const sec = SECTIONS[e.section];
-    return `<div class="card" style="cursor:pointer" data-nav="edit/${e.section}/${e.id}">
-      <div class="card-header">
-        <h3>${sec ? sec.icon + ' ' : ''}${esc(e.title)}</h3>
-        <span style="font-size:12px;color:var(--text-muted)">${sec ? sec.name : e.section}</span>
-      </div>
-      <div class="field-grid">${Object.entries(e.fields || {}).slice(0, 4).map(([k, v]) =>
-        `<div class="field-item"><label>${esc(k)}</label><div class="value">${esc(String(v).substring(0, 80))}</div></div>`
-      ).join('')}</div>
-    </div>`;
-  }).join('') : `<div class="empty-state"><h3>No results</h3><p>Nothing matched "${esc(q)}" in your vault.</p></div>`;
+  const resultsHTML = results.length ? results.map(e => RecordCards.entry(e, { search: true })).join('') : `<div class="empty-state"><h3>No results</h3><p>Nothing matched "${esc(q)}" in your vault.</p></div>`;
 
   app.innerHTML = layoutHTML('search', `
     <div class="page-header"><h1>Search: "${esc(q)}"</h1><span style="color:var(--text-muted)">${results.length} results</span></div>
     ${resultsHTML}
   `);
   bindSidebar();
+  RecordCards.bindSensitive();
   const si = $('#global-search');
   if (si) si.value = q;
   return true;
@@ -467,14 +555,16 @@ async function renderSearchResults(query, refreshedResults, shouldRender = () =>
 async function renderSection(key, refreshedData, shouldRender = () => true) {
   const expectedHash = window.location.hash;
   const sec = SECTIONS[key];
-  if (!sec) return navigate('vault');
+  if (!sec || sec.retired) return navigate('vault');
+  const requested = window.location.hash.slice(1).split('/')[2];
+  if (key === 'final_wishes' && requested?.startsWith('new?')) return navigate('add/final_wishes?' + requested.slice(4));
 
   let data;
   let counts = {};
   try {
     data = refreshedData || await API.getEntries(key);
     const summary = await API.getSummary();
-    summary.forEach(s => counts[s.section] = s.count);
+    counts = await vaultCounts(summary);
   } catch (err) { return showError(err.message); }
 
   const entries = Array.isArray(data.entries || data) ? (data.entries || data) : [];
@@ -483,61 +573,67 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
   if (window.location.hash !== expectedHash || !shouldRender()) return;
   state.entries = entries;
   state.counts = counts;
-  const entriesHTML = entries.length ? entries.map(e => {
-    const fieldsHTML = sec.fields.filter(f => e.fields[f.key]).map(f => `
-      <div class="field-item">
-        <label>${esc(f.label)}</label>
-        <div class="value ${f.sensitive ? 'sensitive' : ''}">${esc(e.fields[f.key])}</div>
-      </div>`).join('');
-
-    return `<div class="card">
-      <div class="card-header">
-        <h3>${esc(e.title)}</h3>
-        <div class="actions">
-          <button class="btn btn-outline btn-sm" data-edit="${e.id}">Edit</button>
-          <button class="btn btn-outline btn-sm" data-edit="${e.id}">Documents (${docCounts[e.id] || 0})</button>
-          <button class="btn btn-danger btn-sm" data-delete="${e.id}">Delete</button>
-        </div>
-      </div>
-      <div class="field-grid">${fieldsHTML}</div>
-      ${e.notes ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><label style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">Notes</label><div style="font-size:14px;white-space:pre-wrap;margin-top:4px">${esc(e.notes)}</div></div>` : ''}
-    </div>`;
-  }).join('') : `<div class="empty-state">
+  const entriesHTML = entries.length ? entries.map(e => RecordCards.entry(e, { section: key, documentCount: docCounts[e.id] || 0 })).join('') : `<div class="empty-state">
     <div class="icon">${sec.icon}</div>
     <h3>No ${sec.name} entries yet</h3>
-    <p>Add your first entry to start building your legacy vault.</p>
+    <p>Add your first entry to start building your Wolf's Vault.</p>
     <button class="btn btn-primary" data-nav="add/${key}">Add Entry</button>
   </div>`;
 
   app.innerHTML = layoutHTML(key, `
     <div class="page-header">
       <h1>${sec.icon} ${esc(sec.name)}</h1>
-      <div class="actions"><button class="btn btn-primary" data-nav="add/${key}">+ Add Entry</button></div>
+      <div class="actions"><button class="btn btn-primary" data-nav="add/${key}">+ Add ${key==='final_wishes'?'Final Wishes Entry':'Entry'}</button></div>
     </div>
-    ${entriesHTML}
+    ${key==='final_wishes'?'<div class="final-wishes-entries"><div id="legacy-workspace"></div></div>':entriesHTML}
   `);
 
   bindSidebar();
-  document.querySelectorAll('.value.sensitive').forEach(el => { el.onclick = () => el.classList.toggle('revealed'); });
-  document.querySelectorAll('[data-edit]').forEach(el => { el.onclick = () => navigate('edit/' + key + '/' + el.dataset.edit); });
-  document.querySelectorAll('[data-delete]').forEach(el => {
-    el.onclick = async () => {
-      if (!confirm('Delete this entry? This cannot be undone.')) return;
-      try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); renderSection(key); } catch (err) { showError(err.message); }
-    };
-  });
+  function bindCards() {
+    RecordCards.bindSensitive();
+    document.querySelectorAll('[data-edit]').forEach(el => { el.onclick = () => navigate('edit/' + key + '/' + el.dataset.edit); });
+    document.querySelectorAll('[data-delete]').forEach(el => {
+      el.onclick = async () => {
+        if (!confirm('Delete this entry? This cannot be undone.')) return;
+        const card = el.closest('.record-card');
+        const controls = [...card.querySelectorAll('button')];
+        card.setAttribute('aria-busy', 'true');
+        controls.forEach(control => { control.disabled = true; });
+        try { await API.deleteEntry(el.dataset.delete); showSuccess('Entry deleted'); await renderSection(key); } catch (err) {
+          showError(err.message);
+        } finally {
+          card.removeAttribute('aria-busy');
+          controls.forEach(control => { control.disabled = false; });
+        }
+      };
+    });
+  }
+  bindCards();
+  if(key==='final_wishes')void Legacy.mountOwner($('#legacy-workspace'),entries,{documentCounts:docCounts,onRender:bindCards});
   return true;
 }
 
 // ── Entry form (add/edit) ──
 async function renderEntryForm(sectionKey, entryId) {
   const expectedHash = window.location.hash;
+  const [key, query = ''] = String(sectionKey || '').split('?');
+  sectionKey = key;
   const sec = SECTIONS[sectionKey];
-  if (!sec) return navigate('vault');
+  if (!sec || (sec.retired && !entryId)) return navigate('vault');
+  if (sectionKey === 'final_wishes' && !entryId) {
+    const params = new URLSearchParams(query);
+    app.innerHTML = layoutHTML(sectionKey, `
+      <div class="page-header"><h1>Add Final Wishes Entry</h1><div class="actions"><button type="button" class="btn btn-outline" data-nav="section/final_wishes">Cancel</button></div></div>
+      <div id="legacy-workspace" class="final-wishes-entry-workspace"></div>
+    `);
+    bindSidebar();
+    return Legacy.mountOwner($('#legacy-workspace'), [], {entryForm:true,type:params.get('type') || '',beneficiaryId:params.get('beneficiary_id')});
+  }
 
   let existing = null;
   if (entryId) {
     try { existing = await API.getEntry(entryId); } catch { return navigate('section/' + sectionKey); }
+    if (existing.section !== sectionKey && SECTIONS[existing.section]) return navigate('edit/' + existing.section + '/' + entryId);
   }
   if (window.location.hash !== expectedHash) return;
   editingHomebankEntry = existing?.homebank_account_id != null ? existing : null;
@@ -593,17 +689,22 @@ async function renderEntryForm(sectionKey, entryId) {
     const button = e.target.querySelector('button[type=submit]');
     button.disabled = true;
     const f = new FormData(e.target);
-    const fields = {};
+    const knownFields = new Set(sec.fields.map(fd => fd.key));
+    const fields = Object.fromEntries(Object.entries(existing?.fields || {}).filter(([key]) =>
+      !knownFields.has(key) && !managedFields.has(key)));
     sec.fields.forEach(fd => {
       if (editingHomebankEntry?.homebank_managed_fields?.includes(fd.key)) return;
       const v = f.get(fd.key); if (v) fields[fd.key] = v;
     });
     try {
       const payload = { section: sectionKey, title: f.get('title'), fields, notes: f.get('notes') };
+      let savedSection = sectionKey;
       if (existing) {
-        await API.updateEntry(entryId, payload);
+        const saved = await API.updateEntry(entryId, payload);
+        if (SECTIONS[saved?.section]) savedSection = saved.section;
       } else {
         const created = await API.createEntry(payload);
+        if (SECTIONS[created.section]) savedSection = created.section;
         entryId = created.id;
         existing = await API.getEntry(entryId);
       }
@@ -614,7 +715,7 @@ async function renderEntryForm(sectionKey, entryId) {
         return;
       }
       showSuccess('Record and documents saved');
-      navigate('section/' + sectionKey);
+      navigate('section/' + savedSection);
     } catch (err) { showError(err.message); }
     finally { button.disabled = false; }
   };
@@ -632,22 +733,19 @@ async function renderBeneficiaries() {
     const expired = b.token_expires_at && new Date() > new Date(b.token_expires_at);
     if (expired) statusBadge += ' <span class="badge badge-danger">Token Expired</span>';
 
-    return `<div class="card">
-      <div class="beneficiary-card">
-        <div class="beneficiary-info">
-          <div class="name">${esc(b.name)} ${statusBadge}</div>
-          <div class="meta">${esc(b.relationship || '')} ${b.email ? '&middot; ' + esc(b.email) : ''} ${b.phone ? '&middot; ' + esc(b.phone) : ''}</div>
-          <div class="meta">Wait: ${b.emergency_waiting_days}d &middot; Token expires: ${b.token_expires_at ? fmtDate(b.token_expires_at) : 'never'} &middot; Added ${fmtDate(b.created_at)}</div>
-        </div>
-        <div class="beneficiary-actions">
-          <button class="btn btn-outline btn-sm" data-edit="${b.id}">Edit</button>
-          ${b.emergency_access_requested && !b.access_granted ? `<button class="btn btn-danger btn-sm" data-deny="${b.id}">Deny Emergency</button>` : ''}
-          ${!b.access_granted ? `<button class="btn btn-success btn-sm" data-grant="${b.id}">Grant Access</button>` : `<button class="btn btn-warning btn-sm" data-revoke="${b.id}">Revoke</button>`}
-          <button class="btn btn-outline btn-sm" data-regen="${b.id}">New Token</button>
-          <button class="btn btn-danger btn-sm" data-remove="${b.id}">Remove</button>
-        </div>
-      </div>
-    </div>`;
+    return RecordCards.render({ title: b.name, section: 'beneficiaries', category: b.relationship, badges: statusBadge,
+      body: `<div class="beneficiary-info record-card-body">
+        <div class="meta">${esc(b.relationship || '')} ${b.email ? '&middot; ' + esc(b.email) : ''} ${b.phone ? '&middot; ' + esc(b.phone) : ''}</div>
+        <div class="meta">Wait: ${b.emergency_waiting_days}d &middot; Token expires: ${b.token_expires_at ? fmtDate(b.token_expires_at) : 'never'} &middot; Added ${fmtDate(b.created_at)}</div>
+      </div>${Legacy.beneficiaryPanel(b)}`,
+      footer: RecordCards.footer({
+        primary: RecordCards.action({ label: 'Edit', iconName: 'pencil', attributes: `data-edit="${b.id}"` }) +
+          (b.emergency_access_requested && !b.access_granted ? RecordCards.action({ label: 'Deny Emergency', attributes: `data-deny="${b.id}"`, danger: true }) : '') +
+          RecordCards.action({ label: b.access_granted ? 'Revoke' : 'Grant Access', attributes: b.access_granted ? `data-revoke="${b.id}"` : `data-grant="${b.id}"` }) +
+          RecordCards.action({ label: 'New Token', attributes: `data-regen="${b.id}"` }),
+        secondary: RecordCards.action({ label: 'Remove', iconName: 'trash', attributes: `data-remove="${b.id}"`, danger: true })
+      })
+    });
   }).join('') : '<div class="empty-state"><div class="icon">\u{1F465}</div><h3>No beneficiaries</h3><p>Add someone you trust to receive your vault data.</p></div>';
 
   const tokenHTML = state.newToken ? `
@@ -670,6 +768,7 @@ async function renderBeneficiaries() {
 
   state.newToken = null;
   bindSidebar();
+  Legacy.bindBeneficiaries(app);
 
   $('#add-ben-btn').onclick = () => showAddBeneficiaryModal();
   document.querySelectorAll('[data-edit]').forEach(el => {
@@ -757,6 +856,7 @@ function showAddBeneficiaryModal() {
   overlay.innerHTML = `<div class="modal">
     <h2>Add Beneficiary</h2>
     <form id="add-ben-form">
+      <p class="legacy-help">A private Final Wish draft will be created for this beneficiary.</p>
       <div class="form-group"><label>Name *</label><input type="text" name="name" required></div>
       <div class="form-group"><label>Email</label><input type="email" name="email"></div>
       <div class="form-group"><label>Phone</label><input type="text" name="phone"></div>
@@ -779,6 +879,10 @@ function showAddBeneficiaryModal() {
 
   overlay.querySelector('#add-ben-form').onsubmit = async (e) => {
     e.preventDefault();
+    const button = e.target.querySelector('button[type="submit"]');
+    if (button.disabled) return;
+    button.disabled = true;
+    e.target.setAttribute('aria-busy', 'true');
     const f = new FormData(e.target);
     try {
       const res = await API.addBeneficiary({
@@ -787,9 +891,14 @@ function showAddBeneficiaryModal() {
       });
       state.newToken = res.accessToken;
       overlay.remove();
-      showSuccess('Beneficiary added');
+      showSuccess(res.final_wish_id ? 'Beneficiary added and private Final Wish draft created' : 'Beneficiary added');
+      try { state.counts = await vaultCounts(await API.getSummary()); } catch { /* Refresh on the next vault view. */ }
       renderBeneficiaries();
     } catch (err) { showError(err.message); }
+    finally {
+      button.disabled = false;
+      e.target.removeAttribute('aria-busy');
+    }
   };
 }
 
@@ -873,11 +982,11 @@ async function renderSettings() {
     <div class="card" style="margin-top:16px">
       <h3 style="margin-bottom:12px">Backup &amp; Restore</h3>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
-        JSON backup covers vault entries but DOES NOT include attached document files. Use scripts/backup-managed.sh on an independent disk for a full backup.
+        Download or restore ordinary vault entries as JSON. Recipient-specific Final Wishes, personal messages, managed files and release history require a complete recovery backup on an independent disk.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        <button class="btn btn-primary" id="backup-btn">Download Backup</button>
-        <button class="btn btn-outline" id="restore-btn">Restore from Backup</button>
+        <button class="btn btn-primary" id="backup-btn">Download vault entries (JSON)</button>
+        <button class="btn btn-outline" id="restore-btn">Restore vault entries (JSON)</button>
       </div>
       <input type="file" id="restore-file" accept=".json" style="display:none">
       <div id="restore-result"></div>
@@ -895,11 +1004,11 @@ async function renderSettings() {
       <div class="field-grid" style="margin-bottom:16px">
         <div class="field-item">
           <label>Enrolled Phone</label>
-          <div class="value">${esc(twoFaStatus?.masked_phone || '-')}</div>
+          <div class="value" id="twofa-phone">${esc(twoFaStatus?.masked_phone || '-')}</div>
         </div>
         <div class="field-item">
           <label>Recovery Codes Remaining</label>
-          <div class="value">${twoFaStatus?.enabled ? Number(twoFaStatus.recovery_codes_remaining || 0) : '-'}</div>
+          <div class="value" id="twofa-recovery-count">${twoFaStatus?.enabled ? Number(twoFaStatus.recovery_codes_remaining || 0) : '-'}</div>
         </div>
       </div>
 
@@ -929,7 +1038,7 @@ async function renderSettings() {
         <button type="submit" class="btn btn-danger">Disable SMS 2FA</button>
       </form>
 
-      <div id="recovery-codes-panel" class="alert alert-warning" style="display:none;margin-top:12px"></div>
+      <div id="recovery-codes-panel" class="alert alert-warning" role="region" aria-label="Save recovery codes" tabindex="-1" style="display:none;margin-top:12px"></div>
     </div>
     <div class="card" style="margin-top:16px">
       <h3 style="margin-bottom:8px">Account Info</h3>
@@ -938,8 +1047,13 @@ async function renderSettings() {
         <div class="field-item"><label>Email</label><div class="value">${esc(state.user?.email)}</div></div>
       </div>
     </div>
+    <div id="notification-settings" style="margin-top:16px"></div>
   `);
   bindSidebar();
+  if (window.Notifications) {
+    const notificationRoot = $('#notification-settings');
+    window.Notifications.mount(notificationRoot);
+  }
 
   $('#pw-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -959,10 +1073,10 @@ async function renderSettings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'legacy-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.download = 'wolfs-vault-backup-' + new Date().toISOString().slice(0, 10) + '.json';
       a.click();
-      URL.revokeObjectURL(url);
-      showSuccess('Backup downloaded');
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      showSuccess('Vault entries downloaded');
     } catch (err) { showError(err.message); }
   };
 
@@ -979,7 +1093,7 @@ async function renderSettings() {
         `Found ${data.entries.length} entries in backup.\n\nClick OK to skip existing entries (safe merge).\nClick Cancel to overwrite entries with same title.`
       ) ? 'skip' : 'overwrite';
       const result = await API.restoreVault(data.entries, mode);
-      const msg = `Restore complete: ${result.added} added, ${result.skipped} skipped`;
+      const msg = `Vault entry restore complete: ${result.added} added, ${result.skipped} skipped`;
       showSuccess(msg);
       $('#restore-result').innerHTML = `<div class="alert alert-success" style="margin-top:12px">${esc(msg)}</div>`;
     } catch (err) { showError(err.message); }
@@ -993,6 +1107,20 @@ async function renderSettings() {
       clearInterval(enrollTimer);
       enrollTimer = null;
     }
+  }
+
+  function showRecoveryCodes(codes) {
+    const panel = $('#recovery-codes-panel');
+    panel.style.display = '';
+    panel.innerHTML = `<p>Save these recovery codes in a secure offline place. They are shown only once.</p>
+      <p><strong>${codes.map(esc).join(' ')}</strong></p>
+      <button type="button" class="btn btn-primary" id="recovery-codes-continue">I’ve saved these codes — Continue</button>`;
+    $('#twofa-recovery-count').textContent = String(codes.length);
+    $('#recovery-codes-continue').onclick = () => {
+      panel.replaceChildren();
+      renderSettings();
+    };
+    panel.focus();
   }
 
   function renderEnrollMeta() {
@@ -1031,12 +1159,19 @@ async function renderSettings() {
         challenge_token: enrollChallenge.challenge_token,
         otp: f.get('otp')
       });
-      const panel = $('#recovery-codes-panel');
-      panel.style.display = '';
-      panel.innerHTML = `Save these recovery codes in a secure offline place:<br><strong>${res.recovery_codes.map(esc).join(' ')}</strong>`;
+      API.setToken(res.token);
+      if (state.user) state.user.sms_2fa_enabled = 1;
       stopEnrollTimer();
+      enrollChallenge = null;
+      e.target.reset();
+      $('#twofa-enroll-form').reset();
+      $('#twofa-verify-wrap').style.display = 'none';
+      const status = $('#twofa-status');
+      status.className = 'alert alert-success';
+      status.textContent = `Enabled ${res.masked_phone ? `for ${res.masked_phone}` : ''}. Recovery codes remaining: ${res.recovery_codes.length}.`;
+      $('#twofa-phone').textContent = res.masked_phone || '-';
+      showRecoveryCodes(res.recovery_codes);
       showSuccess('SMS 2FA enabled');
-      renderSettings();
     } catch (err) {
       if (err?.data?.resend_available_at && enrollChallenge) {
         enrollChallenge.resend_available_at = err.data.resend_available_at;
@@ -1073,11 +1208,9 @@ async function renderSettings() {
     try {
       const f = new FormData(e.target);
       const res = await API.regenerateRecoveryCodes({ current_password: f.get('current_password') });
-      const panel = $('#recovery-codes-panel');
-      panel.style.display = '';
-      panel.innerHTML = `New recovery codes:<br><strong>${res.recovery_codes.map(esc).join(' ')}</strong>`;
+      e.target.reset();
+      showRecoveryCodes(res.recovery_codes);
       showSuccess('Recovery codes regenerated');
-      renderSettings();
     } catch (err) { showError(err.message); }
   };
 
@@ -1126,7 +1259,7 @@ async function renderAuditLog() {
 async function renderAccessPortal() {
   app.innerHTML = `
     <div class="access-portal">
-      <h1>\u{1F512} Legacy Vault -- Beneficiary Access</h1>
+      <h1>\u{1F512} Wolf's Vault -- Beneficiary Access</h1>
       <p class="subtitle">Enter the access token you received from the vault owner.</p>
       <div class="card">
         <form id="access-form">
@@ -1177,19 +1310,15 @@ function renderVaultReadonly(data, token) {
     if (!sec) continue;
     html += `<div class="section-group"><h2 class="section-title">${sec.icon} ${esc(sec.name)}</h2>`;
     for (const e of entries) {
-      const fieldsHTML = (sec.fields || []).filter(f => e.fields[f.key]).map(f =>
-        `<div class="field-item"><label>${esc(f.label)}</label><div class="value">${esc(e.fields[f.key])}</div></div>`
-      ).join('');
-      html += `<div class="card"><h3 style="margin-bottom:12px">${esc(e.title)}</h3><div class="field-grid">${fieldsHTML}</div>
-        ${e.notes ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><label style="font-size:11px;text-transform:uppercase;color:var(--text-muted)">Notes</label><div style="white-space:pre-wrap;margin-top:4px">${esc(e.notes)}</div></div>` : ''}
-        ${Docs.beneficiaryCards(e.documents)}</div>`;
+      html += RecordCards.entry(e, { section: sectionKey, readonly: true, attachments: Docs.beneficiaryCards(e.documents) });
     }
     html += '</div>';
   }
   if (!data.entries.length) html += '<div class="empty-state"><h3>Vault is empty</h3></div>';
-  html += '<div style="text-align:center;margin-top:32px"><a href="#access">&larr; Back</a></div></div>';
+  html += '<div id="beneficiary-legacy-root" class="section-group"></div><div style="text-align:center;margin-top:32px"><a href="#access">&larr; Back</a></div></div>';
   app.innerHTML = html;
   Docs.bindBeneficiary(data, token);
+  void Legacy.mountRecipient($('#beneficiary-legacy-root'),token,data.entries);
 }
 
 // ── Init ──
@@ -1200,6 +1329,8 @@ async function refreshLiveVault() {
   const canRender = () => window.location.hash === expectedHash && !document.hidden &&
     !document.activeElement?.matches('input,textarea,select') && !window.getSelection()?.toString();
   if (!['vault', 'section', 'edit', 'search'].includes(route)) return;
+  // Final Wishes contains its own editor and refreshes after every content action.
+  if(route==='section' && key==='final_wishes')return;
   // Refresh only source-managed controls while editing. Other views can be
   // redrawn when their data changes, without interrupting typing or selection.
   if (route !== 'edit' && !canRender()) return;
@@ -1214,6 +1345,18 @@ async function refreshLiveVault() {
         return;
       }
       if (window.location.hash !== expectedHash) return;
+      if (fresh.section && fresh.section !== key && SECTIONS[fresh.section]) {
+        // Preserve unsaved fields and queued attachments in the current form.
+        // The API maps this draft into the new source section when it saves.
+        let notice = $('#homebank-reclassification');
+        if (!notice) {
+          notice = document.createElement('p'); notice.id = 'homebank-reclassification';
+          notice.className = 'alert alert-info'; notice.setAttribute('role', 'status');
+          $('#entry-form')?.prepend(notice);
+        }
+        notice.textContent = `HomeBank now classifies this record as ${SECTIONS[fresh.section].name}. Saving keeps your changes in that section.`;
+        return;
+      }
       const previous = new Set(editingHomebankEntry.homebank_managed_fields || []);
       const managed = new Set(fresh.homebank_managed_fields || []);
       for (const field of new Set([...previous, ...managed])) {
@@ -1240,7 +1383,7 @@ async function refreshLiveVault() {
       }
     } else {
       const fresh = await API.getSummary();
-      const counts = Object.fromEntries(fresh.map(row => [row.section, row.count]));
+      const counts = await vaultCounts(fresh);
       if (canRender() && JSON.stringify(counts) !== JSON.stringify(state.counts)) await renderDashboard(fresh, canRender);
     }
   } catch (err) { console.warn('HomeBank refresh unavailable', err); }

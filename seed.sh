@@ -1,5 +1,5 @@
 #!/bin/bash
-# Legacy Vault - Demo Data Seeder
+# Wolf's Vault - Demo Data Seeder
 # Populates a user's vault with fictional sample data across all sections.
 #
 # DISCLAIMER: All names, addresses, phone numbers, account numbers, and other

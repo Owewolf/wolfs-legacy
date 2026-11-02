@@ -26,7 +26,7 @@ module.exports = {
     res.on('finish', () => {
       log('info', 'request', {
         method: req.method,
-        path: req.originalUrl,
+        path: req.path,
         status: res.statusCode,
         ms: Date.now() - start,
         ip: req.ip

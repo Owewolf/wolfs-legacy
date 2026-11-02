@@ -8,7 +8,7 @@ const { createSmsProvider } = require('../sms-provider');
 const { createSmsOtpService } = require('../sms-otp');
 const { validateEmail, validateString, validationError } = require('../validate');
 
-function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now, smsProvider = createSmsProvider(env) } = {}) {
+function createAuthRouter({ dbGetter = getDb, auditWriter = audit, env = process.env, now = Date.now, smsProvider = createSmsProvider(env) } = {}) {
   const router = express.Router();
 
   const challengeRate = rateLimit({
@@ -66,7 +66,7 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
       const result = db.prepare('INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)').run(cleanEmail, hash, name.trim());
       db.prepare('INSERT INTO dead_switch_config (user_id) VALUES (?)').run(result.lastInsertRowid);
 
-      audit(result.lastInsertRowid, 'register', 'user', result.lastInsertRowid, null, req.ip);
+      auditWriter(result.lastInsertRowid, 'register', 'user', result.lastInsertRowid, null, req.ip);
       return res.status(201).json({
         success: true,
         message: 'Account created. Sign in to continue.',
@@ -87,34 +87,34 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
       const cleanEmail = email.toLowerCase().trim();
       const user = db.prepare('SELECT * FROM users WHERE email = ?').get(cleanEmail);
       if (!user || !(await verifyPassword(user, password))) {
-        audit(null, 'login_failed', 'user', null, cleanEmail, req.ip);
+        auditWriter(null, 'login_failed', 'user', null, cleanEmail, req.ip);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
       if (!user.sms_2fa_enabled) {
-        audit(user.id, 'login', 'user', user.id, null, req.ip);
+        auditWriter(user.id, 'login', 'user', user.id, null, req.ip);
         const token = createToken(user, null);
         return res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
       }
 
       const throttle = smsOtp.throttle('login_challenge_start', { userId: user.id, ipAddress: req.ip, maxUser: 10, maxIp: 50 });
       if (throttleOrReject(res, throttle)) {
-        audit(user.id, 'login_challenge_throttled', 'user', user.id, 'start', req.ip);
+        auditWriter(user.id, 'login_challenge_throttled', 'user', user.id, 'start', req.ip);
         return;
       }
 
       if (!smsProvider.configured) {
-        audit(user.id, 'login_2fa_unavailable', 'user', user.id, null, req.ip);
+        auditWriter(user.id, 'login_2fa_unavailable', 'user', user.id, null, req.ip);
         return res.status(503).json({ error: 'Second factor is temporarily unavailable' });
       }
 
       const issued = await smsOtp.issueLoginChallenge({ userId: user.id, phone: user.sms_2fa_phone_e164 });
       if (!issued.ok) {
-        audit(user.id, 'login_2fa_unavailable', 'user', user.id, issued.reason, req.ip);
+        auditWriter(user.id, 'login_2fa_unavailable', 'user', user.id, issued.reason, req.ip);
         return res.status(503).json({ error: 'Second factor is temporarily unavailable' });
       }
 
-      audit(user.id, 'login_challenge_issued', 'user', user.id, null, req.ip);
+      auditWriter(user.id, 'login_challenge_issued', 'user', user.id, null, req.ip);
       return res.json({
         requires_second_factor: true,
         challenge_id: issued.challenge.challenge_id,
@@ -139,7 +139,7 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
       const smsOtp = service(db);
       const result = smsOtp.verifyLoginChallenge({ challengeId, challengeToken, otp, recoveryCode });
       if (!result.ok) {
-        audit(null, 'login_challenge_failed', 'user', result.user_id || null, result.reason, req.ip);
+        auditWriter(null, 'login_challenge_failed', 'user', result.user_id || null, result.reason, req.ip);
         const status = ['forbidden', 'not_found'].includes(result.reason) ? 403 : 400;
         return res.status(status).json({
           error: challengeErrorMessage(result.reason),
@@ -151,7 +151,7 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
       const user = db.prepare('SELECT id, email, name FROM users WHERE id=?').get(result.user_id);
       if (!user) return res.status(404).json({ error: 'User not found' });
 
-      audit(user.id, 'login', 'user', user.id, result.method, req.ip);
+      auditWriter(user.id, 'login', 'user', user.id, result.method, req.ip);
       const token = createToken(user, 'sms_otp');
       return res.json({ token, user });
     } catch {
@@ -206,7 +206,7 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
 
       const hash = await bcrypt.hash(newPassword, 12);
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
-      audit(req.user.id, 'password_change', 'user', req.user.id, null, req.ip);
+      auditWriter(req.user.id, 'password_change', 'user', req.user.id, null, req.ip);
       return res.json({ success: true });
     } catch {
       return res.status(500).json({ error: 'Password change failed' });
@@ -239,7 +239,7 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
 
       const throttle = smsOtp.throttle('enrollment_start', { userId: req.user.id, ipAddress: req.ip, maxUser: 6, maxIp: 40 });
       if (throttleOrReject(res, throttle)) {
-        audit(req.user.id, 'sms_2fa_enroll_throttled', 'user', req.user.id, 'start', req.ip);
+        auditWriter(req.user.id, 'sms_2fa_enroll_throttled', 'user', req.user.id, 'start', req.ip);
         return;
       }
 
@@ -256,7 +256,7 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
         });
       }
 
-      audit(req.user.id, 'sms_2fa_enroll_started', 'user', req.user.id, null, req.ip);
+      auditWriter(req.user.id, 'sms_2fa_enroll_started', 'user', req.user.id, null, req.ip);
       return res.json(started.challenge);
     } catch {
       return res.status(500).json({ error: 'Could not start phone enrollment' });
@@ -273,15 +273,19 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
       const result = smsOtp.completeEnrollment({ userId: req.user.id, challengeId, challengeToken, otp });
       if (!result.ok) {
         const status = ['forbidden', 'not_found'].includes(result.reason) ? 403 : 400;
-        audit(req.user.id, 'sms_2fa_enroll_failed', 'user', req.user.id, result.reason, req.ip);
+        auditWriter(req.user.id, 'sms_2fa_enroll_failed', 'user', req.user.id, result.reason, req.ip);
         return res.status(status).json({ error: challengeErrorMessage(result.reason), reason: result.reason });
       }
 
-      audit(req.user.id, 'sms_2fa_enabled', 'user', req.user.id, null, req.ip);
+      const user = db.prepare('SELECT id, email, name FROM users WHERE id=?').get(req.user.id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      auditWriter(req.user.id, 'sms_2fa_enabled', 'user', req.user.id, null, req.ip);
       return res.json({
         success: true,
         masked_phone: smsOtp.maskPhone(result.phone),
-        recovery_codes: result.recovery_codes
+        recovery_codes: result.recovery_codes,
+        token: createToken(user, 'sms_otp'),
+        user
       });
     } catch {
       return res.status(500).json({ error: 'Could not verify enrollment code' });
@@ -330,7 +334,7 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
       if (!status?.enabled) return res.status(400).json({ error: 'SMS 2FA is not enabled' });
 
       const codes = smsOtp.regenerateRecoveryCodes(req.user.id);
-      audit(req.user.id, 'sms_2fa_recovery_rotated', 'user', req.user.id, null, req.ip);
+      auditWriter(req.user.id, 'sms_2fa_recovery_rotated', 'user', req.user.id, null, req.ip);
       return res.json({ recovery_codes: codes });
     } catch {
       return res.status(500).json({ error: 'Could not regenerate recovery codes' });
@@ -355,12 +359,12 @@ function createAuthRouter({ dbGetter = getDb, env = process.env, now = Date.now,
       if (!status?.enabled) return res.status(400).json({ error: 'SMS 2FA is not enabled' });
 
       if (!smsOtp.consumeRecoveryCode(req.user.id, recoveryCode)) {
-        audit(req.user.id, 'sms_2fa_disable_failed', 'user', req.user.id, 'invalid_recovery_code', req.ip);
+        auditWriter(req.user.id, 'sms_2fa_disable_failed', 'user', req.user.id, 'invalid_recovery_code', req.ip);
         return res.status(400).json({ error: 'Invalid recovery code' });
       }
 
       smsOtp.disable2fa(req.user.id);
-      audit(req.user.id, 'sms_2fa_disabled', 'user', req.user.id, null, req.ip);
+      auditWriter(req.user.id, 'sms_2fa_disabled', 'user', req.user.id, null, req.ip);
       return res.json({ success: true });
     } catch {
       return res.status(500).json({ error: 'Could not disable SMS 2FA' });
