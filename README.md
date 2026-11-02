@@ -6,6 +6,8 @@ Wolf's Legacy is the current estate-planning and family-continuity vault for per
 
 This repository reflects the current Wolf's Legacy implementation and brand set, not the older Wolf's Vault build. The visuals and packaging have been extracted and added as reusable brand assets for the project.
 
+![Current Wolf's Legacy dashboard](docs/screenshots/mobile/after-dashboard-390.png)
+
 ![Wolf's Legacy app icon](Wolfs-Legacy-Icon-Package/brand/app-icon-primary-1024.png)
 
 ## What we extracted and added
