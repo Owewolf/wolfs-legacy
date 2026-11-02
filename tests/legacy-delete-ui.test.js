@@ -41,6 +41,7 @@ const API={
   if(!item)throw new Error('Synthetic wish not found');
   if(method==='GET')return fixtureCopy(item);
   if(method==='DELETE'){
+   if(body?.confirm_delete!==true)throw new Error('Permanent deletion confirmation required');
    if(id==='failure')throw new Error('Synthetic deletion failed');
    fixtureItems.splice(index,1);return {ok:true};
   }
@@ -72,7 +73,7 @@ const checks = `
  await until(()=>root()?.querySelector('[data-legacy-feedback]')?.textContent==='Synthetic deletion failed','visible deletion failure');
  check(card('failure')&&!action('delete','failure').disabled&&!card('failure').hasAttribute('aria-busy'),'failed deletion retains the card and restores its controls');
  action('delete','delete').click();await until(()=>!card('delete')&&count()==='4','active list deletion and refreshed count');
- check(deletes('delete').length===1&&location.hash==='#section/final_wishes'&&card('cancel'),'active list deletion refreshes counts and keeps unrelated wishes');
+ check(deletes('delete').length===1&&deletes('delete')[0].body.confirm_delete===true&&location.hash==='#section/final_wishes'&&card('cancel'),'confirmed active list deletion sends the explicit permanent-delete flag, refreshes counts and keeps unrelated wishes');
  root().querySelector('#legacy-filter-status').value='archived';
  root().querySelector('#legacy-filter-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await until(()=>root()?.querySelectorAll('.legacy-item').length===2,'archived list');

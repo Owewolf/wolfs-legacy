@@ -386,7 +386,7 @@ const Legacy = (() => {
             const card=control.closest('.record-card'),controls=[...(card || root).querySelectorAll('button')];
             card?.setAttribute('aria-busy','true');controls.forEach(button=>{button.disabled=true;});
             try{
-              await API.request('DELETE',base+'/'+urlId(item.id));
+              await API.request('DELETE',base+'/'+urlId(item.id),{confirm_delete:true});
               showSuccess('Final Wish permanently deleted');
               if(!alive())return;
               if(window.location.hash!=='#section/final_wishes'){window.location.hash='section/final_wishes';return;}

@@ -51,7 +51,7 @@ function history(item,doc) {
   db.prepare(`INSERT INTO legacy_content_versions(content_id,revision,payload_encrypted,editor_id,created_at)
     VALUES(?,?,?,?,'2026-01-01')`).run(item.id,100,encrypt(JSON.stringify({attachments:[{document_id:doc.id}]})),OWNER);
 }
-async function request(id,{owner=OWNER,method='DELETE',body}={}) {
+async function request(id,{owner=OWNER,method='DELETE',body=method==='DELETE'?{confirm_delete:true}:undefined}={}) {
   const response=await fetch(base+'/api/final-wishes/legacy/'+id,{method,
     headers:{Authorization:'Bearer '+jwt.sign({id:owner},process.env.JWT_SECRET), 'Content-Type':'application/json'},
     ...(body?{body:JSON.stringify(body)}:{})});
@@ -124,6 +124,23 @@ test('DELETE permanently removes archived content, every dependent record, remin
   assert.ok(db.prepare('SELECT 1 FROM beneficiaries WHERE id=?').get(recipient));
   assert.ok(db.prepare('SELECT 1 FROM legacy_contents WHERE id=?').get(other.id));
   assert.equal((await request(item.id,{method:'GET'})).status,404);
+});
+
+test('old cached Archive DELETE requests and missing permanent-delete confirmations leave wishes intact',async()=>{
+  for(const status of ['draft','archived']) {
+    const item=create({status}),doc=document();attach(item,doc);
+    const before=db.prepare('SELECT * FROM legacy_contents WHERE id=?').get(item.id);
+    const events=count('legacy_release_events',item.id);
+    for(const body of [null,{}, {confirm_delete:false}, {confirm_delete:'true'}]) {
+      const response=await request(item.id,{body});
+      assert.equal(response.status,409);
+      assert.match(response.data.error,/Refresh.*confirm permanent deletion/);
+      assert.deepEqual(db.prepare('SELECT * FROM legacy_contents WHERE id=?').get(item.id),before);
+      assert.equal(count('legacy_release_events',item.id),events);
+      assert.equal(count('legacy_content_attachments',item.id),1);
+      assert.ok(fs.existsSync(doc.filename));
+    }
+  }
 });
 
 test('shared managed documents survive current wishes, another wish history and ordinary vault associations',()=>{

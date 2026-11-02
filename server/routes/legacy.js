@@ -59,7 +59,13 @@ ownerRouter.get('/legacy/:id',handler((req,res)=>{
   const db=getDb(),row=legacy.owned(db,req.user.id,req.params.id);legacy.event(db,{userId:req.user.id,contentId:row.id,type:'owner_view'});res.json(legacy.toView(db,row));
 }));
 ownerRouter.patch('/legacy/:id',handler((req,res)=>res.json(legacy.save(getDb(),req.user.id,req.body,req.params.id))));
-ownerRouter.delete('/legacy/:id',handler((req,res)=>res.json(legacy.permanentlyDelete(getDb(),req.user.id,req.params.id))));
+ownerRouter.delete('/legacy/:id',handler((req,res)=>{
+  const db=getDb();legacy.owned(db,req.user.id,req.params.id);
+  // Older cached clients used DELETE to archive. They must refresh before a
+  // permanent deletion can be explicitly confirmed with the updated client.
+  if(req.body?.confirm_delete!==true)throw legacy.error('Refresh the page and confirm permanent deletion',409);
+  res.json(legacy.permanentlyDelete(db,req.user.id,req.params.id));
+}));
 ownerRouter.put('/legacy/:id/beneficiaries',handler((req,res)=>{
   const db=getDb();res.json(db.transaction(()=>{
     const row=legacy.owned(db,req.user.id,req.params.id);

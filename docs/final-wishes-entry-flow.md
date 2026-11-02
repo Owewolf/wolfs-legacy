@@ -25,8 +25,10 @@ files and other vault records remain. The list and navigation counts refresh
 after deletion. Recipient previews do not expose this action.
 
 **Archive** remains a separate action that retains the content. The owner API
-uses `DELETE /api/final-wishes/legacy/:id` for permanent deletion and
+uses `DELETE /api/final-wishes/legacy/:id` with `confirm_delete: true` for permanent deletion and
 `PATCH /api/final-wishes/legacy/:id` with `status: "archived"` for archival.
+Requests from older cached Archive controls lack the deletion confirmation and
+receive HTTP 409 without changing the wish.
 
 A deliberately deleted beneficiary wish stays deleted after a restart. Adding
 a new beneficiary still creates a new private Final Wish draft. Deleting a
