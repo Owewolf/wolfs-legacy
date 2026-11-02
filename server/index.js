@@ -11,6 +11,11 @@ const log = require('./logger');
 
 const app = express();
 const PORT = process.env.PORT || 4444;
+// Trust only the configured reverse-proxy networks, never arbitrary client hops.
+if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY.split(',').map(value => value.trim()).filter(Boolean));
+// Passenger web processes may sleep or multiply. A single external scheduler
+// runs scripts/run-background-jobs.js when these in-process jobs are disabled.
+const BACKGROUND_JOBS_ENABLED = process.env.BACKGROUND_JOBS_ENABLED !== 'false';
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -88,7 +93,7 @@ function checkDeadSwitches() {
   }
 }
 
-setInterval(checkDeadSwitches, 60 * 60 * 1000);
+if (BACKGROUND_JOBS_ENABLED) setInterval(checkDeadSwitches, 60 * 60 * 1000);
 
 // Unknown API requests must never fall through to the browser application.
 app.use('/api', (req, res) => {
@@ -104,9 +109,11 @@ const beneficiaryWishes = require('./beneficiary-final-wishes').backfillBenefici
 if (beneficiaryWishes.created) log.info('Created missing private beneficiary wishes', { count: beneficiaryWishes.created });
 app.listen(PORT, process.env.LISTEN_HOST || '0.0.0.0', () => {
   log.info("Wolf's Vault started", { port: PORT });
-  checkDeadSwitches();
-  require('./homebank-service').startWatcher();
-  const mailWorker = require('./notifications/worker').createNotificationWorker({ db: getDb() });
-  mailWorker.start();
-  process.once('SIGTERM', () => { mailWorker.stop(); process.exit(0); });
+  if (BACKGROUND_JOBS_ENABLED) {
+    checkDeadSwitches();
+    require('./homebank-service').startWatcher();
+    const mailWorker = require('./notifications/worker').createNotificationWorker({ db: getDb() });
+    mailWorker.start();
+    process.once('SIGTERM', () => { mailWorker.stop(); process.exit(0); });
+  }
 });

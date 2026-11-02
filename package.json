@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test tests/*.test.js && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_homebank_parser.py"
+    "dev:frontend": "node scripts/dev-frontend.js",
+    "jobs:run": "node scripts/run-background-jobs.js",
+    "test": "node --test tests/*.test.js && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_homebank*.py'"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
