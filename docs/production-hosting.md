@@ -19,6 +19,28 @@ checksums and Git revision in `apps/wolfs-vault/runtime-manifest.json`, then tou
 the Passenger application's `tmp/restart.txt` and verify health and API behavior.
 Preserve the live database, matching secrets, private `.env` and storage paths.
 
+## Required SMS authentication: 2 November 2026, verified at 20:47 SAST
+
+Runtime `8f1a1034d7b55ab10ae884b95f87868875655466` requires a verified mobile
+number at registration and SMS verification at sign-in. Production has
+`AUTH_SMS_REQUIRED=true`, a real Clickatell transport and simulation disabled.
+The existing saved Personal Identity mobile resolves to the same number used in
+the accepted provider setup check. First successful SMS verification enrolls
+that number for future logins and issues one-time recovery codes.
+
+The private provider key passed the official read-only balance check with
+positive credit, and Clickatell accepted one setup notice to the saved owner
+mobile. Provider acceptance is distinct from handset delivery; the owner's next
+sign-in completes the real OTP verification. Existing OTP secrets and unrelated
+production configuration were preserved.
+
+All 67 runtime file checksums were verified, and the API restarted successfully.
+Both frontends reject older password-only sessions and registration without a
+mobile number. Browser checks at 390 and 1,440 pixels passed, as did 365
+JavaScript and 17 Python tests, including concurrent OTP/recovery replay checks
+and full registration, verification and recovery-code browser flows. See
+[sms-otp-2fa.md](sms-otp-2fa.md) for configuration and saved-number behavior.
+
 ## Permanent Final Wishes deletion: 2 November 2026
 
 Runtime `4cbb7dcfa1da2edd064688985f40feff7a71e92b` adds owner-confirmed permanent
