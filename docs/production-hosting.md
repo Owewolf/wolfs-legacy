@@ -19,6 +19,22 @@ checksums and Git revision in `apps/wolfs-vault/runtime-manifest.json`, then tou
 the Passenger application's `tmp/restart.txt` and verify health and API behavior.
 Preserve the live database, matching secrets, private `.env` and storage paths.
 
+## Permanent Final Wishes deletion: 2 November 2026
+
+Runtime `4cbb7dcfa1da2edd064688985f40feff7a71e92b` adds owner-confirmed permanent
+deletion to active and archived wish cards. Cached Archive requests cannot trigger
+deletion. Verification passed 342 JavaScript and 17 Python tests.
+
+The requested reset completed at 20:24 SAST: all four existing wishes, including
+one archived wish, were permanently removed, with their saved revisions and one
+exclusive managed attachment. Beneficiaries were empty. The login, 38 other vault
+records, their document links and 23 other managed files were preserved.
+
+After an API restart, none of those wishes returned. A beneficiary added after
+the reset received a fresh private draft; that new activity was retained. Browser
+checks at 390 and 1,440 pixels verified both frontends, deletion cancellation and
+the ready Add Beneficiary form.
+
 ## Main release: 2 November 2026, verified at 20:01 SAST
 
 Runtime revision `2c5d2e574e0d72d09a41c2c350b805a726dc49b1` includes both required
