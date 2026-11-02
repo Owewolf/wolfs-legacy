@@ -1,6 +1,6 @@
 # Final Wishes entries with recipients and content
 
-Updated 31 October 2026.
+Updated 2 November 2026.
 
 The Final Wishes page has one **Add Final Wishes Entry** action. Its form combines
 the wish title, category, details, contact person/phone and notes with recipients,
@@ -14,6 +14,23 @@ types inside Add Final Wishes Entry instead. Existing text/status search and
 Edit/Documents/Delete handlers remain available; lifecycle status filters apply
 to protected entries. Family dates remain on their cards. Dashboard and
 navigation counts include active protected wishes.
+
+## Permanent deletion
+
+Owners can use **Delete** on an active or archived Final Wish card, or in its
+detail view. After confirmation, the wish, its saved revisions, recipient
+assignments, reviews and content-specific release history are permanently
+removed. Managed attachment copies used only by that wish are deleted; shared
+files and other vault records remain. The list and navigation counts refresh
+after deletion. Recipient previews do not expose this action.
+
+**Archive** remains a separate action that retains the content. The owner API
+uses `DELETE /api/final-wishes/legacy/:id` for permanent deletion and
+`PATCH /api/final-wishes/legacy/:id` with `status: "archived"` for archival.
+
+A deliberately deleted beneficiary wish stays deleted after a restart. Adding
+a new beneficiary still creates a new private Final Wish draft. Deleting a
+beneficiary cancels their pending beneficiary notification jobs.
 
 ## Privacy and compatibility
 

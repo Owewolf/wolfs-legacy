@@ -59,7 +59,7 @@ ownerRouter.get('/legacy/:id',handler((req,res)=>{
   const db=getDb(),row=legacy.owned(db,req.user.id,req.params.id);legacy.event(db,{userId:req.user.id,contentId:row.id,type:'owner_view'});res.json(legacy.toView(db,row));
 }));
 ownerRouter.patch('/legacy/:id',handler((req,res)=>res.json(legacy.save(getDb(),req.user.id,req.body,req.params.id))));
-ownerRouter.delete('/legacy/:id',handler((req,res)=>res.json(legacy.save(getDb(),req.user.id,{status:'archived'},req.params.id))));
+ownerRouter.delete('/legacy/:id',handler((req,res)=>res.json(legacy.permanentlyDelete(getDb(),req.user.id,req.params.id))));
 ownerRouter.put('/legacy/:id/beneficiaries',handler((req,res)=>{
   const db=getDb();res.json(db.transaction(()=>{
     const row=legacy.owned(db,req.user.id,req.params.id);

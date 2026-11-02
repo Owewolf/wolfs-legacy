@@ -212,7 +212,7 @@ test('additive legacy migration preserves old encrypted wishes, token hashes and
     assert.deepEqual(tables.map(table => old.prepare('SELECT * FROM ' + table).all()), before);
     assert.deepEqual(old.prepare('SELECT id,user_id,display_name_encrypted,stored_filename FROM managed_documents').get(), docBefore);
     assert.equal(old.prepare('SELECT legacy_restricted FROM managed_documents').get().legacy_restricted, 0);
-    assert.equal(old.prepare('SELECT COUNT(*) n FROM legacy_schema_migrations').get().n, 1);
+    assert.deepEqual(old.prepare('SELECT version FROM legacy_schema_migrations ORDER BY version').all().map(row=>row.version), [1, 2]);
     assert.deepEqual(old.pragma('foreign_key_check'), []);
   } finally { old.close(); }
 });

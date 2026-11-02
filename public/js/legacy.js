@@ -146,7 +146,7 @@ const Legacy = (() => {
         badges:`<div class="legacy-badges">${badge(item.status)}${item.review_enabled?badge(item.review_state):''}</div>`,
         className:'legacy-item',
         body:`<div class="record-card-body">${timelineDate}${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)} · ${recipients.length?`For ${escape(recipients.join(', '))}`:`${(item.beneficiary_ids || item.beneficiaries || []).length} recipient(s)`}${metadata.people?.length?` · ${escape(textList(metadata.people))}`:''}${metadata.tags?.length?`<br>Tags: ${escape(textList(metadata.tags))}`:''}</p><p class="legacy-help">Updated ${escape(date(item.updated_at))}${item.next_review_at?` · Review ${escape(date(item.next_review_at))}`:''}</p></div>`,
-        footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-legacy-action="open" data-item-id="${escape(item.id)}"`})})
+        footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-legacy-action="open" data-item-id="${escape(item.id)}"`}),secondary:RecordCards.action({label:'Delete',iconName:'trash',attributes:`data-legacy-action="delete" data-item-id="${escape(item.id)}"`,danger:true})})
       });
     }
     function drawList() {
@@ -194,8 +194,9 @@ const Legacy = (() => {
         if(!alive() || current!==sequence)return;
         detail=item;
         const controls=recipientPreview?button('open','Return to management','outline',`data-item-id="${escape(item.id)}"`):RecordCards.action({label:'Edit',iconName:'pencil',attributes:'data-legacy-action="edit"'})+button('preview','Preview recipient view')+(item.status==='draft'?button('ready','Mark ready','success'):'')+(item.release_policy==='manual_release' && ['ready','released'].includes(item.status)?button('release','Release…','primary'):'')+((item.beneficiaries || []).some(recipient=>recipient.released_at && !recipient.revoked_at)?button('revoke','Revoke release…','warning'):'');
-        const archiveControl=!recipientPreview && item.status!=='archived'?RecordCards.action({label:'Archive',iconName:'archive',attributes:'data-legacy-action="archive"',danger:true}):'';
-        root.innerHTML=heading(item.title,button('back','← All Final Wishes'))+feedback+`<div class="card record-card legacy-detail">${RecordCards.heading({title:item.title,section:'final_wishes',category:recordCategory(item),iconName:recordIcons[contentType(item)] || 'file-earmark-text',badges:recipientPreview?'':`<div class="legacy-badges">${badge(item.status)}</div>`})}${recipientPreview?'<div class="alert alert-info">Owner preview of the recipient’s content. Actual recipient access depends on their current authorisation and this item’s release.</div>':''}${contentView(item,html)}${!recipientPreview?ownerRecipientSummary(item)+renderLinks(item)+reviewControls(item)+`<p class="legacy-help">Created ${escape(date(item.created_at,true))} · Updated ${escape(date(item.updated_at,true))} · Revision ${Number(item.revision) || 1}</p>`+historyView(item):''}${RecordCards.footer({primary:controls,secondary:archiveControl})}</div>`;
+        const archiveControl=!recipientPreview && item.status!=='archived'?RecordCards.action({label:'Archive',iconName:'archive',attributes:'data-legacy-action="archive"'}):'';
+        const deleteControl=recipientPreview?'':RecordCards.action({label:'Delete',iconName:'trash',attributes:`data-legacy-action="delete" data-item-id="${escape(item.id)}"`,danger:true});
+        root.innerHTML=heading(item.title,button('back','← All Final Wishes'))+feedback+`<div class="card record-card legacy-detail">${RecordCards.heading({title:item.title,section:'final_wishes',category:recordCategory(item),iconName:recordIcons[contentType(item)] || 'file-earmark-text',badges:recipientPreview?'':`<div class="legacy-badges">${badge(item.status)}</div>`})}${recipientPreview?'<div class="alert alert-info">Owner preview of the recipient’s content. Actual recipient access depends on their current authorisation and this item’s release.</div>':''}${contentView(item,html)}${!recipientPreview?ownerRecipientSummary(item)+renderLinks(item)+reviewControls(item)+`<p class="legacy-help">Created ${escape(date(item.created_at,true))} · Updated ${escape(date(item.updated_at,true))} · Revision ${Number(item.revision) || 1}</p>`+historyView(item):''}${RecordCards.footer({primary:controls+archiveControl,secondary:deleteControl})}</div>`;
         bindActions();bindFiles(root,item);
       }catch(error){message(error.message,true);}
     }
@@ -378,7 +379,21 @@ const Legacy = (() => {
           if(action==='revoke')return releaseDialog(true);
           if(action==='markdown-preview'){const target=root.querySelector('#legacy-editor-preview');target.innerHTML=await preview(root.querySelector('[name="body_markdown"]').value);target.hidden=false;return;}
           if(action==='ready'){await API.request('PATCH',base+'/'+urlId(detail.id),{status:'ready'});return showDetail(detail.id);}
-          if(action==='archive'){if(!confirm('Archive this content and remove recipient access? The owner’s record and managed files will be retained.'))return;await API.request('DELETE',base+'/'+urlId(detail.id));showSuccess('Content archived');if(window.location.hash!=='#section/final_wishes'){window.location.hash='section/final_wishes';return;}return load();}
+          if(action==='archive'){if(!confirm('Archive this content and remove recipient access? The owner’s record and managed files will be retained.'))return;await API.request('PATCH',base+'/'+urlId(detail.id),{status:'archived'});showSuccess('Content archived');if(window.location.hash!=='#section/final_wishes'){window.location.hash='section/final_wishes';return;}return load();}
+          if(action==='delete'){
+            const item=items.find(candidate=>String(candidate.id)===String(control.dataset.itemId)) || detail;
+            if(!item || !confirm('Permanently delete “'+item.title+'”? This removes the wish, its history, and attached files that are not shared with other records. This cannot be undone.'))return;
+            const card=control.closest('.record-card'),controls=[...(card || root).querySelectorAll('button')];
+            card?.setAttribute('aria-busy','true');controls.forEach(button=>{button.disabled=true;});
+            try{
+              await API.request('DELETE',base+'/'+urlId(item.id));
+              showSuccess('Final Wish permanently deleted');
+              if(!alive())return;
+              if(window.location.hash!=='#section/final_wishes'){window.location.hash='section/final_wishes';return;}
+              if(options.onChange)await options.onChange();else await load();
+            }finally{card?.removeAttribute('aria-busy');controls.forEach(button=>{button.disabled=false;});}
+            return;
+          }
           if(action==='review-updated')return showEditor(detail,true);
           if(action==='review-reschedule')return dateDialog('reschedule');
           if(action==='review-snooze')return dateDialog('snooze');

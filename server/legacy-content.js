@@ -1,5 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const { encrypt, decrypt, hashToken } = require('./crypto');
 const { renderMarkdown } = require('./legacy-markdown');
 const { utc } = require('./notifications/time');
@@ -216,6 +217,75 @@ function save(db,userId,input,id=null) {
     return toView(db,owned(db,userId,id));
   })();
 }
+
+function versionAttachmentIds(rows) {
+  const result=new Set();
+  for(const row of rows) {
+    const snapshot=JSON.parse(decrypt(row.payload_encrypted));
+    for(const attachment of Array.isArray(snapshot.attachments)?snapshot.attachments:[])
+      if(typeof attachment?.document_id==='string')result.add(attachment.document_id);
+  }
+  return result;
+}
+
+// Deletion is distinct from archiving. The short-lived permission allows only
+// this owned content's append-only events to be erased in the same transaction.
+// Managed copies are staged privately until commit and restored on rollback;
+// browser-selected original files are never read or removed here.
+function permanentlyDelete(db,userId,id) {
+  if(db.inTransaction)throw error('Permanent deletion requires its own transaction',409);
+  const staged=[];
+  let result;
+  try {
+    result=db.transaction(()=>{
+      const row=owned(db,userId,id),at=now();
+      const candidates=versionAttachmentIds(db.prepare('SELECT payload_encrypted FROM legacy_content_versions WHERE content_id=?').all(id));
+      for(const attachment of db.prepare('SELECT document_id FROM legacy_content_attachments WHERE content_id=?').all(id))
+        candidates.add(attachment.document_id);
+      const historicalShared=versionAttachmentIds(db.prepare(`SELECT v.payload_encrypted FROM legacy_content_versions v
+        JOIN legacy_contents c ON c.id=v.content_id WHERE c.user_id=? AND c.id<>?`).all(userId,id));
+      const documents=[];
+      for(const documentId of candidates) {
+        const doc=store.ownedDoc(db,userId,documentId);
+        if(!doc?.legacy_restricted||historicalShared.has(documentId)||
+          db.prepare('SELECT 1 FROM legacy_content_attachments WHERE document_id=? AND content_id<>?').get(documentId,id)||
+          db.prepare('SELECT 1 FROM document_associations WHERE document_id=?').get(documentId))continue;
+        documents.push(doc);
+        if(db.prepare('SELECT 1 FROM managed_documents WHERE stored_filename=? AND id<>?').get(doc.stored_filename,documentId))continue;
+        if(!doc.stored_filename.startsWith(`owner-${Number(userId)}/`))throw error('Invalid managed attachment owner',500);
+        const filename=store.diskPath(doc.stored_filename);
+        let stat;
+        try {stat=fs.lstatSync(filename);}catch(e){if(e.code==='ENOENT')continue;throw e;}
+        if(!stat.isFile()||stat.isSymbolicLink()||(stat.mode&0o077)!==0||
+          (typeof process.getuid==='function'&&stat.uid!==process.getuid()))throw error('Unsafe managed attachment',500);
+        const temporary=filename+'.deleting-'+crypto.randomUUID();
+        fs.renameSync(filename,temporary);
+        staged.push({filename,temporary});
+      }
+      db.prepare(`INSERT OR IGNORE INTO legacy_beneficiary_wish_suppressions(user_id,beneficiary_id,created_at)
+        SELECT ?,m.beneficiary_id,? FROM legacy_content_beneficiaries m
+        JOIN beneficiaries b ON b.id=m.beneficiary_id WHERE m.content_id=? AND b.user_id=?`).run(userId,at,id,userId);
+      db.prepare('INSERT INTO legacy_content_deletion_permissions(content_id,user_id) VALUES(?,?)').run(id,userId);
+      db.prepare('DELETE FROM legacy_release_events WHERE content_id=?').run(id);
+      db.prepare("DELETE FROM audit_log WHERE user_id=? AND target_type='legacy_content' AND detail=?").run(userId,id);
+      // Review reminder payloads identify this content even after it is gone.
+      if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='notification_outbox'").get()) {
+        for(const job of db.prepare("SELECT id,data_json FROM notification_outbox WHERE user_id=? AND event_type='legacy_review_due'").all(userId)) {
+          let data;try{data=JSON.parse(job.data_json);}catch{continue;}
+          if(data?.contentId===id)db.prepare('DELETE FROM notification_outbox WHERE id=? AND user_id=?').run(job.id,userId);
+        }
+      }
+      db.prepare('DELETE FROM legacy_contents WHERE id=? AND user_id=?').run(id,userId);
+      for(const doc of documents)db.prepare('DELETE FROM managed_documents WHERE id=? AND user_id=?').run(doc.id,userId);
+      return {deleted:true,id:row.id};
+    }).immediate();
+  } catch(e) {
+    for(const file of staged.reverse())fs.renameSync(file.temporary,file.filename);
+    throw e;
+  }
+  for(const file of staged)fs.unlinkSync(file.temporary);
+  return result;
+}
 function replaceRecipients(db,userId,id,recipients,at=now()) {
   for(const m of db.prepare('SELECT * FROM legacy_content_beneficiaries WHERE content_id=?').all(id)) {
     if(!recipients.includes(m.beneficiary_id)) {
@@ -325,5 +395,5 @@ function review(db,userId,id,input) {
     return toView(db,owned(db,userId,id));
   })();
 }
-module.exports={TYPES,POLICIES,error,hasSchema,event,owned,payload,toView,list,save,ids,validateRecipients,replaceRecipients,invalidateReleases,
+module.exports={TYPES,POLICIES,error,hasSchema,event,owned,payload,toView,list,save,permanentlyDelete,ids,validateRecipients,replaceRecipients,invalidateReleases,
   canRead,authenticateBeneficiary,beneficiaryItem,releaseForEvent,revokeForBeneficiary,manualRelease,review,reviewState,now};

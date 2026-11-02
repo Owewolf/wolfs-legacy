@@ -339,7 +339,7 @@ test('archiving a released item and removing its recipient immediately hide it',
   successful(await release(item));
   successful(await request(`/api/final-wishes/legacy/${item.id}/beneficiaries`, { method: 'PUT', body: { beneficiary_ids: [b] } }));
   denied(await beneficiaryList(TOKEN_A, '/' + item.id));
-  successful(await request('/api/final-wishes/legacy/' + item.id, { method: 'DELETE' }));
+  successful(await request('/api/final-wishes/legacy/' + item.id, { method: 'PATCH', body: { status: 'archived' } }));
   assert.equal(successful(await request('/api/final-wishes/legacy/' + item.id)).status, 'archived');
   grant(b); denied(await beneficiaryList(TOKEN_B, '/' + item.id));
 });

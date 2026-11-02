@@ -20,6 +20,10 @@ function ensureBeneficiaryFinalWish(db, userId, beneficiaryId) {
     if (!beneficiary) throw Object.assign(new Error('Beneficiary not found'), { status: 404 });
     const existing = assignedWish(db, userId, beneficiary.id);
     if (existing) return { id: existing.id, created: false };
+    // Deleting a wish is deliberate. Startup repair must not recreate it for
+    // this beneficiary; deleting the beneficiary removes this small marker.
+    if (db.prepare('SELECT 1 FROM legacy_beneficiary_wish_suppressions WHERE user_id=? AND beneficiary_id=?')
+      .get(userId, beneficiary.id)) return { id: null, created: false, suppressed: true };
     const wish = legacy.save(db, userId, {
       // Keep the existing internal content type for schema compatibility. The
       // empty selection identifies an ordinary wish with no optional content.

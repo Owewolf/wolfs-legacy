@@ -609,7 +609,7 @@ async function renderSection(key, refreshedData, shouldRender = () => true) {
     });
   }
   bindCards();
-  if(key==='final_wishes')void Legacy.mountOwner($('#legacy-workspace'),entries,{documentCounts:docCounts,onRender:bindCards});
+  if(key==='final_wishes')void Legacy.mountOwner($('#legacy-workspace'),entries,{documentCounts:docCounts,onRender:bindCards,onChange:()=>renderSection(key)});
   return true;
 }
 

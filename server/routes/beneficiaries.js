@@ -90,8 +90,18 @@ router.put('/:id', authenticateToken, (req, res) => {
 
 router.delete('/:id', authenticateToken, (req, res) => {
   const db = getDb();
-  const r = db.prepare('DELETE FROM beneficiaries WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
-  if (r.changes === 0) return res.status(404).json({ error: 'Not found' });
+  const removed = db.transaction(() => {
+    const r = db.prepare('DELETE FROM beneficiaries WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
+    if (r.changes === 0) return false;
+    // Outbox beneficiary IDs intentionally survive deletion for delivery
+    // history. Cancel work that has not started so it cannot later announce
+    // access changes for a beneficiary the owner has removed.
+    db.prepare(`UPDATE notification_outbox SET status='cancelled', next_attempt_at=NULL, updated_at=?
+      WHERE user_id=? AND beneficiary_id=? AND status IN ('queued','retried','failed')`)
+      .run(new Date().toISOString(), req.user.id, req.params.id);
+    return true;
+  })();
+  if (!removed) return res.status(404).json({ error: 'Not found' });
   audit(req.user.id, 'remove_beneficiary', 'beneficiary', +req.params.id, null, req.ip);
   res.json({ success: true });
 });

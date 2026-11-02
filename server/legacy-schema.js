@@ -12,7 +12,9 @@ function initLegacySchema(db) {
     legacy_content_versions: ['id','content_id','revision','payload_encrypted','editor_id','created_at'],
     legacy_content_reviews: ['id','content_id','reviewer_id','action','next_review_at','created_at'],
     legacy_content_acknowledgements: ['content_id','beneficiary_id','step_id','acknowledged','updated_at'],
-    legacy_release_events: ['id','user_id','content_id','beneficiary_id','event_type','event_key','created_at']
+    legacy_release_events: ['id','user_id','content_id','beneficiary_id','event_type','event_key','created_at'],
+    legacy_content_deletion_permissions: ['content_id','user_id'],
+    legacy_beneficiary_wish_suppressions: ['user_id','beneficiary_id','created_at']
   };
   db.transaction(() => {
     for (const [table, columns] of Object.entries(expected)) {
@@ -96,11 +98,28 @@ function initLegacySchema(db) {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_legacy_events_owner ON legacy_release_events(user_id,content_id);
+    CREATE TABLE IF NOT EXISTS legacy_content_deletion_permissions (
+      content_id TEXT PRIMARY KEY REFERENCES legacy_contents(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS legacy_beneficiary_wish_suppressions (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      beneficiary_id INTEGER NOT NULL REFERENCES beneficiaries(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(user_id,beneficiary_id)
+    );
     CREATE TRIGGER IF NOT EXISTS legacy_events_no_update BEFORE UPDATE ON legacy_release_events
       BEGIN SELECT RAISE(ABORT,'Legacy events are append-only'); END;
-    CREATE TRIGGER IF NOT EXISTS legacy_events_no_delete BEFORE DELETE ON legacy_release_events
+    DROP TRIGGER IF EXISTS legacy_events_no_delete;
+    CREATE TRIGGER legacy_events_no_delete BEFORE DELETE ON legacy_release_events
+      WHEN NOT EXISTS (
+        SELECT 1 FROM legacy_content_deletion_permissions p
+        JOIN legacy_contents c ON c.id=p.content_id AND c.user_id=p.user_id
+        WHERE p.content_id=OLD.content_id
+      )
       BEGIN SELECT RAISE(ABORT,'Legacy events are append-only'); END;
     INSERT OR IGNORE INTO legacy_schema_migrations VALUES(1,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+    INSERT OR IGNORE INTO legacy_schema_migrations VALUES(2,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
   `);
   })();
 }
