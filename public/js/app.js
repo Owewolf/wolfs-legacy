@@ -151,6 +151,7 @@ function hideLoading(target) {
 async function navigate(route) { window.location.hash = route; }
 
 async function handleRoute() {
+  if (disposeAuthFlow) disposeAuthFlow();
   if (typeof Mobile !== 'undefined') Mobile.reset();
   editingHomebankEntry = null;
   const hash = window.location.hash.slice(1) || 'login';
@@ -182,156 +183,267 @@ async function handleRoute() {
 }
 
 window.addEventListener('hashchange', handleRoute);
+window.addEventListener('sms-verification-required', () => {
+  state.user = null;
+  navigate('login');
+});
 
 // ── Auth ──
-function renderLogin() {
+let disposeAuthFlow = null;
+
+// Challenge credentials, phone setup tokens and one-time recovery codes live
+// only in this controller. Leaving the auth screen invalidates pending replies.
+function createAuthFlow(restart) {
+  if (disposeAuthFlow) disposeAuthFlow();
+  let active = true;
   let challenge = null;
+  let setupToken = null;
+  let pendingSession = null;
   let resendInterval = null;
+  let busy = false;
+  const panel = $('#login-2fa-panel');
+  const credentials = $('#login-form') || $('#reg-form');
 
   function stopResendTimer() {
-    if (resendInterval) {
-      clearInterval(resendInterval);
-      resendInterval = null;
-    }
+    if (resendInterval) clearInterval(resendInterval);
+    resendInterval = null;
   }
+  function dispose() {
+    active = false;
+    challenge = null;
+    setupToken = null;
+    pendingSession = null;
+    stopResendTimer();
+    panel.querySelector('#login-recovery-codes')?.replaceChildren();
+    panel.replaceChildren();
+    if (disposeAuthFlow === dispose) disposeAuthFlow = null;
+  }
+  disposeAuthFlow = dispose;
 
+  function finish(session) {
+    if (!active) return;
+    const { token, user } = session;
+    dispose();
+    API.setToken(token);
+    state.user = user;
+    navigate('vault');
+  }
+  function showRecoveryCodes(session) {
+    stopResendTimer();
+    challenge = null;
+    setupToken = null;
+    pendingSession = { token: session.token, user: session.user };
+    panel.innerHTML = `<div id="login-recovery-codes" class="alert alert-warning" role="region" aria-label="Save recovery codes" tabindex="-1">
+      <p>Save these recovery codes in a secure offline place. They are shown only once and let you sign in if your phone is unavailable.</p>
+      <p><strong>${session.recovery_codes.map(code => esc(String(code))).join(' ')}</strong></p>
+      <button type="button" class="btn btn-primary btn-block" id="login-recovery-continue">I’ve saved these codes — Continue</button>
+    </div>`;
+    $('#login-recovery-continue').onclick = () => {
+      const sessionToStart = pendingSession;
+      pendingSession = null;
+      panel.querySelector('#login-recovery-codes')?.replaceChildren();
+      panel.replaceChildren();
+      if (sessionToStart) finish(sessionToStart);
+    };
+    $('#login-recovery-codes').focus();
+  }
+  function showPhoneSetup() {
+    stopResendTimer();
+    panel.innerHTML = `<div class="alert alert-info" style="margin-top:14px">Add your cell phone number to secure future sign-ins with SMS.</div>
+      <form id="login-phone-form">
+        <div class="form-group"><label for="login-phone">Cell Phone Number</label><input id="login-phone" type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="+27821234567" aria-describedby="login-phone-hint" required></div>
+        <p id="login-phone-hint" style="color:var(--text-muted);font-size:13px">Include your country code, for example +27 for South Africa. A South African number starting with 0 is also accepted.</p>
+        <button type="submit" class="btn btn-primary btn-block">Send SMS Code</button>
+      </form>
+      <div class="link-row" style="margin-top:12px"><button type="button" class="btn btn-outline btn-sm" id="otp-back-btn">Start over</button></div>`;
+    $('#otp-back-btn').onclick = restart;
+    $('#login-phone-form').onsubmit = async e => {
+      e.preventDefault();
+      if (busy || !active || !setupToken) return;
+      busy = true;
+      const button = e.target.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        const res = await API.setupLoginPhone({ phone: new FormData(e.target).get('phone'), setup_token: setupToken });
+        if (active) accept(res);
+      } catch (err) { if (active) showError(err.message); }
+      finally { busy = false; if (active && button.isConnected) button.disabled = false; }
+    };
+    $('#login-phone').focus();
+  }
   function renderChallengePanel() {
-    const panel = $('#login-2fa-panel');
-    if (!panel || !challenge) return;
-    const nextResendAt = new Date(challenge.resend_available_at || 0).getTime();
-
+    if (!active || !challenge) return;
+    stopResendTimer();
+    const recoveryAllowed = challenge.recovery_code_allowed !== false;
     panel.innerHTML = `
-      <div class="alert alert-info" style="margin-top:14px">
-        Enter the 6-digit code sent to ${esc(challenge.masked_phone || 'your phone')}.
-      </div>
+      <div class="alert alert-info" style="margin-top:14px">Enter the 6-digit code sent to ${esc(challenge.masked_phone || 'your phone')}.</div>
       <form id="otp-form">
-        <div class="form-group"><label>SMS Code</label><input type="text" name="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"></div>
-        <div class="form-group"><label>Recovery Code (optional)</label><input type="text" name="recovery_code" autocomplete="off" maxlength="20" placeholder="Use if SMS is unavailable"></div>
+        <div class="form-group"><label for="login-otp">SMS Code</label><input id="login-otp" type="text" name="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"${recoveryAllowed ? '' : ' required'}></div>
+        ${recoveryAllowed ? '<div class="form-group"><label for="login-recovery-code">Recovery Code (optional)</label><input id="login-recovery-code" type="text" name="recovery_code" autocomplete="off" maxlength="20" placeholder="Use if SMS is unavailable"></div>' : ''}
         <button type="submit" class="btn btn-primary btn-block">Verify and Sign In</button>
       </form>
       <div class="link-row" style="margin-top:12px">
         <button type="button" class="btn btn-outline btn-sm" id="otp-resend-btn">Resend code</button>
         <button type="button" class="btn btn-outline btn-sm" id="otp-back-btn">Start over</button>
       </div>
-      <div id="otp-meta" style="margin-top:8px;font-size:13px;color:var(--text-muted)"></div>
-    `;
-
+      <div id="otp-meta" aria-live="polite" style="margin-top:8px;font-size:13px;color:var(--text-muted)"></div>`;
     const resendBtn = $('#otp-resend-btn');
+    const verifyBtn = $('#otp-form button[type="submit"]');
     const meta = $('#otp-meta');
     function tick() {
-      const remaining = Math.max(0, Math.ceil((nextResendAt - Date.now()) / 1000));
-      resendBtn.disabled = remaining > 0;
-      meta.textContent = remaining > 0
-        ? `You can request another code in ${remaining}s`
-        : 'You can request another code now';
+      if (!active || !challenge) return;
+      const availableAt = new Date(challenge.resend_available_at || 0).getTime();
+      const remaining = Number.isFinite(availableAt) ? Math.max(0, Math.ceil((availableAt - Date.now()) / 1000)) : 0;
+      resendBtn.disabled = busy || remaining > 0;
+      meta.textContent = remaining > 0 ? `You can request another code in ${remaining}s` : 'You can request another code now';
     }
-    stopResendTimer();
     tick();
     resendInterval = setInterval(tick, 1000);
-
-    $('#otp-form').onsubmit = async (e) => {
+    $('#otp-form').onsubmit = async e => {
       e.preventDefault();
+      if (busy || !active || !challenge) return;
       const f = new FormData(e.target);
       const otp = String(f.get('otp') || '').trim();
       const recoveryCode = String(f.get('recovery_code') || '').trim();
-      if (!otp && !recoveryCode) {
-        showError('Enter an SMS code or a recovery code');
-        return;
-      }
+      if (!otp && !recoveryCode) return showError(recoveryAllowed ? 'Enter an SMS code or a recovery code' : 'Enter the SMS code');
+      busy = true;
+      verifyBtn.disabled = true;
+      tick();
       try {
-        const res = await API.verifyLoginChallenge({
-          challenge_id: challenge.challenge_id,
-          challenge_token: challenge.challenge_token,
-          otp: otp || undefined,
-          recovery_code: recoveryCode || undefined
-        });
-        stopResendTimer();
-        API.setToken(res.token);
-        state.user = res.user;
-        showSuccess('Two-factor verification successful');
-        navigate('vault');
+        const res = await API.verifyLoginChallenge({ challenge_id: challenge.challenge_id, challenge_token: challenge.challenge_token,
+          otp: otp || undefined, recovery_code: recoveryCode || undefined });
+        if (!active) return;
+        if (!res.token || !res.user) throw new Error('SMS verification could not complete. Please start over.');
+        e.target.reset();
+        if (Array.isArray(res.recovery_codes) && res.recovery_codes.length) showRecoveryCodes(res);
+        else finish(res);
       } catch (err) {
+        if (!active) return;
         if (err?.data?.resend_available_at) challenge.resend_available_at = err.data.resend_available_at;
-        renderChallengePanel();
+        e.target.reset();
         showError(err.message);
-      }
+      } finally { busy = false; if (active && verifyBtn.isConnected) { verifyBtn.disabled = false; tick(); } }
     };
-
     resendBtn.onclick = async () => {
+      if (busy || !active || !challenge || resendBtn.disabled) return;
+      busy = true;
+      verifyBtn.disabled = true;
+      tick();
       try {
-        const res = await API.resendLoginChallenge({
-          challenge_id: challenge.challenge_id,
-          challenge_token: challenge.challenge_token
-        });
+        const res = await API.resendLoginChallenge({ challenge_id: challenge.challenge_id, challenge_token: challenge.challenge_token });
+        if (!active) return;
         challenge = { ...challenge, ...res };
-        renderChallengePanel();
         showSuccess('A new code has been sent');
       } catch (err) {
+        if (!active) return;
         if (err?.data?.resend_available_at) challenge.resend_available_at = err.data.resend_available_at;
-        renderChallengePanel();
         showError(err.message);
-      }
+      } finally { busy = false; if (active && verifyBtn.isConnected) { verifyBtn.disabled = false; tick(); } }
     };
-
-    $('#otp-back-btn').onclick = () => {
-      stopResendTimer();
-      renderLogin();
-    };
+    $('#otp-back-btn').onclick = restart;
+    $('#login-otp').focus();
   }
+  function accept(res) {
+    if (!active) return;
+    if (res.requires_phone_setup || res.requires_phone) {
+      if (!res.setup_token) throw new Error('Phone verification could not start. Please try again.');
+      setupToken = res.setup_token;
+      challenge = null;
+      credentials.hidden = true;
+      credentials.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
+      showPhoneSetup();
+    } else if (res.requires_second_factor && res.challenge_id && res.challenge_token) {
+      setupToken = null;
+      challenge = res;
+      credentials.hidden = true;
+      credentials.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
+      renderChallengePanel();
+    } else {
+      throw new Error('SMS verification is required. Refresh the page and try again.');
+    }
+  }
+  return { accept, isActive: () => active };
+}
 
+function renderLogin(prefillEmail = '') {
+  if (disposeAuthFlow) disposeAuthFlow();
   app.innerHTML = `
     <div class="auth-container"><div class="auth-box">
       <h1>\u{1F512} Wolf's Vault</h1>
-      <p class="subtitle">Secure data vault for your family's future</p>
+      <p class="subtitle">Sign in with your password and a code sent to your saved cell phone.</p>
       <form id="login-form">
         <div class="form-group"><label for="login-email">Email</label><input id="login-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
         <div class="form-group"><label for="login-password">Password</label><input id="login-password" type="password" name="password" autocomplete="current-password" required></div>
         <button type="submit" class="btn btn-primary btn-block">Sign In</button>
       </form>
       <div id="login-2fa-panel"></div>
-      <div class="link-row">
-        No account? <a href="#register">Create one</a> &middot; <a href="#access">Beneficiary access</a>
-      </div>
+      <div class="link-row">No account? <a href="#register">Create one</a> &middot; <a href="#access">Beneficiary access</a></div>
     </div></div>`;
-  $('#login-form').onsubmit = async (e) => {
+  $('#login-email').value = prefillEmail;
+  const flow = createAuthFlow(() => renderLogin($('#login-email').value));
+  $('#login-form').onsubmit = async e => {
     e.preventDefault();
+    const button = e.target.querySelector('button[type="submit"]');
+    if (button.disabled) return;
+    button.disabled = true;
+    API.setToken(null);
+    state.user = null;
     try {
       const f = new FormData(e.target);
       const res = await API.login({ email: f.get('email'), password: f.get('password') });
-      if (res.requires_second_factor) {
-        challenge = res;
-        renderChallengePanel();
-        showSuccess('Password accepted. Complete second-factor verification.');
-        return;
-      }
-      API.setToken(res.token);
-      state.user = res.user;
-      navigate('vault');
-    } catch (err) { showError(err.message); }
+      if (!flow.isActive()) return;
+      if (res.sms_required === false && res.token && res.user) {
+        API.setToken(res.token);
+        state.user = res.user;
+        navigate('vault');
+      } else flow.accept(res);
+    } catch (err) { if (flow.isActive()) showError(err.message); }
+    finally { if (flow.isActive() && button.isConnected) button.disabled = false; }
   };
 }
 
 function renderRegister() {
+  if (disposeAuthFlow) disposeAuthFlow();
   app.innerHTML = `
     <div class="auth-container"><div class="auth-box">
       <h1>Create Account</h1>
-      <p class="subtitle">Start securing your legacy data</p>
+      <p class="subtitle">Your cell phone secures your account with an SMS code at sign-in.</p>
       <form id="reg-form">
         <div class="form-group"><label for="register-name">Full Name</label><input id="register-name" type="text" name="name" autocomplete="name" required></div>
         <div class="form-group"><label for="register-email">Email</label><input id="register-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
+        <div class="form-group"><label for="register-phone">Cell Phone Number</label><input id="register-phone" type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="+27821234567" aria-describedby="register-phone-hint" required></div>
+        <p id="register-phone-hint" style="color:var(--text-muted);font-size:13px">Include your country code, for example +27 for South Africa. A South African number starting with 0 is also accepted.</p>
         <div class="form-group"><label for="register-password">Password (min 8 chars)</label><input id="register-password" type="password" name="password" autocomplete="new-password" required minlength="8"></div>
-        <button type="submit" class="btn btn-primary btn-block">Create Vault</button>
+        <button type="submit" class="btn btn-primary btn-block">Create Vault and Send SMS</button>
       </form>
+      <div id="login-2fa-panel"></div>
       <div class="link-row">Already have an account? <a href="#login">Sign in</a></div>
     </div></div>`;
-  $('#reg-form').onsubmit = async (e) => {
+  const flow = createAuthFlow(renderRegister);
+  $('#reg-form').onsubmit = async e => {
     e.preventDefault();
+    const button = e.target.querySelector('button[type="submit"]');
+    if (button.disabled) return;
+    button.disabled = true;
+    API.setToken(null);
+    state.user = null;
+    const f = new FormData(e.target);
     try {
-      const f = new FormData(e.target);
-      await API.register({ name: f.get('name'), email: f.get('email'), password: f.get('password') });
-      showSuccess('Account created. Sign in to continue.');
-      navigate('login');
-    } catch (err) { showError(err.message); }
+      const res = await API.register({ name: f.get('name'), email: f.get('email'), phone: f.get('phone'), password: f.get('password') });
+      if (!flow.isActive()) return;
+      if (res.sms_required === false) {
+        window.history.replaceState(null, '', '#login');
+        renderLogin(String(f.get('email') || ''));
+        showSuccess('Account created. Sign in to continue.');
+      } else flow.accept(res);
+    } catch (err) {
+      if (!flow.isActive()) return;
+      if (err?.data?.account_created) {
+        window.history.replaceState(null, '', '#login');
+        renderLogin(String(f.get('email') || ''));
+      }
+      showError(err.message);
+    } finally { if (flow.isActive() && button.isConnected) button.disabled = false; }
   };
 }
 
@@ -994,7 +1106,7 @@ async function renderSettings() {
     <div class="card" style="margin-top:16px">
       <h3 style="margin-bottom:12px">SMS Two-Factor Authentication</h3>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
-        Add SMS-based second-factor sign-in using Africa's Talking. Codes expire in 5 minutes, with resend cooldown and attempt limits.
+        ${twoFaStatus?.required ? 'SMS verification is required at sign-in. Change your saved phone below by verifying the new number.' : 'Secure sign-in with an SMS code sent to your saved phone.'} Codes expire in 5 minutes.
       </p>
       <div id="twofa-status" class="alert ${twoFaStatus?.enabled ? 'alert-success' : 'alert-warning'}" style="margin-bottom:12px">
         ${twoFaStatus?.enabled
@@ -1013,9 +1125,9 @@ async function renderSettings() {
       </div>
 
       <form id="twofa-enroll-form" style="margin-bottom:16px">
-        <div class="form-group"><label>Phone Number (E.164)</label><input type="text" name="phone" placeholder="+27821234567" required></div>
+        <div class="form-group"><label>Cell Phone Number</label><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="+27821234567" required></div>
         <div class="form-group"><label>Current Password</label><input type="password" name="current_password" required></div>
-        <button type="submit" class="btn btn-primary">Send Enrollment Code</button>
+        <button type="submit" class="btn btn-primary">${twoFaStatus?.enabled ? 'Change Phone — Send SMS' : 'Send Enrollment Code'}</button>
       </form>
 
       <div id="twofa-verify-wrap" style="display:none">
@@ -1032,11 +1144,11 @@ async function renderSettings() {
         <button type="submit" class="btn btn-outline">Regenerate Recovery Codes</button>
       </form>
 
-      <form id="twofa-disable-form" style="margin-top:8px">
+      ${twoFaStatus?.required ? '' : `<form id="twofa-disable-form" style="margin-top:8px">
         <div class="form-group"><label>Current Password</label><input type="password" name="current_password" required></div>
         <div class="form-group"><label>Recovery Code (required to disable)</label><input type="text" name="recovery_code" required></div>
         <button type="submit" class="btn btn-danger">Disable SMS 2FA</button>
-      </form>
+      </form>`}
 
       <div id="recovery-codes-panel" class="alert alert-warning" role="region" aria-label="Save recovery codes" tabindex="-1" style="display:none;margin-top:12px"></div>
     </div>
@@ -1214,7 +1326,8 @@ async function renderSettings() {
     } catch (err) { showError(err.message); }
   };
 
-  $('#twofa-disable-form').onsubmit = async (e) => {
+  const disableTwoFaForm = $('#twofa-disable-form');
+  if (disableTwoFaForm) disableTwoFaForm.onsubmit = async (e) => {
     e.preventDefault();
     try {
       const f = new FormData(e.target);

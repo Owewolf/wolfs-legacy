@@ -38,7 +38,7 @@ Wolf's Legacy combines secure vault storage with practical digital legacy planni
 - Managed document and media handling with protected uploads and access controls
 - Responsive web experience for desktop, tablet, and mobile browsers
 - Audit logging, encryption, auth, backup guidance, and recovery procedures
-- Optional SMS OTP sign-in with verified phone enrollment and recovery codes
+- SMS verification at account creation and sign-in, with a saved mobile number and recovery codes
 
 ### Recent additions and refinements
 

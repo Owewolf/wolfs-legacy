@@ -16,6 +16,10 @@ const API = {
     try { data = await res.json(); }
     catch { throw new Error('The server returned an unreadable response. Refresh the page and try again.'); }
     if (!res.ok) {
+      if (res.status === 403 && data?.code === 'SMS_VERIFICATION_REQUIRED') {
+        this.setToken(null);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sms-verification-required'));
+      }
       const err = new Error(typeof data?.error === 'string' && data.error ? data.error : 'Request failed');
       err.data = data;
       throw err;
@@ -31,6 +35,7 @@ const API = {
 
   register: (d) => API.request('POST', '/auth/register', d),
   login: (d) => API.request('POST', '/auth/login', d),
+  setupLoginPhone: (d) => API.request('POST', '/auth/login/phone', d),
   verifyLoginChallenge: (d) => API.request('POST', '/auth/login/challenge/verify', d),
   resendLoginChallenge: (d) => API.request('POST', '/auth/login/challenge/resend', d),
   getMe: () => API.request('GET', '/auth/me'),

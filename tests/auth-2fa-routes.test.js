@@ -62,7 +62,7 @@ function createDb() {
   return db;
 }
 
-async function createServer(db, smsProvider, env = {}) {
+async function createServer(db, smsProvider, env = {}, dependencies = {}) {
   const app = express();
   app.use(express.json());
   app.locals.getDb = () => db;
@@ -73,6 +73,7 @@ async function createServer(db, smsProvider, env = {}) {
     ...env
   };
   process.env.JWT_SECRET = mergedEnv.JWT_SECRET;
+  app.locals.authEnv = mergedEnv;
   app.use('/api/auth', createAuthRouter({
     dbGetter: () => db,
     auditWriter(userId, action, targetType, targetId, detail, ip) {
@@ -80,7 +81,8 @@ async function createServer(db, smsProvider, env = {}) {
         .run(userId, action, targetType || null, targetId || null, detail || null, ip || null);
     },
     env: mergedEnv,
-    smsProvider
+    smsProvider,
+    ...dependencies
   }));
   const server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
@@ -115,11 +117,247 @@ test('register does not auto-issue jwt', async () => {
     assert.equal(res.status, 201);
     assert.equal(Boolean(res.data.token), false);
     assert.equal(res.data.success, true);
+    assert.equal(res.data.sms_required, false);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='register'").get().n, 1);
   } finally {
     server.close();
     db.close();
   }
+});
+
+function seedUser(db, { email = 'required@example.test', phone = null, enabled = 0 } = {}) {
+  return Number(db.prepare('INSERT INTO users(email,password_hash,name,sms_2fa_phone_e164,sms_2fa_enabled) VALUES(?,?,?,?,?)')
+    .run(email, bcrypt.hashSync('StrongPass123!', 4), 'Synthetic owner', phone, enabled).lastInsertRowid);
+}
+
+function capturingProvider() {
+  const sent = [];
+  return { configured: true, sent, async sendOtp(payload) { sent.push(payload); } };
+}
+
+function lastOtp(provider) { return provider.sent.at(-1).message.match(/\b(\d{6})\b/)[1]; }
+
+async function loginRequired(server, email = 'required@example.test') {
+  return requestJson(server, 'POST', '/api/auth/login', { email, password: 'StrongPass123!' });
+}
+
+async function verifyChallenge(server, challenge, otp) {
+  return requestJson(server, 'POST', '/api/auth/login/challenge/verify', {
+    challenge_id: challenge.challenge_id, challenge_token: challenge.challenge_token, otp
+  });
+}
+
+test('required registration validates mobile and issues no session before SMS verification', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  const registration = { email: 'required@example.test', password: 'StrongPass123!', name: 'Synthetic owner' };
+  try {
+    for (const phone of [undefined, 'not a mobile', '+123']) {
+      const invalid = await requestJson(server, 'POST', '/api/auth/register', { ...registration, phone });
+      assert.equal(invalid.status, 400);
+      assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 0);
+    }
+    const started = await requestJson(server, 'POST', '/api/auth/register', { ...registration, phone: '082 123 4567' });
+    assert.equal(started.status, 201);
+    assert.equal(started.data.account_created, true);
+    assert.equal(started.data.requires_second_factor, true);
+    assert.equal(started.data.recovery_code_allowed, false);
+    assert.equal(started.data.token, undefined);
+    assert.equal(provider.sent[0].to, '+27821234567');
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users').get().sms_2fa_enabled, 0);
+    const verified = await verifyChallenge(server, started.data, lastOtp(provider));
+    assert.equal(verified.status, 200);
+    assert.equal(jwt.verify(verified.data.token, 'test-secret').mfa, 'sms_otp');
+    assert.equal(verified.data.recovery_codes.length, 10);
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users').get().sms_2fa_enabled, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='sms_2fa_enabled'").get().n, 1);
+    assert.equal((await requestJson(server, 'GET', '/api/auth/me', null, verified.data.token)).status, 200);
+    const replay = await verifyChallenge(server, started.data, lastOtp(provider));
+    assert.equal(replay.data.reason, 'already_used');
+    assert.equal(replay.data.token, undefined);
+    const next = await loginRequired(server);
+    assert.equal(next.data.requires_second_factor, true);
+    const signedIn = await verifyChallenge(server, next.data, lastOtp(provider));
+    assert.equal(signedIn.status, 200);
+    assert.equal(signedIn.data.recovery_codes, undefined);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM sms_otp_recovery_codes').get().n, 10);
+  } finally { server.close(); db.close(); }
+});
+
+test('registration SMS delivery failure leaves an unverified account recoverable through sign-in', async () => {
+  const db = createDb();
+  let unavailable = true;
+  const provider = capturingProvider();
+  const send = provider.sendOtp;
+  provider.sendOtp = async payload => { if (unavailable) throw new Error('synthetic unavailable'); return send.call(provider, payload); };
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  try {
+    const failed = await requestJson(server, 'POST', '/api/auth/register', {
+      email: 'required@example.test', password: 'StrongPass123!', name: 'Synthetic owner', phone: '+27821234567'
+    });
+    assert.equal(failed.status, 503);
+    assert.equal(failed.data.account_created, true);
+    assert.match(failed.data.error, /Sign in/);
+    assert.equal(failed.data.token, undefined);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM sms_otp_challenges').get().n, 0);
+    unavailable = false;
+    const retry = await loginRequired(server);
+    assert.equal(retry.data.requires_second_factor, true);
+    assert.equal((await verifyChallenge(server, retry.data, lastOtp(provider))).status, 200);
+  } finally { server.close(); db.close(); }
+});
+
+test('required authentication never falls back to passwords when the SMS provider is unavailable', async () => {
+  const db = createDb();
+  seedUser(db, { phone: '+27821234567' });
+  const server = await createServer(db, { configured: false, sendOtp: async () => { throw new Error('must not send'); } }, { AUTH_SMS_REQUIRED: 'true' });
+  try {
+    const login = await loginRequired(server);
+    assert.equal(login.status, 503);
+    assert.equal(login.data.token, undefined);
+    const register = await requestJson(server, 'POST', '/api/auth/register', {
+      email: 'other@example.test', password: 'StrongPass123!', name: 'Other', phone: '+27821230001'
+    });
+    assert.equal(register.status, 503);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 1);
+  } finally { server.close(); db.close(); }
+});
+
+test('required login uses the sole saved owner mobile, then retains its verified account phone', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const owner = seedUser(db);
+  const other = seedUser(db, { email: 'other@example.test' });
+  db.exec('CREATE TABLE vault_entries(user_id INTEGER, section TEXT, fields_encrypted TEXT)');
+  const insert = db.prepare('INSERT INTO vault_entries VALUES(?,?,?)');
+  insert.run(owner, 'personal', JSON.stringify({ mobile_phone: '0821234567' }));
+  insert.run(other, 'personal', JSON.stringify({ mobile_phone: '+27821230002' }));
+  insert.run(owner, 'contacts', JSON.stringify({ mobile_phone: '+27821230003' }));
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' }, { decryptFields: value => value });
+  try {
+    const login = await loginRequired(server);
+    assert.equal(login.data.requires_second_factor, true);
+    assert.equal(login.data.token, undefined);
+    assert.equal(provider.sent[0].to, '+27821234567');
+    assert.equal(db.prepare('SELECT sms_2fa_phone_e164 FROM users WHERE id=?').get(owner).sms_2fa_phone_e164, null);
+    const verified = await verifyChallenge(server, login.data, lastOtp(provider));
+    assert.equal(verified.status, 200);
+    assert.equal(verified.data.recovery_codes.length, 10);
+    assert.equal(db.prepare('SELECT sms_2fa_phone_e164 FROM users WHERE id=?').get(owner).sms_2fa_phone_e164, '+27821234567');
+    db.prepare("UPDATE vault_entries SET fields_encrypted=? WHERE user_id=? AND section='personal'").run(JSON.stringify({ mobile_phone: '+27821230004' }), owner);
+    assert.equal((await loginRequired(server)).data.requires_second_factor, true);
+    assert.equal(provider.sent.at(-1).to, '+27821234567');
+  } finally { server.close(); db.close(); }
+});
+
+test('missing owner phone requires password-bound phone setup and its token cannot access the vault', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const owner = seedUser(db);
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  try {
+    const login = await loginRequired(server);
+    assert.equal(login.data.requires_phone_setup, true);
+    assert.equal(login.data.token, undefined);
+    assert.equal(provider.sent.length, 0);
+    const forbidden = await requestJson(server, 'GET', '/api/auth/me', null, login.data.setup_token);
+    assert.equal(forbidden.status, 403);
+    assert.equal(forbidden.data.code, 'PHONE_SETUP_TOKEN_FORBIDDEN');
+    const started = await requestJson(server, 'POST', '/api/auth/login/phone', { setup_token: login.data.setup_token, phone: '0821234567' });
+    assert.equal(started.status, 200);
+    assert.equal(started.data.requires_second_factor, true);
+    assert.equal(started.data.token, undefined);
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users WHERE id=?').get(owner).sms_2fa_enabled, 0);
+    const completed = await verifyChallenge(server, started.data, lastOtp(provider));
+    assert.equal(completed.status, 200);
+    assert.equal(completed.data.recovery_codes.length, 10);
+    const replace = await requestJson(server, 'POST', '/api/auth/login/phone', { setup_token: login.data.setup_token, phone: '+27821230099' });
+    assert.equal(replace.status, 403);
+    assert.equal(db.prepare('SELECT sms_2fa_phone_e164 FROM users WHERE id=?').get(owner).sms_2fa_phone_e164, '+27821234567');
+  } finally { server.close(); db.close(); }
+});
+
+test('ambiguous profile mobiles require explicit setup and do not send to an arbitrary profile', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const owner = seedUser(db);
+  db.exec('CREATE TABLE vault_entries(user_id INTEGER, section TEXT, fields_encrypted TEXT)');
+  const insert = db.prepare('INSERT INTO vault_entries VALUES(?,?,?)');
+  insert.run(owner, 'personal', JSON.stringify({ mobile_phone: '+27821230001' }));
+  insert.run(owner, 'personal', JSON.stringify({ mobile_phone: '+27821230002' }));
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' }, { decryptFields: value => value });
+  try {
+    const login = await loginRequired(server);
+    assert.equal(login.data.requires_phone_setup, true);
+    assert.equal(login.data.token, undefined);
+    assert.equal(provider.sent.length, 0);
+  } finally { server.close(); db.close(); }
+});
+
+test('phone setup tokens expire, bind to the password, and cannot be replaced by a session token', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const owner = seedUser(db);
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  try {
+    const setup = (await loginRequired(server)).data;
+    const payload = jwt.verify(setup.setup_token, 'test-secret');
+    const expired = jwt.sign({ ...payload, exp: Math.floor(Date.now() / 1000) - 1 }, 'test-secret');
+    const call = setupToken => requestJson(server, 'POST', '/api/auth/login/phone', { setup_token: setupToken, phone: '+27821234567' });
+    assert.equal((await call(expired)).status, 403);
+    assert.equal((await call(jwt.sign({ id: owner, mfa: 'sms_otp' }, 'test-secret'))).status, 403);
+    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync('ChangedPass123!', 4), owner);
+    assert.equal((await call(setup.setup_token)).status, 403);
+    assert.equal(provider.sent.length, 0);
+  } finally { server.close(); db.close(); }
+});
+
+test('required login invalidates a challenge if its saved phone changes before verification', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const owner = seedUser(db, { phone: '+27821234567' });
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  try {
+    const challenge = (await loginRequired(server)).data;
+    db.prepare('UPDATE users SET sms_2fa_phone_e164=? WHERE id=?').run('+27821230099', owner);
+    const rejected = await verifyChallenge(server, challenge, lastOtp(provider));
+    assert.equal(rejected.status, 400);
+    assert.equal(rejected.data.reason, 'phone_changed');
+    assert.equal(rejected.data.token, undefined);
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users WHERE id=?').get(owner).sms_2fa_enabled, 0);
+  } finally { server.close(); db.close(); }
+});
+
+test('required login rejects incorrect and expired codes without enabling access', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const owner = seedUser(db, { phone: '+27821234567' });
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  try {
+    const challenge = (await loginRequired(server)).data;
+    const wrong = lastOtp(provider) === '000000' ? '000001' : '000000';
+    assert.equal((await verifyChallenge(server, challenge, wrong)).data.reason, 'invalid_otp');
+    db.prepare('UPDATE sms_otp_challenges SET expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', challenge.challenge_id);
+    const expired = await verifyChallenge(server, challenge, lastOtp(provider));
+    assert.equal(expired.data.reason, 'expired');
+    assert.equal(expired.data.token, undefined);
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users WHERE id=?').get(owner).sms_2fa_enabled, 0);
+  } finally { server.close(); db.close(); }
+});
+
+test('required policy rejects pre-MFA sessions and forbids disabling SMS authentication', async () => {
+  const db = createDb(), provider = capturingProvider();
+  const owner = seedUser(db, { phone: '+27821234567', enabled: 1 });
+  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  try {
+    const oldToken = jwt.sign({ id: owner }, 'test-secret');
+    const oldSession = await requestJson(server, 'GET', '/api/auth/me', null, oldToken);
+    assert.equal(oldSession.status, 403);
+    assert.equal(oldSession.data.code, 'SMS_VERIFICATION_REQUIRED');
+    const session = jwt.sign({ id: owner, mfa: 'sms_otp' }, 'test-secret');
+    const status = await requestJson(server, 'GET', '/api/auth/2fa/status', null, session);
+    assert.equal(status.data.required, true);
+    assert.equal(status.data.transport_configured, true);
+    assert.equal(status.data.simulated, false);
+    const disable = await requestJson(server, 'POST', '/api/auth/2fa/disable', { current_password: 'StrongPass123!', recovery_code: 'arbitrary' }, session);
+    assert.equal(disable.status, 403);
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users WHERE id=?').get(owner).sms_2fa_enabled, 1);
+  } finally { server.close(); db.close(); }
 });
 
 test('2fa-enabled login requires challenge and delays jwt', async () => {
