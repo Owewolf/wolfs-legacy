@@ -21,7 +21,8 @@ const SECTIONS = {
     icon: '\u{1F3E6}',
     fields: [
       { key: 'bank_name', label: 'Bank Name', type: 'text' },
-      { key: 'account_type', label: 'Account Type', type: 'select', options: ['Savings', 'Current / Checking', 'Fixed Deposit', 'Recurring Deposit', 'Joint Account', 'Other'] },
+      { key: 'account_type', label: 'Account Type', type: 'select', options: ['Bank', 'Cash', 'Savings', 'Current / Checking', 'Fixed Deposit', 'Recurring Deposit', 'Joint Account', 'Other'] },
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'account_number', label: 'Account Number', type: 'text', sensitive: true },
       { key: 'ifsc_routing', label: 'IFSC / Routing / SWIFT', type: 'text' },
       { key: 'branch', label: 'Branch', type: 'text' },
@@ -36,6 +37,7 @@ const SECTIONS = {
     icon: '\u{1F4C8}',
     fields: [
       { key: 'institution', label: 'Institution / Platform', type: 'text' },
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'type', label: 'Type', type: 'select', options: ['Stocks', 'Mutual Funds', 'Bonds', 'ETFs', 'Cryptocurrency', 'Fixed Income', 'PPF / EPF', 'Other'] },
       { key: 'account_number', label: 'Account / Folio Number', type: 'text', sensitive: true },
       { key: 'value_approx', label: 'Approximate Value', type: 'text' },
@@ -49,7 +51,9 @@ const SECTIONS = {
     icon: '\u{1F3D6}',
     fields: [
       { key: 'provider', label: 'Provider / Employer', type: 'text' },
-      { key: 'type', label: 'Account Type', type: 'select', options: ['401(k)', 'IRA', 'Roth IRA', 'Pension', 'EPF', 'NPS', 'Annuity', 'Other'] },
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
+      { key: 'type', label: 'Account Type', type: 'select', options: ['401(k)', 'IRA', 'Roth IRA', 'Pension', 'Provident Fund', 'EPF', 'NPS', 'Annuity', 'Other'] },
+      { key: 'investment_type', label: 'Underlying Account / Investment Type', type: 'text' },
       { key: 'account_number', label: 'Account Number', type: 'text', sensitive: true },
       { key: 'value_approx', label: 'Approximate Value', type: 'text' },
       { key: 'beneficiary', label: 'Designated Beneficiary', type: 'text' },
@@ -76,6 +80,7 @@ const SECTIONS = {
     name: 'Real Estate & Property',
     icon: '\u{1F3E0}',
     fields: [
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'type', label: 'Property Type', type: 'select', options: ['Residential', 'Commercial', 'Land', 'Agricultural', 'Rental', 'Other'] },
       { key: 'address', label: 'Property Address', type: 'textarea' },
       { key: 'ownership', label: 'Ownership', type: 'select', options: ['Sole Owner', 'Joint Owner', 'Through Company', 'Trust'] },
@@ -92,6 +97,7 @@ const SECTIONS = {
     name: 'Debts & Liabilities',
     icon: '\u{1F4B3}',
     fields: [
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'creditor', label: 'Creditor / Lender', type: 'text' },
       { key: 'type', label: 'Type', type: 'select', options: ['Mortgage', 'Personal Loan', 'Car Loan', 'Student Loan', 'Credit Card', 'Business Loan', 'Informal Loan', 'Other'] },
       { key: 'account_number', label: 'Account / Loan #', type: 'text', sensitive: true },
@@ -120,11 +126,13 @@ const SECTIONS = {
     name: 'Vehicles',
     icon: '\u{1F697}',
     fields: [
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'type', label: 'Vehicle Type', type: 'select', options: ['Car', 'Motorcycle', 'Truck', 'Boat', 'RV', 'Other'] },
       { key: 'make_model', label: 'Make & Model', type: 'text' },
       { key: 'year', label: 'Year', type: 'text' },
       { key: 'registration', label: 'Registration Number', type: 'text' },
       { key: 'vin', label: 'VIN / Chassis Number', type: 'text', sensitive: true },
+      { key: 'current_value', label: 'Current Value (est.)', type: 'text' },
       { key: 'loan_provider', label: 'Loan Provider', type: 'text' },
       { key: 'loan_balance', label: 'Loan Balance', type: 'text' },
       { key: 'insurance_policy', label: 'Insurance Policy #', type: 'text' }
@@ -170,7 +178,7 @@ const SECTIONS = {
     name: 'Final Wishes',
     icon: '\u{1F54A}',
     fields: [
-      { key: 'category', label: 'Category', type: 'select', options: ['Funeral Arrangements', 'Burial / Cremation', 'Organ Donation', 'Memorial Preferences', 'Message to Family', 'Charitable Wishes', 'Pet Care', 'Other'] },
+      { key: 'category', label: 'Category', type: 'select', options: ['Beneficiary Instructions', 'Funeral Arrangements', 'Burial / Cremation', 'Organ Donation', 'Memorial Preferences', 'Message to Family', 'Charitable Wishes', 'Pet Care', 'Other'] },
       { key: 'details', label: 'Details', type: 'textarea' },
       { key: 'contact_person', label: 'Contact Person', type: 'text' },
       { key: 'contact_phone', label: 'Contact Phone', type: 'text' }
@@ -179,8 +187,31 @@ const SECTIONS = {
   secure_notes: {
     name: 'Secure Notes',
     icon: '\u{1F512}',
+    // Keep the schema for existing records and old backups, without offering
+    // this category in navigation, the dashboard or new-entry routes.
+    retired: true,
     fields: [
       { key: 'content', label: 'Note Content', type: 'textarea' }
+    ]
+  },
+  pet_care: {
+    name: 'Pet Care',
+    icon: '\u{1F43E}',
+    fields: [
+      { key: 'pet_name', label: 'Pet Name', type: 'text' },
+      { key: 'species', label: 'Animal Type', type: 'select', options: ['Dog', 'Cat', 'Bird', 'Fish', 'Reptile', 'Small Mammal', 'Horse', 'Other'] },
+      { key: 'breed', label: 'Breed / Description', type: 'text' },
+      { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
+      { key: 'microchip_number', label: 'Microchip / Identification Number', type: 'text' },
+      { key: 'vet_name', label: 'Vet / Practice Name', type: 'text' },
+      { key: 'vet_phone', label: 'Vet Phone', type: 'tel' },
+      { key: 'vet_address', label: 'Vet Address', type: 'textarea' },
+      { key: 'dietary_needs', label: 'Food, Feeding Schedule & Dietary Needs', type: 'textarea' },
+      { key: 'medications', label: 'Medications & Medical Needs', type: 'textarea' },
+      { key: 'care_instructions', label: 'Daily Routine & Care Instructions', type: 'textarea' },
+      { key: 'preferred_carer', label: 'Preferred Carer', type: 'text' },
+      { key: 'carer_phone', label: 'Carer Phone', type: 'tel' },
+      { key: 'rehoming_plan', label: 'Rehoming Plan', type: 'textarea' }
     ]
   }
 };

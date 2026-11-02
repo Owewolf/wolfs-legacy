@@ -1,0 +1,152 @@
+{
+  "synthetic_data_only": true,
+  "category_buttons_present": false,
+  "content_types_available_inside_entry": [
+    "letter",
+    "recording",
+    "family_history",
+    "instruction",
+    "review"
+  ],
+  "chromium_engines": [
+    {
+      "name": "chromium",
+      "version": "153.0.8010.12"
+    }
+  ],
+  "chromium_screens_verified": 30,
+  "chromium_mobile_workflows": [
+    {
+      "width": 390,
+      "checks_passed": 72
+    },
+    {
+      "width": 820,
+      "checks_passed": 72
+    }
+  ],
+  "webkit_engines": [
+    {
+      "name": "system-webkit",
+      "version": "2.52.4"
+    }
+  ],
+  "webkit_screens_verified": 10,
+  "webkit_mobile_workflows": [
+    {
+      "width": 390,
+      "checks_passed": 71
+    }
+  ],
+  "physical_devices_tested": false,
+  "full_suite": {
+    "javascript": 263,
+    "python": 7,
+    "failures": 0
+  },
+  "automatic_beneficiary_drafts": true,
+  "searchable_beneficiaries_and_contacts": true,
+  "contact_selection_grants_access": false,
+  "related_vault_record_selector_present": false,
+  "picker_measurements": [
+    {
+      "screen": "recipient-picker",
+      "width": 390,
+      "documentWidth": 390,
+      "selected": [
+        {
+          "key": "beneficiary:1",
+          "width": 44,
+          "height": 44.796875
+        },
+        {
+          "key": "contact:14",
+          "width": 44,
+          "height": 44.796875
+        }
+      ],
+      "results": [
+        {
+          "key": "beneficiary:2",
+          "width": 296,
+          "height": 61
+        }
+      ]
+    },
+    {
+      "screen": "add-beneficiary",
+      "width": 390,
+      "documentWidth": 390,
+      "notice": "A private Final Wish draft will be created for this beneficiary.",
+      "modalWidth": 366
+    },
+    {
+      "screen": "recipient-picker",
+      "width": 1440,
+      "documentWidth": 1440,
+      "selected": [
+        {
+          "key": "beneficiary:1",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "key": "contact:14",
+          "width": 44,
+          "height": 44
+        }
+      ],
+      "results": [
+        {
+          "key": "beneficiary:2",
+          "width": 822,
+          "height": 61
+        }
+      ]
+    },
+    {
+      "screen": "add-beneficiary",
+      "width": 1440,
+      "documentWidth": 1440,
+      "notice": "A private Final Wish draft will be created for this beneficiary.",
+      "modalWidth": 500
+    }
+  ],
+  "plain_beneficiary_wish_evidence": [
+    {
+      "width": 390,
+      "title": "Alex Example",
+      "category": "Beneficiary Instructions",
+      "content_type": "",
+      "recipient": true,
+      "blank_content": true,
+      "review_hidden": true,
+      "available_recipients": [
+        "beneficiary:2",
+        "contact:14"
+      ],
+      "viewport_width": 390,
+      "document_width": 390,
+      "empty_search_choices": 3
+    },
+    {
+      "width": 1440,
+      "title": "Alex Example",
+      "category": "Beneficiary Instructions",
+      "content_type": "",
+      "recipient": true,
+      "blank_content": true,
+      "review_hidden": true,
+      "available_recipients": [
+        "beneficiary:2",
+        "contact:14"
+      ],
+      "viewport_width": 1440,
+      "document_width": 1440,
+      "empty_search_choices": 3
+    }
+  ],
+  "beneficiary_wish_category": "Beneficiary Instructions",
+  "beneficiary_wish_title": "Beneficiary name only",
+  "recipient_choices_offered_without_typing": true
+}

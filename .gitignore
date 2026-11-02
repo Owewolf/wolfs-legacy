@@ -10,7 +10,7 @@ backups/
 *.db-wal
 .secrets
 
-# Wolf's Legacy: NEVER commit financial files or data/secret backups.
+# Wolf's Vault: NEVER commit financial files or data/secret backups.
 *.xhb
 *.xhb~
 *.xhb.bak
@@ -29,3 +29,13 @@ backups/
 !*.env.example
 backup*/
 backups*/
+__pycache__/
+*.py[cod]
+wolfs-legacy-offline-checkin-codes-*.txt
+
+# Supplied card references contain personal financial details; keep them local.
+/docs/wolfs-vault-cards/AGENT_BRIEF.md
+/docs/wolfs-vault-cards/approved-redesign.png
+/docs/wolfs-vault-cards/original.png
+/docs/screenshots/record-cards/comparison-card.png
+/docs/screenshots/record-cards/comparison-full.png

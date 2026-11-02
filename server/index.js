@@ -6,11 +6,16 @@ const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const { getDb, audit } = require('./db');
+const { getDb } = require('./db');
 const log = require('./logger');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4444;
+// Trust only the configured reverse-proxy networks, never arbitrary client hops.
+if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY.split(',').map(value => value.trim()).filter(Boolean));
+// Passenger web processes may sleep or multiply. A single external scheduler
+// runs scripts/run-background-jobs.js when these in-process jobs are disabled.
+const BACKGROUND_JOBS_ENABLED = process.env.BACKGROUND_JOBS_ENABLED !== 'false';
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -21,6 +26,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       frameSrc: ["'self'", "blob:"],
+      mediaSrc: ["'self'", "blob:"],
       connectSrc: ["'self'"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
@@ -70,47 +76,44 @@ app.get('/api/audit', authenticateToken, (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/vault', require('./routes/vault'));
 app.use('/api/documents', require('./routes/documents'));
+app.use('/api/final-wishes', require('./routes/legacy').ownerRouter);
+app.use('/api/beneficiary-access', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }), require('./routes/legacy').beneficiaryRouter);
 app.use('/api/beneficiaries', require('./routes/beneficiaries'));
 app.use('/api/deadswitch', require('./routes/deadswitch'));
 app.use('/api/homebank', require('./routes/homebank'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // Dead man's switch background check — runs every hour
 function checkDeadSwitches() {
   try {
     const db = getDb();
-    const triggerSwitch = db.transaction(() => {
-      const configs = db.prepare(
-        `SELECT dsc.*, u.last_check_in FROM dead_switch_config dsc
-         JOIN users u ON dsc.user_id = u.id
-         WHERE dsc.is_active = 1 AND dsc.switch_triggered = 0`
-      ).all();
-
-      for (const c of configs) {
-        const deadline = new Date(c.last_check_in);
-        deadline.setDate(deadline.getDate() + c.check_in_interval_days + c.grace_period_days);
-        if (new Date() > deadline) {
-          db.prepare('UPDATE dead_switch_config SET switch_triggered = 1, switch_triggered_at = CURRENT_TIMESTAMP WHERE id = ?').run(c.id);
-          db.prepare('UPDATE beneficiaries SET access_granted = 1, access_granted_at = CURRENT_TIMESTAMP WHERE user_id = ? AND access_granted = 0').run(c.user_id);
-          audit(c.user_id, 'deadswitch_triggered', 'dead_switch', c.id, null, null);
-          log.warn('Dead man\'s switch triggered', { user_id: c.user_id, switch_id: c.id });
-        }
-      }
-    });
-    triggerSwitch();
+    require('./notifications/service').createNotificationService({ db }).releaseDue();
   } catch (err) {
     log.error('Dead switch check error', { error: err.message });
   }
 }
 
-setInterval(checkDeadSwitches, 60 * 60 * 1000);
+if (BACKGROUND_JOBS_ENABLED) setInterval(checkDeadSwitches, 60 * 60 * 1000);
+
+// Unknown API requests must never fall through to the browser application.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
 
 app.get('{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-getDb();
-app.listen(PORT, () => {
-  log.info('Legacy Vault started', { port: PORT });
-  checkDeadSwitches();
-  require('./homebank-service').startWatcher();
+const startupDb = getDb();
+const beneficiaryWishes = require('./beneficiary-final-wishes').backfillBeneficiaryFinalWishes(startupDb);
+if (beneficiaryWishes.created) log.info('Created missing private beneficiary wishes', { count: beneficiaryWishes.created });
+app.listen(PORT, process.env.LISTEN_HOST || '0.0.0.0', () => {
+  log.info("Wolf's Vault started", { port: PORT });
+  if (BACKGROUND_JOBS_ENABLED) {
+    checkDeadSwitches();
+    require('./homebank-service').startWatcher();
+    const mailWorker = require('./notifications/worker').createNotificationWorker({ db: getDb() });
+    mailWorker.start();
+    process.once('SIGTERM', () => { mailWorker.stop(); process.exit(0); });
+  }
 });

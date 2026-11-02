@@ -6,7 +6,7 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const SECRETS_FILE = path.join(DATA_DIR, '.secrets');
 
 function ensureSecrets() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 
   let secrets = {};
   if (fs.existsSync(SECRETS_FILE)) {
@@ -23,7 +23,8 @@ function ensureSecrets() {
     secrets.encryption_key = process.env.ENCRYPTION_KEY;
   }
 
-  fs.writeFileSync(SECRETS_FILE, JSON.stringify(secrets, null, 2));
+  fs.writeFileSync(SECRETS_FILE, JSON.stringify(secrets, null, 2), { mode: 0o600 });
+  fs.chmodSync(SECRETS_FILE, 0o600);
 }
 
 module.exports = { ensureSecrets };

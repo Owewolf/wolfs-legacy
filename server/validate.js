@@ -1,7 +1,7 @@
 const VALID_SECTIONS = [
   'personal', 'bank_accounts', 'investments', 'retirement', 'insurance',
   'real_estate', 'debts', 'digital', 'vehicles', 'valuables',
-  'contacts', 'legal', 'final_wishes', 'secure_notes'
+  'contacts', 'legal', 'final_wishes', 'secure_notes', 'pet_care'
 ];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

@@ -14,7 +14,7 @@ CLOSED = 1 << 1
 NO_SUMMARY = 1 << 4
 REMINDER = 1 << 5
 PENDING_IMPORT = (1 << 9) | (1 << 10)
-SNAPSHOT_SCHEMA_VERSION = 2
+SNAPSHOT_SCHEMA_VERSION = 3
 
 def integer(value, default=0):
     try:
@@ -55,6 +55,16 @@ def parse(filepath, today=None):
     if root.tag != 'homebank' or not root.get('v'):
         raise ValueError('Not a valid HomeBank .xhb file')
     currencies = {integer(x.get('key')): x.get('iso', 'ZAR') for x in root.findall('cur')}
+    # HomeBank's account "grp" refers to a root-level <grp> definition, not a
+    # transaction category. Keep the saved classification without guessing from
+    # a transaction, balance sign or account institution.
+    groups = {}
+    for group in root.findall('grp'):
+        key = integer(group.get('key'), -1)
+        if key <= 0 or key in groups:
+            raise ValueError('Invalid or duplicated HomeBank account group key')
+        name = (group.get('name') or '').strip()
+        groups[key] = name if name and name != '(null)' else None
     accounts = {}
     for a in root.findall('account'):
         key = integer(a.get('key'), -1)
@@ -62,9 +72,12 @@ def parse(filepath, today=None):
             raise ValueError('Invalid or duplicated HomeBank account key')
         flags = integer(a.get('flags'))
         initial = decimal(a.get('initial'))
+        group_id = integer(a.get('grp'))
+        group_id = group_id if group_id > 0 else None
         accounts[key] = {
             'id': key, 'name': a.get('name', ''), 'type_id': integer(a.get('type')),
             'type': TYPES.get(integer(a.get('type')), 'Other'),
+            'group_id': group_id, 'group_name': groups.get(group_id),
             'currency': currencies.get(integer(a.get('curr')), 'ZAR'),
             # Attribute names follow HomeBank's hb-xml.c account reader/writer.
             'bank_name': account_text(a, 'bankname'),

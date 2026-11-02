@@ -6,16 +6,17 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { getDb, audit } = require('./db');
 const { encrypt, decrypt } = require('./crypto');
+const { reconcileHomebankAccounts, reconcileHomebankClassifications } = require('./homebank-classification');
 const MAX_BYTES = 50 * 1024 * 1024;
 // Keep in step with homebank_parse.py; reparse old snapshots on parser upgrades.
-const SNAPSHOT_SCHEMA_VERSION = 2;
+const SNAPSHOT_SCHEMA_VERSION = 3;
 const ROOT = path.resolve(process.env.HOMEBANK_ALLOWED_ROOT || '/home/wolf/Documents');
 const DEFAULT_DIRECTORY = process.env.HOMEBANK_DIRECTORY || '/home/wolf/Documents/Money';
 const inflight = new Map();
 const NOW = () => new Date().toISOString();
 const localDay = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-'); };
 
-function initialConfig() { return { directory: DEFAULT_DIRECTORY, selectedFile: '', auto: true }; }
+function initialConfig() { return { directory: DEFAULT_DIRECTORY, selectedFile: '', auto: true, accounts_connected: false }; }
 function row(userId) {
   return getDb().prepare('SELECT * FROM homebank_snapshots WHERE user_id=?').get(userId);
 }
@@ -102,13 +103,33 @@ async function syncUser(userId, force = false) {
     let current = ownedRow(userId);
     const cfg = decodedConfig(current);
     if (!cfg.auto && !force) return current;
+    const existing = decodedSnapshot(current);
+    // Existing saved connections predate this flag. Newly discovered default
+    // files may populate the overview, but only Save and sync connects their
+    // account cards. Persist false so a later read cannot promote discovery
+    // into a legacy connection merely because it now has a cached snapshot.
+    const legacyConnected = cfg.accounts_connected === undefined && !!current.source_file && !!existing;
+    const connected = cfg.accounts_connected === true || legacyConnected;
+    if (cfg.accounts_connected === undefined && !legacyConnected) {
+      cfg.accounts_connected = false;
+      getDb().prepare('UPDATE homebank_snapshots SET config_encrypted=? WHERE user_id=?')
+        .run(encrypt(JSON.stringify(cfg)), userId);
+      current = row(userId);
+    }
+    const reconcile = connected ? reconcileHomebankAccounts : reconcileHomebankClassifications;
+    const classificationOptions = { ownerEmail: process.env.HOMEBANK_OWNER_EMAIL,
+      institutionAllocations: cfg.institution_allocations };
     try {
       const files = await listing(cfg.directory);
       const file = cfg.selectedFile ? files.find(f => f.name === cfg.selectedFile) : files[0];
       if (!file) throw new Error('No HomeBank .xhb file found in the selected directory');
-      const existing = decodedSnapshot(current);
       if (!force && current.fingerprint === file.fingerprint && current.snapshot_encrypted && !current.last_error &&
-          existing?.snapshot_schema_version === SNAPSHOT_SCHEMA_VERSION && existing?.exported_date === localDay()) return current;
+          existing?.snapshot_schema_version === SNAPSHOT_SCHEMA_VERSION && existing?.exported_date === localDay()) {
+        const aligned = reconcile(getDb(), userId, existing, classificationOptions);
+        if (aligned.changed) audit(userId, 'homebank_classification_realign', 'homebank', null, `entries=${aligned.changed}`, null);
+        if (aligned.created) audit(userId, 'homebank_accounts_imported', 'homebank', null, `entries=${aligned.created}`, null);
+        return current;
+      }
       // Validate file again after parsing, so incomplete atomic saves never replace a good snapshot.
       const snap = await parseXhb(file.full);
       const after = await fs.stat(file.full);
@@ -117,10 +138,16 @@ async function syncUser(userId, force = false) {
       }
       const hash = crypto.createHash('sha256').update(JSON.stringify(snap)).digest('hex');
       const syncedAt = NOW();
-      getDb().prepare(`UPDATE homebank_snapshots SET snapshot_encrypted=?,fingerprint=?,source_file=?,
-        source_saved_at=?,synced_at=?,last_error=NULL,content_hash=? WHERE user_id=?`)
-        .run(encrypt(JSON.stringify(snap)), file.fingerprint, file.name, file.mtime, syncedAt, hash, userId);
-      audit(userId, 'homebank_sync_success', 'homebank', null, `accounts=${snap.counts.all}`, null);
+      const db = getDb();
+      const aligned = db.transaction(() => {
+        db.prepare(`UPDATE homebank_snapshots SET snapshot_encrypted=?,fingerprint=?,source_file=?,
+          source_saved_at=?,synced_at=?,last_error=NULL,content_hash=? WHERE user_id=?`)
+          .run(encrypt(JSON.stringify(snap)), file.fingerprint, file.name, file.mtime, syncedAt, hash, userId);
+        return reconcile(db, userId, snap, classificationOptions);
+      })();
+      if (aligned.changed) audit(userId, 'homebank_classification_realign', 'homebank', null, `entries=${aligned.changed}`, null);
+      if (aligned.created) audit(userId, 'homebank_accounts_imported', 'homebank', null, `entries=${aligned.created}`, null);
+      audit(userId, 'homebank_sync_success', 'homebank', null, `accounts=${snap.accounts.length}`, null);
     } catch (e) {
       const msg = String(e.message).slice(0,300);
       if (current.last_error !== msg) getDb().prepare('UPDATE homebank_snapshots SET last_error=? WHERE user_id=?').run(msg,userId);
@@ -140,7 +167,7 @@ async function saveSettings(userId, newSettings) {
     const files = await listing(dir);
     if (!files.some(f=>f.name===fileName)) throw new Error('Selected .xhb file not found in folder');
   }
-  const next = { directory: dir, selectedFile: fileName || '', auto: true };
+  const next = { ...config, directory: dir, selectedFile: fileName || '', auto: true, accounts_connected: true };
   getDb().prepare('UPDATE homebank_snapshots SET config_encrypted=?,fingerprint=NULL,last_error=NULL WHERE user_id=?')
     .run(encrypt(JSON.stringify(next)),userId);
   audit(userId,'homebank_settings_updated','homebank',null,null,null);
