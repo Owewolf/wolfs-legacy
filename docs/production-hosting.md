@@ -19,7 +19,26 @@ checksums and Git revision in `apps/wolfs-vault/runtime-manifest.json`, then tou
 the Passenger application's `tmp/restart.txt` and verify health and API behavior.
 Preserve the live database, matching secrets, private `.env` and storage paths.
 
-## Completed deployment: 2 November 2026
+## Main release: 2 November 2026, verified at 20:01 SAST
+
+Runtime revision `2c5d2e574e0d72d09a41c2c350b805a726dc49b1` includes both required
+commits and the full earlier production history. Twelve changed runtime files
+were deployed with FTPS; all 66 runtime file checksums were verified. Passenger
+restarted successfully, and the local frontend service was also restarted to load
+the streaming proxy.
+
+The current beneficiary, Final Wishes and vault summary API responses matched
+their pre-update fingerprints through both frontends. Browser checks at 390 and
+1,440 pixels verified wishes, beneficiary editing and phone inputs without API
+errors, JavaScript errors or horizontal overflow. The background cron job
+completed successfully after deployment. The synthetic suite passed 330
+JavaScript and 17 Python tests with application-database access blocked.
+
+The integrated SMS enrollment flow returns an upgraded MFA session, and recovery
+codes remain visible until the owner confirms saving them. Existing production
+transport configuration was retained. All pushes for this release targeted `main`.
+
+## Initial production cutover: 2 November 2026
 
 Production is live, running application revision `b1f333c018ac`. The original
 local backend was stopped before transferring its consistent database. The local
