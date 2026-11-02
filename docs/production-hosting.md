@@ -5,6 +5,47 @@ database and managed-document store. Production is `https://wolfspack.co.za`.
 Local frontend development is described in [local-frontend.md](local-frontend.md).
 Automated tests use disposable synthetic data.
 
+## Completed deployment: 2 November 2026
+
+Production is live, running application revision `b1f333c018ac`. The original
+local backend was stopped before transferring its consistent database. The local
+frontend was activated at 15:10 SAST and now uses the production API. Existing
+account credentials continue to work on either site.
+
+Migration verification authenticated 94 encrypted values, matched every table
+and secret fingerprint, and verified all 24 managed documents by checksum. The
+preserved data includes one owner, 38 ordinary vault entries, three beneficiaries
+and their three protected Final Wishes drafts. Each draft retains its beneficiary
+name as the title, its recipient and the Beneficiary Instructions category.
+
+Live checks confirmed identical API data through both frontends, matching
+attachment downloads, and successful HomeBank sync with all seven Wolf's Garage
+vehicles in Vehicles. Browser checks at 390 and 1,440 pixels confirmed the vehicle
+and Final Wishes cards render without horizontal overflow or JavaScript errors.
+The synthetic suite passed 317 JavaScript and 17 Python tests.
+
+The locked production cron job has completed successfully. IMAP polling is ready;
+the existing SMTP, reply and recipient-verification settings were preserved.
+No new test email was sent. Initial account usage was approximately 137 MiB on
+disk, within the 2 GB package.
+
+## Installed local services
+
+The existing local address, `http://asus.local:4444`, serves frontend assets and
+proxies `/api` to production. The system service `wolfs-legacy.service` uses
+`/etc/systemd/system/wolfs-legacy.service.d/production-frontend.conf` to replace
+its startup command with `scripts/dev-frontend.js` and clear its old environment
+file. The old local database remains inactive; the frontend does not open it.
+The local frontend requires a connection to production for API operations.
+
+The enabled user timer `wolfs-vault-homebank-sync.timer` runs the one-shot
+`wolfs-vault-homebank-sync.service` about once per minute. Its private configuration
+is `.env.homebank-sync`; transfers and unchanged-source checks have succeeded.
+Inspect it using `systemctl --user status wolfs-vault-homebank-sync.timer` and
+`journalctl --user -u wolfs-vault-homebank-sync.service`. The user's enabled linger
+setting allows the timer to run without an interactive login while the machine
+is awake.
+
 ## Hosting layout
 
 - DirectAdmin: `https://dahost12.vpslocal.co.za:2222`.
