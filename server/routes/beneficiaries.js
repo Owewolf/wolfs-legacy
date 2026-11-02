@@ -50,6 +50,32 @@ router.post('/', authenticateToken, (req, res) => {
   res.json({ id: result.lastInsertRowid, name: name.trim(), email, phone, relationship, accessToken: token, token_expires_at: expires, emergency_waiting_days: waitDays });
 });
 
+router.put('/:id', authenticateToken, (req, res) => {
+  const { name, email, phone, relationship, emergency_waiting_days } = req.body;
+  if (!validateString(name, 1, 200)) return validationError(res, 'Name is required (max 200 chars)');
+  if (email && !validateEmail(email)) return validationError(res, 'Invalid email format');
+  const waitDays = parseInt(emergency_waiting_days) || 7;
+  if (waitDays < 1 || waitDays > 90) return validationError(res, 'Wait period must be 1-90 days');
+
+  const db = getDb();
+  const result = db.prepare(
+    `UPDATE beneficiaries
+     SET name = ?, email = ?, phone = ?, relationship = ?, emergency_waiting_days = ?
+     WHERE id = ? AND user_id = ?`
+  ).run(name.trim(), email || null, phone || null, relationship || null, waitDays, req.params.id, req.user.id);
+
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  audit(req.user.id, 'edit_beneficiary', 'beneficiary', +req.params.id, name.trim(), req.ip);
+
+  const updated = db.prepare(
+    `SELECT id, name, email, phone, relationship, emergency_access_requested,
+     emergency_access_requested_at, emergency_waiting_days, access_granted,
+     access_granted_at, token_expires_at, created_at
+     FROM beneficiaries WHERE id = ? AND user_id = ?`
+  ).get(req.params.id, req.user.id);
+  res.json(updated);
+});
+
 router.delete('/:id', authenticateToken, (req, res) => {
   const db = getDb();
   const r = db.prepare('DELETE FROM beneficiaries WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);

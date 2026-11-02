@@ -7,7 +7,11 @@ const API = {
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch('/api' + path, opts);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+    if (!res.ok) {
+      const err = new Error(data.error || 'Request failed');
+      err.data = data;
+      throw err;
+    }
     return data;
   },
 
@@ -19,8 +23,16 @@ const API = {
 
   register: (d) => API.request('POST', '/auth/register', d),
   login: (d) => API.request('POST', '/auth/login', d),
+  verifyLoginChallenge: (d) => API.request('POST', '/auth/login/challenge/verify', d),
+  resendLoginChallenge: (d) => API.request('POST', '/auth/login/challenge/resend', d),
   getMe: () => API.request('GET', '/auth/me'),
   changePassword: (d) => API.request('PUT', '/auth/password', d),
+  get2faStatus: () => API.request('GET', '/auth/2fa/status'),
+  start2faEnrollment: (d) => API.request('POST', '/auth/2fa/enroll/start', d),
+  verify2faEnrollment: (d) => API.request('POST', '/auth/2fa/enroll/verify', d),
+  resend2faEnrollment: (d) => API.request('POST', '/auth/2fa/enroll/resend', d),
+  regenerateRecoveryCodes: (d) => API.request('POST', '/auth/2fa/recovery/regenerate', d),
+  disable2fa: (d) => API.request('POST', '/auth/2fa/disable', d),
 
   getEntries: (s, page) => API.request('GET', '/vault/entries' + (s ? '?section=' + s : '') + (page ? (s ? '&' : '?') + 'page=' + page : '')),
   getEntry: (id) => API.request('GET', '/vault/entries/' + id),
@@ -35,6 +47,7 @@ const API = {
 
   getBeneficiaries: () => API.request('GET', '/beneficiaries'),
   addBeneficiary: (d) => API.request('POST', '/beneficiaries', d),
+  updateBeneficiary: (id, d) => API.request('PUT', '/beneficiaries/' + id, d),
   removeBeneficiary: (id) => API.request('DELETE', '/beneficiaries/' + id),
   denyEmergency: (id) => API.request('POST', '/beneficiaries/' + id + '/deny-emergency'),
   grantAccess: (id) => API.request('POST', '/beneficiaries/' + id + '/grant'),

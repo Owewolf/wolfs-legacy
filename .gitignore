@@ -9,6 +9,8 @@ backups/
 *.db-shm
 *.db-wal
 .secrets
+__pycache__/
+*.pyc
 
 # Wolf's Legacy: NEVER commit financial files or data/secret backups.
 *.xhb

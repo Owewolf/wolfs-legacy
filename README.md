@@ -48,6 +48,7 @@ Legacy Vault solves this by providing a single, encrypted store for all critical
 - **AES-256-GCM** encryption for all vault data at rest
 - **bcrypt** (cost 12) password hashing
 - **JWT** authentication with 24-hour expiry
+- **SMS OTP 2FA** with six-digit CSPRNG codes, 5-minute expiry, single-use verification, resend cooldown, and recovery codes
 - **Rate limiting** on auth and sensitive endpoints
 - **Helmet.js** security headers with strict CSP
 - **Audit logging** for all security-relevant actions
@@ -115,6 +116,13 @@ PORT=3000
 # Or set your own values (JWT_SECRET: any string 32+ chars, ENCRYPTION_KEY: 64-char hex).
 JWT_SECRET=auto
 ENCRYPTION_KEY=auto
+
+# SMS OTP 2FA (Collector / Clickatell)
+COLLECTOR_SMS_ENABLED=false
+COLLECTOR_SMS_SIMULATE=true
+COLLECTOR_SMS_ENDPOINT=https://platform.clickatell.com/v1/message
+COLLECTOR_SMS_AUTHORIZATION=
+OTP_HASH_KEY=auto
 ```
 
 On first startup, if set to `auto`, the server generates cryptographically secure secrets and persists them to `data/.secrets`. These keys encrypt your vault data -- **back them up** and **never expose them**.
@@ -180,8 +188,16 @@ All endpoints except auth and beneficiary access require a JWT token in the `Aut
 |--------|----------|-------------|
 | POST | `/api/auth/register` | Create account |
 | POST | `/api/auth/login` | Sign in |
+| POST | `/api/auth/login/challenge/verify` | Complete SMS OTP / recovery challenge |
+| POST | `/api/auth/login/challenge/resend` | Resend login OTP (cooldown enforced) |
 | GET | `/api/auth/me` | Get current user |
 | PUT | `/api/auth/password` | Change password |
+| GET | `/api/auth/2fa/status` | SMS 2FA status |
+| POST | `/api/auth/2fa/enroll/start` | Start phone enrollment (password required) |
+| POST | `/api/auth/2fa/enroll/verify` | Verify enrollment OTP and enable 2FA |
+| POST | `/api/auth/2fa/enroll/resend` | Resend enrollment OTP |
+| POST | `/api/auth/2fa/recovery/regenerate` | Rotate recovery codes (password required) |
+| POST | `/api/auth/2fa/disable` | Disable SMS 2FA (password + recovery code) |
 
 ### Vault Entries
 | Method | Endpoint | Description |

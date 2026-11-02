@@ -11,6 +11,7 @@ const log = require('./logger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.locals.getDb = getDb;
 
 app.use(helmet({
   contentSecurityPolicy: {

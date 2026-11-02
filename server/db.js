@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const { initSmsOtpSchema } = require('./sms-otp');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'vault.db');
 let db;
@@ -23,6 +24,9 @@ function initTables() {
       name TEXT NOT NULL,
       totp_secret TEXT,
       totp_enabled INTEGER DEFAULT 0,
+      sms_2fa_phone_e164 TEXT,
+      sms_2fa_enabled INTEGER DEFAULT 0,
+      sms_2fa_enrolled_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_check_in DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -131,10 +135,20 @@ function initTables() {
     db.exec('ALTER TABLE users ADD COLUMN totp_secret TEXT');
     db.exec('ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0');
   }
+  if (!userCols.includes('sms_2fa_phone_e164')) {
+    db.exec('ALTER TABLE users ADD COLUMN sms_2fa_phone_e164 TEXT');
+  }
+  if (!userCols.includes('sms_2fa_enabled')) {
+    db.exec('ALTER TABLE users ADD COLUMN sms_2fa_enabled INTEGER DEFAULT 0');
+  }
+  if (!userCols.includes('sms_2fa_enrolled_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN sms_2fa_enrolled_at DATETIME');
+  }
   const vaultCols = db.prepare('PRAGMA table_info(vault_entries)').all().map(c => c.name);
   if (!vaultCols.includes('homebank_account_id')) {
     db.exec('ALTER TABLE vault_entries ADD COLUMN homebank_account_id INTEGER');
   }
+  initSmsOtpSchema(db);
   // Secrets are loaded before getDb() at startup. Record the existing HomeBank
   // provenance before dropping copied ledger fields and notes. The source link,
   // owner-supplied details, documents and timestamps stay intact; financial

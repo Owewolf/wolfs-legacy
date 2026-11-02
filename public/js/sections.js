@@ -12,6 +12,9 @@ const SECTIONS = {
       { key: 'passport_expiry', label: 'Passport Expiry', type: 'date' },
       { key: 'drivers_license', label: "Driver's License Number", type: 'text', sensitive: true },
       { key: 'tax_id', label: 'Tax ID / PAN', type: 'text', sensitive: true },
+      { key: 'mobile_phone', label: 'Mobile Phone', type: 'text' },
+      { key: 'alternate_phone', label: 'Alternate Phone', type: 'text' },
+      { key: 'home_phone', label: 'Home Phone', type: 'text' },
       { key: 'blood_group', label: 'Blood Group', type: 'text' },
       { key: 'address', label: 'Current Address', type: 'textarea' }
     ]

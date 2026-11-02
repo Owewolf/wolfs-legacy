@@ -96,6 +96,100 @@ window.addEventListener('hashchange', handleRoute);
 
 // ── Auth ──
 function renderLogin() {
+  let challenge = null;
+  let resendInterval = null;
+
+  function stopResendTimer() {
+    if (resendInterval) {
+      clearInterval(resendInterval);
+      resendInterval = null;
+    }
+  }
+
+  function renderChallengePanel() {
+    const panel = $('#login-2fa-panel');
+    if (!panel || !challenge) return;
+    const nextResendAt = new Date(challenge.resend_available_at || 0).getTime();
+
+    panel.innerHTML = `
+      <div class="alert alert-info" style="margin-top:14px">
+        Enter the 6-digit code sent to ${esc(challenge.masked_phone || 'your phone')}.
+      </div>
+      <form id="otp-form">
+        <div class="form-group"><label>SMS Code</label><input type="text" name="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"></div>
+        <div class="form-group"><label>Recovery Code (optional)</label><input type="text" name="recovery_code" autocomplete="off" maxlength="20" placeholder="Use if SMS is unavailable"></div>
+        <button type="submit" class="btn btn-primary btn-block">Verify and Sign In</button>
+      </form>
+      <div class="link-row" style="margin-top:12px">
+        <button type="button" class="btn btn-outline btn-sm" id="otp-resend-btn">Resend code</button>
+        <button type="button" class="btn btn-outline btn-sm" id="otp-back-btn">Start over</button>
+      </div>
+      <div id="otp-meta" style="margin-top:8px;font-size:13px;color:var(--text-muted)"></div>
+    `;
+
+    const resendBtn = $('#otp-resend-btn');
+    const meta = $('#otp-meta');
+    function tick() {
+      const remaining = Math.max(0, Math.ceil((nextResendAt - Date.now()) / 1000));
+      resendBtn.disabled = remaining > 0;
+      meta.textContent = remaining > 0
+        ? `You can request another code in ${remaining}s`
+        : 'You can request another code now';
+    }
+    stopResendTimer();
+    tick();
+    resendInterval = setInterval(tick, 1000);
+
+    $('#otp-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const otp = String(f.get('otp') || '').trim();
+      const recoveryCode = String(f.get('recovery_code') || '').trim();
+      if (!otp && !recoveryCode) {
+        showError('Enter an SMS code or a recovery code');
+        return;
+      }
+      try {
+        const res = await API.verifyLoginChallenge({
+          challenge_id: challenge.challenge_id,
+          challenge_token: challenge.challenge_token,
+          otp: otp || undefined,
+          recovery_code: recoveryCode || undefined
+        });
+        stopResendTimer();
+        API.setToken(res.token);
+        state.user = res.user;
+        showSuccess('Two-factor verification successful');
+        navigate('vault');
+      } catch (err) {
+        if (err?.data?.resend_available_at) challenge.resend_available_at = err.data.resend_available_at;
+        renderChallengePanel();
+        showError(err.message);
+      }
+    };
+
+    resendBtn.onclick = async () => {
+      try {
+        const res = await API.resendLoginChallenge({
+          challenge_id: challenge.challenge_id,
+          challenge_token: challenge.challenge_token
+        });
+        challenge = { ...challenge, ...res };
+        renderChallengePanel();
+        showSuccess('A new code has been sent');
+      } catch (err) {
+        if (err?.data?.resend_available_at) challenge.resend_available_at = err.data.resend_available_at;
+        renderChallengePanel();
+        showError(err.message);
+      }
+    };
+
+    $('#otp-back-btn').onclick = () => {
+      stopResendTimer();
+      renderLogin();
+    };
+  }
+
   app.innerHTML = `
     <div class="auth-container"><div class="auth-box">
       <h1>\u{1F512} Legacy Vault</h1>
@@ -105,6 +199,7 @@ function renderLogin() {
         <div class="form-group"><label>Password</label><input type="password" name="password" required></div>
         <button type="submit" class="btn btn-primary btn-block">Sign In</button>
       </form>
+      <div id="login-2fa-panel"></div>
       <div class="link-row">
         No account? <a href="#register">Create one</a> &middot; <a href="#access">Beneficiary access</a>
       </div>
@@ -114,6 +209,12 @@ function renderLogin() {
     try {
       const f = new FormData(e.target);
       const res = await API.login({ email: f.get('email'), password: f.get('password') });
+      if (res.requires_second_factor) {
+        challenge = res;
+        renderChallengePanel();
+        showSuccess('Password accepted. Complete second-factor verification.');
+        return;
+      }
       API.setToken(res.token);
       state.user = res.user;
       navigate('vault');
@@ -138,10 +239,9 @@ function renderRegister() {
     e.preventDefault();
     try {
       const f = new FormData(e.target);
-      const res = await API.register({ name: f.get('name'), email: f.get('email'), password: f.get('password') });
-      API.setToken(res.token);
-      state.user = res.user;
-      navigate('vault');
+      await API.register({ name: f.get('name'), email: f.get('email'), password: f.get('password') });
+      showSuccess('Account created. Sign in to continue.');
+      navigate('login');
     } catch (err) { showError(err.message); }
   };
 }
@@ -540,6 +640,7 @@ async function renderBeneficiaries() {
           <div class="meta">Wait: ${b.emergency_waiting_days}d &middot; Token expires: ${b.token_expires_at ? fmtDate(b.token_expires_at) : 'never'} &middot; Added ${fmtDate(b.created_at)}</div>
         </div>
         <div class="beneficiary-actions">
+          <button class="btn btn-outline btn-sm" data-edit="${b.id}">Edit</button>
           ${b.emergency_access_requested && !b.access_granted ? `<button class="btn btn-danger btn-sm" data-deny="${b.id}">Deny Emergency</button>` : ''}
           ${!b.access_granted ? `<button class="btn btn-success btn-sm" data-grant="${b.id}">Grant Access</button>` : `<button class="btn btn-warning btn-sm" data-revoke="${b.id}">Revoke</button>`}
           <button class="btn btn-outline btn-sm" data-regen="${b.id}">New Token</button>
@@ -571,6 +672,13 @@ async function renderBeneficiaries() {
   bindSidebar();
 
   $('#add-ben-btn').onclick = () => showAddBeneficiaryModal();
+  document.querySelectorAll('[data-edit]').forEach(el => {
+    el.onclick = () => {
+      const id = Number(el.dataset.edit);
+      const beneficiary = state.beneficiaries.find(b => b.id === id);
+      if (beneficiary) showEditBeneficiaryModal(beneficiary);
+    };
+  });
   document.querySelectorAll('[data-grant]').forEach(el => {
     el.onclick = async () => { try { await API.grantAccess(el.dataset.grant); showSuccess('Access granted'); renderBeneficiaries(); } catch (e) { showError(e.message); } };
   });
@@ -592,6 +700,55 @@ async function renderBeneficiaries() {
       try { const r = await API.regenerateToken(el.dataset.regen); state.newToken = r.accessToken; renderBeneficiaries(); } catch (e) { showError(e.message); }
     };
   });
+}
+
+function showEditBeneficiaryModal(beneficiary) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <h2>Edit Beneficiary</h2>
+    <form id="edit-ben-form">
+      <div class="form-group"><label>Name *</label><input type="text" name="name" value="${esc(beneficiary.name || '')}" required></div>
+      <div class="form-group"><label>Email</label><input type="email" name="email" value="${esc(beneficiary.email || '')}"></div>
+      <div class="form-group"><label>Phone</label><input type="text" name="phone" value="${esc(beneficiary.phone || '')}"></div>
+      <div class="form-group"><label>Relationship</label>
+        <select name="relationship"><option value="">-- Select --</option>
+          <option ${beneficiary.relationship === 'Spouse' ? 'selected' : ''}>Spouse</option>
+          <option ${beneficiary.relationship === 'Child' ? 'selected' : ''}>Child</option>
+          <option ${beneficiary.relationship === 'Parent' ? 'selected' : ''}>Parent</option>
+          <option ${beneficiary.relationship === 'Sibling' ? 'selected' : ''}>Sibling</option>
+          <option ${beneficiary.relationship === 'Lawyer' ? 'selected' : ''}>Lawyer</option>
+          <option ${beneficiary.relationship === 'Trusted Friend' ? 'selected' : ''}>Trusted Friend</option>
+          <option ${beneficiary.relationship === 'Other' ? 'selected' : ''}>Other</option>
+        </select></div>
+      <div class="form-group"><label>Emergency wait period (days)</label><input type="number" name="waiting" value="${Number(beneficiary.emergency_waiting_days || 7)}" min="1" max="90"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="close-edit-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.querySelector('#close-edit-modal').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  overlay.querySelector('#edit-ben-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    try {
+      await API.updateBeneficiary(beneficiary.id, {
+        name: f.get('name'),
+        email: f.get('email'),
+        phone: f.get('phone'),
+        relationship: f.get('relationship'),
+        emergency_waiting_days: parseInt(f.get('waiting')) || 7
+      });
+      overlay.remove();
+      showSuccess('Beneficiary updated');
+      renderBeneficiaries();
+    } catch (err) { showError(err.message); }
+  };
 }
 
 function showAddBeneficiaryModal() {
@@ -699,6 +856,9 @@ async function renderDeadSwitch() {
 
 // ── Account Settings ──
 async function renderSettings() {
+  let twoFaStatus = null;
+  try { twoFaStatus = await API.get2faStatus(); } catch {}
+
   app.innerHTML = layoutHTML('settings', `
     <div class="page-header"><h1>\u{2699} Account Settings</h1></div>
     <div class="card">
@@ -721,6 +881,55 @@ async function renderSettings() {
       </div>
       <input type="file" id="restore-file" accept=".json" style="display:none">
       <div id="restore-result"></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-bottom:12px">SMS Two-Factor Authentication</h3>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+        Add SMS-based second-factor sign-in using Africa's Talking. Codes expire in 5 minutes, with resend cooldown and attempt limits.
+      </p>
+      <div id="twofa-status" class="alert ${twoFaStatus?.enabled ? 'alert-success' : 'alert-warning'}" style="margin-bottom:12px">
+        ${twoFaStatus?.enabled
+          ? `Enabled ${twoFaStatus.masked_phone ? `for ${esc(twoFaStatus.masked_phone)}` : ''}. Recovery codes remaining: ${Number(twoFaStatus.recovery_codes_remaining || 0)}.`
+          : 'Not enabled'}
+      </div>
+      <div class="field-grid" style="margin-bottom:16px">
+        <div class="field-item">
+          <label>Enrolled Phone</label>
+          <div class="value">${esc(twoFaStatus?.masked_phone || '-')}</div>
+        </div>
+        <div class="field-item">
+          <label>Recovery Codes Remaining</label>
+          <div class="value">${twoFaStatus?.enabled ? Number(twoFaStatus.recovery_codes_remaining || 0) : '-'}</div>
+        </div>
+      </div>
+
+      <form id="twofa-enroll-form" style="margin-bottom:16px">
+        <div class="form-group"><label>Phone Number (E.164)</label><input type="text" name="phone" placeholder="+27821234567" required></div>
+        <div class="form-group"><label>Current Password</label><input type="password" name="current_password" required></div>
+        <button type="submit" class="btn btn-primary">Send Enrollment Code</button>
+      </form>
+
+      <div id="twofa-verify-wrap" style="display:none">
+        <form id="twofa-verify-form" style="margin-bottom:8px">
+          <div class="form-group"><label>Enrollment SMS Code</label><input type="text" name="otp" maxlength="6" inputmode="numeric" autocomplete="one-time-code" required></div>
+          <button type="submit" class="btn btn-success">Verify and Enable 2FA</button>
+          <button type="button" class="btn btn-outline" id="twofa-resend-btn">Resend Code</button>
+        </form>
+        <div id="twofa-enroll-meta" style="font-size:13px;color:var(--text-muted);margin-bottom:12px"></div>
+      </div>
+
+      <form id="twofa-recovery-form" style="margin-top:8px;margin-bottom:16px">
+        <div class="form-group"><label>Current Password (to regenerate recovery codes)</label><input type="password" name="current_password" required></div>
+        <button type="submit" class="btn btn-outline">Regenerate Recovery Codes</button>
+      </form>
+
+      <form id="twofa-disable-form" style="margin-top:8px">
+        <div class="form-group"><label>Current Password</label><input type="password" name="current_password" required></div>
+        <div class="form-group"><label>Recovery Code (required to disable)</label><input type="text" name="recovery_code" required></div>
+        <button type="submit" class="btn btn-danger">Disable SMS 2FA</button>
+      </form>
+
+      <div id="recovery-codes-panel" class="alert alert-warning" style="display:none;margin-top:12px"></div>
     </div>
     <div class="card" style="margin-top:16px">
       <h3 style="margin-bottom:8px">Account Info</h3>
@@ -775,6 +984,114 @@ async function renderSettings() {
       $('#restore-result').innerHTML = `<div class="alert alert-success" style="margin-top:12px">${esc(msg)}</div>`;
     } catch (err) { showError(err.message); }
     restoreFile.value = '';
+  };
+
+  let enrollChallenge = null;
+  let enrollTimer = null;
+  function stopEnrollTimer() {
+    if (enrollTimer) {
+      clearInterval(enrollTimer);
+      enrollTimer = null;
+    }
+  }
+
+  function renderEnrollMeta() {
+    const meta = $('#twofa-enroll-meta');
+    const resendBtn = $('#twofa-resend-btn');
+    if (!meta || !resendBtn || !enrollChallenge) return;
+    const remaining = Math.max(0, Math.ceil((new Date(enrollChallenge.resend_available_at).getTime() - Date.now()) / 1000));
+    resendBtn.disabled = remaining > 0;
+    meta.textContent = remaining > 0 ? `Resend available in ${remaining}s` : 'Resend is available now';
+  }
+
+  $('#twofa-enroll-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const f = new FormData(e.target);
+      const started = await API.start2faEnrollment({
+        phone: f.get('phone'),
+        current_password: f.get('current_password')
+      });
+      enrollChallenge = started;
+      $('#twofa-verify-wrap').style.display = '';
+      stopEnrollTimer();
+      renderEnrollMeta();
+      enrollTimer = setInterval(renderEnrollMeta, 1000);
+      showSuccess('Enrollment code sent');
+    } catch (err) { showError(err.message); }
+  };
+
+  $('#twofa-verify-form').onsubmit = async (e) => {
+    e.preventDefault();
+    if (!enrollChallenge) return showError('Start enrollment first');
+    try {
+      const f = new FormData(e.target);
+      const res = await API.verify2faEnrollment({
+        challenge_id: enrollChallenge.challenge_id,
+        challenge_token: enrollChallenge.challenge_token,
+        otp: f.get('otp')
+      });
+      const panel = $('#recovery-codes-panel');
+      panel.style.display = '';
+      panel.innerHTML = `Save these recovery codes in a secure offline place:<br><strong>${res.recovery_codes.map(esc).join(' ')}</strong>`;
+      stopEnrollTimer();
+      showSuccess('SMS 2FA enabled');
+      renderSettings();
+    } catch (err) {
+      if (err?.data?.resend_available_at && enrollChallenge) {
+        enrollChallenge.resend_available_at = err.data.resend_available_at;
+        renderEnrollMeta();
+      }
+      showError(err.message);
+    }
+  };
+
+  const resendEnrollmentBtn = $('#twofa-resend-btn');
+  if (resendEnrollmentBtn) {
+    resendEnrollmentBtn.onclick = async () => {
+      if (!enrollChallenge) return;
+      try {
+        const res = await API.resend2faEnrollment({
+          challenge_id: enrollChallenge.challenge_id,
+          challenge_token: enrollChallenge.challenge_token
+        });
+        enrollChallenge = { ...enrollChallenge, ...res };
+        renderEnrollMeta();
+        showSuccess('New enrollment code sent');
+      } catch (err) {
+        if (err?.data?.resend_available_at && enrollChallenge) {
+          enrollChallenge.resend_available_at = err.data.resend_available_at;
+          renderEnrollMeta();
+        }
+        showError(err.message);
+      }
+    };
+  }
+
+  $('#twofa-recovery-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const f = new FormData(e.target);
+      const res = await API.regenerateRecoveryCodes({ current_password: f.get('current_password') });
+      const panel = $('#recovery-codes-panel');
+      panel.style.display = '';
+      panel.innerHTML = `New recovery codes:<br><strong>${res.recovery_codes.map(esc).join(' ')}</strong>`;
+      showSuccess('Recovery codes regenerated');
+      renderSettings();
+    } catch (err) { showError(err.message); }
+  };
+
+  $('#twofa-disable-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const f = new FormData(e.target);
+      await API.disable2fa({
+        current_password: f.get('current_password'),
+        recovery_code: f.get('recovery_code')
+      });
+      showSuccess('SMS 2FA disabled');
+      renderSettings();
+    } catch (err) { showError(err.message); }
   };
 }
 

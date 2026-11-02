@@ -23,6 +23,11 @@ function ensureSecrets() {
     secrets.encryption_key = process.env.ENCRYPTION_KEY;
   }
 
+  if (!process.env.OTP_HASH_KEY || process.env.OTP_HASH_KEY === 'auto') {
+    process.env.OTP_HASH_KEY = secrets.otp_hash_key || crypto.randomBytes(32).toString('hex');
+    secrets.otp_hash_key = process.env.OTP_HASH_KEY;
+  }
+
   fs.writeFileSync(SECRETS_FILE, JSON.stringify(secrets, null, 2));
 }
 
