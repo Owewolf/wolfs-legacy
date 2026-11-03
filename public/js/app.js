@@ -1675,23 +1675,28 @@ async function renderAccessPortal() {
 function renderVaultReadonly(data, token) {
   const grouped = {};
   data.entries.forEach(e => { if (!grouped[e.section]) grouped[e.section] = []; grouped[e.section].push(e); });
+  const preferredOrder = ['personal', 'final_wishes', 'pet_care', 'contacts', 'digital', 'real_estate', 'bank_accounts', 'debts', 'vehicles'];
+  const sectionOrder = [...preferredOrder, ...Object.keys(SECTIONS).filter(key => !preferredOrder.includes(key))];
 
   let html = `<div class="access-portal vault-readonly">
     <h1>Vault of ${esc(data.owner.name)}</h1>
     <p class="subtitle">Viewing as: ${esc(data.beneficiary.name)} (${esc(data.beneficiary.relationship || 'Beneficiary')})</p>
     <div class="alert alert-info">Read-only access. Contact ${esc(data.owner.email || 'the vault owner')} for questions.</div>`;
 
-  for (const [sectionKey, entries] of Object.entries(grouped)) {
+  for (const sectionKey of sectionOrder) {
     const sec = SECTIONS[sectionKey];
-    if (!sec) continue;
-    html += `<div class="section-group"><h2 class="section-title">${sec.icon} ${esc(sec.name)}</h2>`;
+    const entries = grouped[sectionKey] || [];
+    if (!entries.length && sectionKey !== 'final_wishes') continue;
+    html += `<div class="section-group" data-beneficiary-section="${sectionKey}">`;
+    if (entries.length) html += `<h2 class="section-title">${sec.icon} ${esc(sec.name)}</h2>`;
     for (const e of entries) {
       html += RecordCards.entry(e, { section: sectionKey, readonly: true, attachments: Docs.beneficiaryCards(e.documents) });
     }
+    if (sectionKey === 'final_wishes') html += '<div id="beneficiary-legacy-root"></div>';
     html += '</div>';
   }
   if (!data.entries.length) html += '<div class="empty-state"><h3>Vault is empty</h3></div>';
-  html += '<div id="beneficiary-legacy-root" class="section-group"></div><div style="text-align:center;margin-top:32px"><a href="#access">&larr; Back</a></div></div>';
+  html += '<div style="text-align:center;margin-top:32px"><a href="#access">&larr; Back</a></div></div>';
   app.innerHTML = html;
   Docs.bindBeneficiary(data, token);
   void Legacy.mountRecipient($('#beneficiary-legacy-root'),token,data.entries);
