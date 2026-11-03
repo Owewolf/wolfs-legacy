@@ -19,6 +19,45 @@ checksums and Git revision in `apps/wolfs-vault/runtime-manifest.json`, then tou
 the Passenger application's `tmp/restart.txt` and verify health and API behavior.
 Preserve the live database, matching secrets, private `.env` and storage paths.
 
+## Owner-controlled registration: 3 November 2026, verified at 11:05 SAST
+
+Application revision `02d0c63d782720f5b53b2e7c20f5ee7cc4cf592d` was pushed to
+`main` and published through verified FTPS after explicit release authorization.
+All 69 runtime files matched their checksums, and the restarted Passenger
+backend passed its health check before frontend publication.
+
+The missing approval settings were added to the private local and production
+environments. The approving owner is existing account ID `2`, whose enrolled SMS
+number was verified against the requested destination. The application origin
+is `https://wolfspack.co.za`, and `AUTH_SMS_REQUIRED=true` remains enabled.
+Clickatell settings, OTP/JWT/encryption secrets and unrelated configuration were
+preserved. No private phone number or environment file was committed.
+
+Before migration, a host-side SQLite online backup included uncheckpointed WAL
+writes and passed integrity and foreign-key checks. The private rollback set
+also preserves the previous 67 runtime files, manifest, environment and matching
+`data/.secrets`. Starting a disposable copy of that production backup on port
+4444 preserved all 32 existing tables, both accounts and their credentials,
+SMS enrollment, vault records, documents and beneficiary data.
+
+The release passed 394 JavaScript and 17 Python tests with no failures or skips,
+including six Firefox workflow tests. Live verification rejected unapproved
+registration and tampered invitations with 403, rejected anonymous owner
+administration with 401, and confirmed private invitation metadata is POST-only
+and not cached. A registration request using the existing owner's contact
+details returned the neutral 202 response without creating an application or
+sending a notification. Both the hosted site and local frontend serve the
+verified application, and the local proxy also rejects unapproved registration.
+
+Post-deployment SQLite verification preserved both existing accounts as active
+with authentication version zero. Protected account, vault, document and
+beneficiary records matched the pre-release backup; only operational notification
+health changed while the existing background worker ran. Secrets remained
+unchanged, the owner configuration and real Clickatell transport validated, and
+no live SMS was sent during release verification. See
+[registration-approval.md](registration-approval.md) for the approval workflow
+and local acceptance report.
+
 ## Required SMS authentication: 2 November 2026, verified at 20:47 SAST
 
 Runtime `8f1a1034d7b55ab10ae884b95f87868875655466` requires a verified mobile
