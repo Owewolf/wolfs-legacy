@@ -13,14 +13,15 @@ function fixture(options = {}) {
     sms_2fa_phone_e164 TEXT,sms_2fa_enabled INTEGER DEFAULT 0,sms_2fa_enrolled_at TEXT);
     CREATE TABLE audit_log(id INTEGER PRIMARY KEY,user_id INTEGER,action TEXT,target_type TEXT,target_id INTEGER,detail TEXT,ip_address TEXT);
     CREATE TABLE vault_entries(user_id INTEGER,section TEXT,fields_encrypted TEXT);
-    CREATE TABLE beneficiaries(user_id INTEGER,name TEXT);
+    CREATE TABLE beneficiaries(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,name TEXT,email TEXT,phone TEXT);
     INSERT INTO users VALUES(1,'owner@example.test','Owner','preserved-hash','+27821230001',1,'2026-01-01');
     INSERT INTO vault_entries VALUES(1,'personal','{"mobile_phone":"+27821230001"}');
-    INSERT INTO beneficiaries VALUES(1,'Preserved beneficiary');`);
+    INSERT INTO beneficiaries(user_id,name) VALUES(1,'Preserved beneficiary');
+    INSERT INTO beneficiaries(user_id,name,email,phone) VALUES(1,'Alex Example','alex@example.test','+27821234567');`);
   initSmsOtpSchema(db);
   initRegistrationApprovalSchema(db);
   let clock = Date.parse('2026-11-03T10:00:00.000Z');
-  const env = { ACCOUNT_APPROVAL_OWNER_USER_ID: '1', ACCOUNT_APPROVAL_OWNER_SMS_E164: '+27821230001',
+  const env = { ACCOUNT_FAMILY_ROOT_USER_ID: '1', ACCOUNT_APPROVAL_OWNER_USER_ID: '1', ACCOUNT_APPROVAL_OWNER_SMS_E164: '+27821230001',
     OTP_HASH_KEY: 'k'.repeat(64), APP_BASE_URL: 'https://legacy.example.test', SMS_DEFAULT_COUNTRY_CODE: '27', ...options.env };
   const sent = [];
   const sender = { configured: true, async sendOtp(message) { sent.push(message); if (options.failSms) throw new Error('synthetic provider error'); }, ...options.sender };
@@ -79,10 +80,12 @@ test('persistent throttles cap unique visitor requests and survive creating a ne
   const f = fixture();
   try {
     for (let i = 0; i < 5; i++) {
+      f.db.prepare('INSERT INTO beneficiaries(user_id,name,email,phone) VALUES(1,?,?,?)').run('Eligible visitor '+i, `visitor${i}@example.test`, `+2782123400${i}`);
       const result = await f.service().requestAccess({ ...f.applicant, email: `visitor${i}@example.test`, phone: `+2782123400${i}` });
       assert.equal(result.ok, true);
     }
-    const stopped = await f.service().requestAccess({ ...f.applicant, email: 'sixth@example.test' });
+    f.db.prepare('INSERT INTO beneficiaries(user_id,name,email,phone) VALUES(1,?,?,?)').run('Eligible sixth visitor', 'sixth@example.test', '+27821234005');
+    const stopped = await f.service().requestAccess({ ...f.applicant, email: 'sixth@example.test', phone: '+27821234005' });
     assert.equal(stopped.reason, 'rate_limited');
     assert.equal(f.sent.length, 5);
   } finally { f.close(); }
@@ -206,9 +209,11 @@ test('saved-profile and account contact collisions suppress fraudulent requests;
     }
     assert.equal(f.sent.length, 0);
     const request = await f.service().requestAccess(f.applicant);
-    f.db.prepare('UPDATE registration_requests SET phone_e164=? WHERE id=?').run('+27821230001', request.request_id);
-    assert.equal(f.service().decide({ requestId: request.request_id, actor: f.actor, decision: 'reject', confirmed: true }).ok, true);
+    assert.throws(() => f.db.prepare('UPDATE registration_requests SET phone_e164=? WHERE id=?').run('+27821230001', request.request_id), /immutable/);
     const owner = f.db.prepare('SELECT * FROM users WHERE id=1').get();
+    // Even a separately forged database denial is not authority to disable an account.
+    f.db.prepare('INSERT INTO registration_denials(email,phone_e164,request_id,created_by_user_id,created_at) VALUES(?,?,?,?,?)')
+      .run(owner.email, owner.sms_2fa_phone_e164, request.request_id, 1, '2026-11-03T10:00:00.000Z');
     assert.equal(f.service().hasDenial(owner.email, owner.sms_2fa_phone_e164), true);
     assert.equal(f.service().accountAccess(owner).ok, true);
     assert.equal(owner.account_status, 'active');

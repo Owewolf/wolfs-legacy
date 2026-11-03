@@ -5,12 +5,17 @@ const { decrypt } = require('./crypto');
 const { normalizeAuthPhone, resolveSavedPhone } = require('./sms-auth-policy');
 const { validateEmail, validateString } = require('./validate');
 const { isVerifiedGatewayActor } = require('./local-auth-gateway');
+const { initFamilyRegistrationSchema, createFamilyRegistrationService } = require('./family-registration');
 
 const INVITATION_TTL_MS = 48 * 60 * 60 * 1000;
 const REQUEST_MESSAGE = 'Request submitted. Account creation requires owner approval.';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function initRegistrationApprovalSchema(db) {
+  return db.transaction(() => migrateRegistrationApprovalSchema(db)).immediate();
+}
+
+function migrateRegistrationApprovalSchema(db) {
   const columns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
   if (!columns.includes('account_status')) {
     db.exec("ALTER TABLE users ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active' CHECK(account_status IN ('active','registered_unverified','blocked'))");
@@ -38,8 +43,6 @@ function initRegistrationApprovalSchema(db) {
       invitation_used_at TEXT,
       registered_user_id INTEGER UNIQUE REFERENCES users(id)
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_open_email ON registration_requests(email) WHERE status IN ('pending','approved');
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_open_phone ON registration_requests(phone_e164) WHERE status IN ('pending','approved');
     CREATE INDEX IF NOT EXISTS idx_registration_requests_status ON registration_requests(status, created_at);
     CREATE TABLE IF NOT EXISTS registration_denials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,6 +67,36 @@ function initRegistrationApprovalSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_registration_throttle_contact ON registration_throttle_events(contact_hash, created_at);
     CREATE INDEX IF NOT EXISTS idx_registration_throttle_time ON registration_throttle_events(created_at);
   `);
+  const requestColumns = db.prepare('PRAGMA table_info(registration_requests)').all().map(column => column.name);
+  for (const [column, definition] of Object.entries({
+    family_sponsor_user_id: 'INTEGER REFERENCES users(id)',
+    family_beneficiary_id: 'INTEGER',
+    eligibility_invalidated_at: 'TEXT'
+  })) {
+    if (!requestColumns.includes(column)) db.exec(`ALTER TABLE registration_requests ADD COLUMN ${column} ${definition}`);
+  }
+  db.exec(`
+    UPDATE registration_requests SET eligibility_invalidated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE status IN ('pending','approved') AND eligibility_invalidated_at IS NULL
+      AND (family_sponsor_user_id IS NULL OR family_beneficiary_id IS NULL);
+    DROP INDEX IF EXISTS idx_registration_open_email;
+    DROP INDEX IF EXISTS idx_registration_open_phone;
+    CREATE UNIQUE INDEX idx_registration_open_email ON registration_requests(email)
+      WHERE status IN ('pending','approved') AND eligibility_invalidated_at IS NULL;
+    CREATE UNIQUE INDEX idx_registration_open_phone ON registration_requests(phone_e164)
+      WHERE status IN ('pending','approved') AND eligibility_invalidated_at IS NULL;
+    CREATE TRIGGER IF NOT EXISTS registration_family_binding_immutable
+      BEFORE UPDATE OF family_sponsor_user_id,family_beneficiary_id,email,phone_e164 ON registration_requests
+      WHEN NEW.family_sponsor_user_id IS NOT OLD.family_sponsor_user_id
+        OR NEW.family_beneficiary_id IS NOT OLD.family_beneficiary_id
+        OR NEW.email IS NOT OLD.email OR NEW.phone_e164 IS NOT OLD.phone_e164
+      BEGIN SELECT RAISE(ABORT,'Registration family identity is immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS registration_invalidation_permanent
+      BEFORE UPDATE OF eligibility_invalidated_at ON registration_requests
+      WHEN OLD.eligibility_invalidated_at IS NOT NULL AND NEW.eligibility_invalidated_at IS NOT OLD.eligibility_invalidated_at
+      BEGIN SELECT RAISE(ABORT,'Registration invalidation is permanent'); END;
+  `);
+  initFamilyRegistrationSchema(db);
 }
 
 function normalizeEmail(value) { return typeof value === 'string' ? value.trim().toLowerCase() : ''; }
@@ -76,6 +109,16 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
   const keyReady = typeof hashKey === 'string' && hashKey !== 'auto' && hashKey.length >= 32;
   const timestamp = () => new Date(now()).toISOString();
   const hash = (purpose, value) => crypto.createHmac('sha256', hashKey || 'unconfigured').update(`${purpose}:${value}`).digest('hex');
+  const family = createFamilyRegistrationService({ db, env, now });
+  function familyEligibility(request) {
+    if (request.eligibility_invalidated_at) return { ok: false, reason: 'family_eligibility_required' };
+    const result = family.validateBinding(request);
+    // Configuration outages must not permanently invalidate a family's requests.
+    if (!result.ok && result.reason !== 'family_unavailable' && ['pending', 'approved'].includes(request.status)) {
+      db.prepare('UPDATE registration_requests SET eligibility_invalidated_at=COALESCE(eligibility_invalidated_at,?) WHERE id=?').run(timestamp(), request.id);
+    }
+    return result;
+  }
   function audit(actor, action, requestId, detail = null, ip = null) {
     // No status secret, invitation, full contact, provider response or password belongs in audit logs.
     if (auditWriter) return auditWriter(actor, action, 'registration_request', null, JSON.stringify({ request_id: requestId, ...detail }), ip);
@@ -162,6 +205,8 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
     const claim = db.transaction(() => {
       const request = db.prepare('SELECT * FROM registration_requests WHERE id=?').get(requestId);
       if (!request || request.status !== 'pending') return { ok: false, reason: 'not_pending' };
+      const eligible = familyEligibility(request);
+      if (!eligible.ok) return eligible;
       if (request.notification_attempts >= 3 || request.notification_status === 'submitted' ||
           (request.notification_attempts && (!retry || now() - Date.parse(request.notification_attempted_at) < 5 * 60 * 1000))) return { ok: false, reason: 'notification_limited' };
       db.prepare("UPDATE registration_requests SET notification_status='sending',notification_attempts=notification_attempts+1,notification_attempted_at=? WHERE id=?").run(timestamp(), request.id);
@@ -190,12 +235,18 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
     const config = ownerConfiguration({ requireTransport: true });
     if (!config.ok) return config;
     const result = db.transaction(() => {
+      const sponsor = family.findSponsor({ email: cleanEmail, phone: cleanPhone });
+      if (!sponsor.ok) return sponsor.reason === 'family_unavailable' ? sponsor : genericRequestResult();
       if (!throttle(ipAddress, cleanEmail, cleanPhone)) return { ok: false, reason: 'rate_limited' };
+      for (const prior of db.prepare("SELECT * FROM registration_requests WHERE (email=? OR phone_e164=?) AND status IN ('pending','approved') AND eligibility_invalidated_at IS NULL").all(cleanEmail, cleanPhone)) {
+        const eligible = familyEligibility(prior);
+        if (!eligible.ok && eligible.reason === 'family_unavailable') return eligible;
+      }
       if (existingIdentity(cleanEmail, cleanPhone) || hasDenial(cleanEmail, cleanPhone) ||
-          db.prepare("SELECT 1 FROM registration_requests WHERE (email=? OR phone_e164=?) AND status IN ('pending','approved','registered')").get(cleanEmail, cleanPhone)) return genericRequestResult();
+          db.prepare("SELECT 1 FROM registration_requests WHERE (email=? OR phone_e164=?) AND (status='registered' OR (status IN ('pending','approved') AND eligibility_invalidated_at IS NULL))").get(cleanEmail, cleanPhone)) return genericRequestResult();
       const response = genericRequestResult(), at = timestamp();
-      db.prepare('INSERT INTO registration_requests(id,name,email,phone_e164,status_secret_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
-        .run(response.request_id, name.trim(), cleanEmail, cleanPhone, hash('status', `${response.request_id}:${response.status_secret}`), at, at);
+      db.prepare('INSERT INTO registration_requests(id,name,email,phone_e164,status_secret_hash,created_at,updated_at,family_sponsor_user_id,family_beneficiary_id) VALUES(?,?,?,?,?,?,?,?,?)')
+        .run(response.request_id, name.trim(), cleanEmail, cleanPhone, hash('status', `${response.request_id}:${response.status_secret}`), at, at, sponsor.sponsorUserId, sponsor.beneficiaryId);
       audit(null, 'registration_requested', response.request_id, null, ipAddress);
       return { ...response, notify: true };
     }).immediate();
@@ -222,6 +273,8 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
     if (!request || !safeEqual(request.invitation_token_hash, hash('invitation-token', token))) return { ok: false, reason: 'invitation_invalid' };
     if (request.invitation_used_at || request.status === 'registered') return { ok: false, reason: 'invitation_used' };
     if (request.status !== 'approved') return { ok: false, reason: 'approval_required' };
+    const eligible = familyEligibility(request);
+    if (!eligible.ok) return eligible;
     if (Date.parse(request.invitation_expires_at) <= now()) return { ok: false, reason: 'invitation_expired' };
     if ((email !== undefined && normalizeEmail(email) !== request.email) || (phone !== undefined && normalizeAuthPhone(phone, env) !== request.phone_e164)) return { ok: false, reason: 'invitation_identity_mismatch' };
     if (hasDenial(request.email, request.phone_e164) || existingIdentity(request.email, request.phone_e164, excludeUserId)) return { ok: false, reason: 'approval_required' };
@@ -238,6 +291,8 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
     const changed = db.prepare("UPDATE registration_requests SET status='registered',registered_user_id=?,invitation_used_at=?,updated_at=? WHERE id=? AND status='approved' AND invitation_used_at IS NULL AND invitation_expires_at>?")
       .run(userId, at, at, request.id, at);
     if (changed.changes !== 1) return { ok: false, reason: 'invitation_used' };
+    const member = family.enroll(request, userId);
+    if (!member.ok) throw new Error('Family membership could not be recorded');
     audit(userId, 'registration_completed', request.id, { user_id: userId });
     return { ok: true, request };
   }
@@ -247,8 +302,14 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
     // Decoys remain pending, and never reveal another applicant's state.
     if (!request || !safeEqual(request.status_secret_hash, hash('status', `${requestId}:${statusSecret}`))) return { ok: true, request_id: requestId, status: 'pending' };
     let status = request.status;
+    if (['pending', 'approved'].includes(status)) {
+      const eligible = familyEligibility(request);
+      if (!eligible.ok && eligible.reason === 'family_unavailable') return eligible;
+      if (!eligible.ok) status = 'unavailable';
+    }
     if (status === 'approved' && Date.parse(request.invitation_expires_at) <= now()) status = 'expired';
     if (status === 'approved' && hasDenial(request.email, request.phone_e164)) status = 'rejected';
+    if (status === 'approved' && !validateInvitation({ invitationToken: invitationToken(request) }).ok) status = 'unavailable';
     return { ok: true, request_id: requestId, status, ...(status === 'approved' && ownerConfiguration().ok ? invitationView(request) : {}) };
   }
   function decide({ requestId, actor, decision, reason = null, confirmed, ipAddress = null } = {}) {
@@ -257,6 +318,8 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
     return db.transaction(() => {
       const request = db.prepare('SELECT * FROM registration_requests WHERE id=?').get(requestId);
       if (!request || request.status !== 'pending') return { ok: false, reason: 'not_pending' };
+      const eligible = familyEligibility(request);
+      if (!eligible.ok) return eligible;
       const at = timestamp();
       if (decision === 'approve') {
         if (hasDenial(request.email, request.phone_e164) || existingIdentity(request.email, request.phone_e164)) return { ok: false, reason: 'identity_unavailable' };
@@ -280,6 +343,10 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
     const rows = status ? db.prepare('SELECT * FROM registration_requests WHERE status=? ORDER BY created_at DESC LIMIT 200').all(status) : db.prepare('SELECT * FROM registration_requests ORDER BY created_at DESC LIMIT 200').all();
     return rows.map(row => {
       const { status_secret_hash, invitation_token_hash, ...request } = row;
+      if (['pending', 'approved'].includes(row.status)) {
+        const eligible = familyEligibility(row);
+        if (!eligible.ok) request.status = eligible.reason === 'family_unavailable' ? 'temporarily_unavailable' : 'unavailable';
+      }
       const validInvite = row.status === 'approved' && validateInvitation({ invitationToken: invitationToken(row) }).ok;
       return { ...request, phone: request.phone_e164, ...(validInvite ? invitationView(row) : {}) };
     });

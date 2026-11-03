@@ -22,7 +22,9 @@ const fixtureOwner={id:1,name:'Synthetic owner',email:'owner@example.test',is_re
 const fixtureApplicant={id:2,name:'Synthetic applicant',email:'applicant@example.test',is_registration_owner:false};
 const fixtureRequests=[
  {id:'request-approve',name:'<img src=x onerror="window.fixtureInjected=true">',email:'applicant@example.test',phone:'+27821234567',status:'pending',notification_status:'failed',notification_attempts:1,created_at:'2026-11-03T12:00:00Z'},
- {id:'request-reject',name:'Another applicant',email:'another@example.test',phone:'+27821234568',status:'pending',created_at:'2026-11-03T12:01:00Z'}
+ {id:'request-reject',name:'Another applicant',email:'another@example.test',phone:'+27821234568',status:'pending',created_at:'2026-11-03T12:01:00Z'},
+ {id:'request-unavailable',name:'Changed family details',email:'changed@example.test',phone:'+27821234569',status:'unavailable',notification_status:'failed',notification_attempts:1,created_at:'2026-11-03T12:02:00Z'},
+ {id:'request-temporary',name:'Temporary family outage',email:'temporary@example.test',phone:'+27821234570',status:'temporarily_unavailable',notification_status:'failed',notification_attempts:1,created_at:'2026-11-03T12:03:00Z'}
 ];
 const fixtureNativeFetch=window.fetch.bind(window);
 window.fetch=async(input,options={})=>{
@@ -79,6 +81,7 @@ const checks = String.raw`
  await until(()=>document.getElementById('reg-form'),'public request');
  const form=document.getElementById('reg-form');
  check(!form.querySelector('[type="password"]')&&form.textContent.includes('Request Access'),'public access request collects no password');
+ check(document.querySelector('.auth-box .subtitle').textContent.includes('family beneficiaries')&&document.querySelector('.auth-box .subtitle').textContent.includes('email and cell phone must match'),'public request explains family eligibility and both matching saved contacts');
  const phone=form.querySelector('[name="phone"]');
  check(phone.type==='tel'&&phone.required&&phone.autocomplete==='tel'&&document.getElementById('register-phone-hint').textContent.includes('+27'),'request phone field has accessible country-code guidance');
  fits('Access request');
@@ -101,6 +104,9 @@ const checks = String.raw`
  fixtureStatus='expired';await route('register/status/private-request/synthetic-private-status-secret-expired','#registration-status');
  await until(()=>document.getElementById('registration-status').textContent.includes('expired'),'expired approval');
  check(document.getElementById('registration-status-refresh').hidden&&!document.getElementById('registration-complete-link'),'expired approval explains the invitation expiry without reopening registration');
+ fixtureStatus='unavailable';await route('register/status/private-request/synthetic-private-status-secret-unavailable','#registration-status');
+ await until(()=>document.getElementById('registration-status').textContent.includes('no longer eligible'),'changed family eligibility');
+ check(document.getElementById('registration-status-refresh').hidden&&!document.getElementById('registration-complete-link')&&document.getElementById('registration-new-request-link').getAttribute('href')==='#register'&&document.getElementById('registration-status').textContent.includes('saved email and cell phone'),'invalidated request explains correcting family details and offers only a fresh application');
  fixtureStatus='approved';await route('register/status/private-request/synthetic-private-status-secret-approved','#registration-complete-link');
  check(document.getElementById('registration-complete-link').href.startsWith(location.origin+'/#register/invite/'),'approved status offers an invitation on this application');
  fits('Approved request');
@@ -134,6 +140,12 @@ const checks = String.raw`
  const filter=document.getElementById('registration-filter');filter.value='approved';filter.dispatchEvent(new Event('change'));
  await until(()=>document.querySelector('[data-request-id="request-approve"] input[readonly]'),'approved list invitation');
  check(document.querySelector('[data-request-id="request-approve"] input[readonly]').value.includes('#register/invite/'),'owner can recover an eligible invitation when reopening approved requests');
+ await route('admin/registration-requests/request-unavailable','[data-request-id="request-unavailable"]');
+ const unavailableCard=document.querySelector('[data-request-id="request-unavailable"]');
+ check(unavailableCard.querySelector('[data-request-status] .badge')?.textContent==='Unavailable'&&!unavailableCard.querySelector('[data-decision],input[readonly]')&&unavailableCard.textContent.includes('submit a new request'),'owner sees the unavailable family request without approve or SMS retry controls');
+ await route('admin/registration-requests/request-temporary','[data-request-id="request-temporary"]');
+ const temporaryCard=document.querySelector('[data-request-id="request-temporary"]');
+ check(temporaryCard.querySelector('[data-request-status] .badge')?.textContent==='Temporarily Unavailable'&&!temporaryCard.querySelector('[data-decision],input[readonly]')&&temporaryCard.textContent.includes('Restore the family configuration')&&!temporaryCard.textContent.includes('new request'),'temporary family outage asks owner to restore configuration and refresh without new applications or decision controls');
  await route('admin/registration-requests/request-reject','[data-request-id="request-reject"]');
  document.querySelector('[data-decision="reject"]').click();
  let rejectionForm=document.querySelector('.registration-confirm-form');

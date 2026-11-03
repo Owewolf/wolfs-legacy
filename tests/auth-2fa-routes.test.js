@@ -39,6 +39,7 @@ function createDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_check_in DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE beneficiaries(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,name TEXT,email TEXT,phone TEXT);
     CREATE TABLE dead_switch_config (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL UNIQUE,
@@ -140,7 +141,8 @@ function lastOtp(provider) { return provider.sent.at(-1).message.match(/\b(\d{6}
 
 function approvalFixture(db, provider) {
   const ownerId = seedUser(db, { email: 'approving-owner@example.test', phone: '+27820000001', enabled: 1 });
-  const env = { AUTH_SMS_REQUIRED: 'true', ACCOUNT_APPROVAL_OWNER_USER_ID: String(ownerId), ACCOUNT_APPROVAL_OWNER_SMS_E164: '+27820000001',
+  db.prepare('INSERT INTO beneficiaries(user_id,name,email,phone) VALUES(?,?,?,?)').run(ownerId, 'Synthetic applicant', 'required@example.test', '+27821234567');
+  const env = { AUTH_SMS_REQUIRED: 'true', ACCOUNT_FAMILY_ROOT_USER_ID: String(ownerId), ACCOUNT_APPROVAL_OWNER_USER_ID: String(ownerId), ACCOUNT_APPROVAL_OWNER_SMS_E164: '+27820000001',
     APP_BASE_URL: 'https://example.test', OTP_HASH_KEY: 'z'.repeat(32) };
   const approvals = createRegistrationApprovalService({ db, env, smsSender: provider, auditWriter() {} });
   return { env, approvals, actor: { id: ownerId, mfa: 'sms_otp', auth_version: 0 } };

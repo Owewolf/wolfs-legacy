@@ -152,6 +152,9 @@ function initTables() {
   }
   initSmsOtpSchema(db);
   initRegistrationApprovalSchema(db);
+  // Persist the explicitly configured founding account once. Missing or changed
+  // configuration closes new registrations without affecting existing logins.
+  require('./family-registration').createFamilyRegistrationService({ db }).configuration();
   initLocalAuthGatewaySchema(db);
   // Secrets are loaded before getDb() at startup. Record the existing HomeBank
   // provenance before dropping copied ledger fields and notes. The source link,

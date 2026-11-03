@@ -9,7 +9,7 @@ function createRegistrationApprovalRouter({ dbGetter, auditWriter, env = process
   const service = () => createRegistrationApprovalService({ db: dbGetter(), auditWriter, env, now, smsSender: smsProvider, decryptFields });
   function failure(res, result) {
     const statuses = { invalid_request: 400, confirmation_required: 400, owner_required: 403, owner_protected: 403, not_found: 404,
-      rate_limited: 429, approval_unavailable: 503, notification_failed: 503, invitation_expired: 410, invitation_used: 409,
+      rate_limited: 429, approval_unavailable: 503, family_unavailable: 503, family_eligibility_required: 403, notification_failed: 503, invitation_expired: 410, invitation_used: 409,
       not_pending: 409, notification_limited: 429, identity_unavailable: 409, already_blocked: 409 };
     const messages = {
       invalid_request: 'Enter a full name, valid email address and mobile number.',
@@ -18,6 +18,8 @@ function createRegistrationApprovalRouter({ dbGetter, auditWriter, env = process
       owner_protected: 'The approving owner account is protected.',
       rate_limited: 'Too many access requests. Please try again later.',
       approval_unavailable: 'Registration approval is temporarily unavailable. Please try again later.',
+      family_unavailable: 'Family registration is temporarily unavailable. Please contact the owner.',
+      family_eligibility_required: 'This request is no longer eligible. Ask your family member to check your beneficiary details before requesting access again.',
       invitation_expired: 'This invitation has expired. Contact the owner.',
       invitation_used: 'This invitation has already been used.',
       not_pending: 'This request is no longer awaiting a decision.',

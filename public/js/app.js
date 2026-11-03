@@ -436,7 +436,7 @@ function renderRegister() {
   app.innerHTML = `
     <div class="auth-container"><div class="auth-box">
       <h1>Request Access</h1>
-      <p class="subtitle">Account creation requires owner approval. If approved, you will set a password and verify your own cell phone by SMS.</p>
+      <p class="subtitle">Registration is for family beneficiaries. Your email and cell phone must match the details saved by a family member. Owner approval is required before you set a password and verify your phone by SMS.</p>
       <form id="reg-form">
         <div class="form-group"><label for="register-name">Full Name</label><input id="register-name" type="text" name="name" autocomplete="name" required></div>
         <div class="form-group"><label for="register-email">Email</label><input id="register-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
@@ -508,6 +508,13 @@ function renderRegistrationStatus(id, secret) {
       } else if (res.status === 'registered' || res.status === 'registered_unverified' || res.status === 'active') {
         status.textContent = 'Registration has started. Sign in with your password to complete any required SMS verification.';
         button.hidden = true;
+      } else if (res.status === 'unavailable') {
+        status.textContent = 'This request is no longer eligible for family registration. Ask a family member to correct your saved email and cell phone, then submit a new request.';
+        button.hidden = true;
+        const link = document.createElement('a');
+        link.id = 'registration-new-request-link'; link.className = 'btn btn-outline btn-block';
+        link.href = '#register'; link.textContent = 'Submit a New Request';
+        action.appendChild(link);
       } else if (res.status === 'expired') {
         status.textContent = 'The approved registration invitation has expired. Contact the owner about your request.';
         button.hidden = true;
@@ -610,7 +617,9 @@ async function renderRegistrationRequests(selectedId) {
         card.className = 'card registration-request';
         card.dataset.requestId = row.id;
         card.innerHTML = `<h2>${esc(row.name)}</h2>
-          <dl class="registration-identity"><dt>Reference</dt><dd>${esc(row.id)}</dd><dt>Email</dt><dd>${esc(row.email)}</dd><dt>Cell phone</dt><dd>${esc(row.phone)}</dd><dt>Status</dt><dd data-request-status>${esc(row.status)}</dd><dt>Requested</dt><dd>${esc(fmtDate(row.created_at))}</dd>${row.decided_at ? `<dt>Decision date</dt><dd>${esc(fmtDate(row.decided_at))}</dd>` : ''}${row.decision_reason || row.reason ? `<dt>Private reason</dt><dd>${esc(row.decision_reason || row.reason)}</dd>` : ''}${row.notification_status === 'failed' ? '<dt>Owner notification</dt><dd data-notification-status>SMS delivery failed. This request remains subject to your decision.</dd>' : ''}</dl>
+          <dl class="registration-identity"><dt>Reference</dt><dd>${esc(row.id)}</dd><dt>Email</dt><dd>${esc(row.email)}</dd><dt>Cell phone</dt><dd>${esc(row.phone)}</dd><dt>Status</dt><dd data-request-status>${['unavailable', 'temporarily_unavailable'].includes(row.status) ? `<span class="badge badge-warning">${row.status === 'temporarily_unavailable' ? 'Temporarily Unavailable' : 'Unavailable'}</span>` : esc(row.status)}</dd><dt>Requested</dt><dd>${esc(fmtDate(row.created_at))}</dd>${row.decided_at ? `<dt>Decision date</dt><dd>${esc(fmtDate(row.decided_at))}</dd>` : ''}${row.decision_reason || row.reason ? `<dt>Private reason</dt><dd>${esc(row.decision_reason || row.reason)}</dd>` : ''}${row.status === 'pending' && row.notification_status === 'failed' ? '<dt>Owner notification</dt><dd data-notification-status>SMS delivery failed. This request remains subject to your decision.</dd>' : ''}</dl>
+          ${row.status === 'unavailable' ? '<p class="legacy-help">Family eligibility has changed. Correct the saved beneficiary details and ask the applicant to submit a new request.</p>' : ''}
+          ${row.status === 'temporarily_unavailable' ? '<p class="legacy-help">Family registration is temporarily unavailable. Restore the family configuration, then refresh this list.</p>' : ''}
           ${row.status === 'pending' ? `<div class="registration-actions"><button type="button" class="btn btn-primary" data-decision="approve">Approve</button><button type="button" class="btn btn-outline" data-decision="reject">Reject</button>${row.notification_status === 'failed' && Number(row.notification_attempts || 0) < 3 ? '<button type="button" class="btn btn-outline" data-decision="notification/retry">Retry Owner Notification</button>' : ''}</div>` : ''}
           <div class="registration-decision"></div>`;
         if (row.status === 'approved' && row.invitation_url) appendRegistrationInvitation(card.querySelector('.registration-decision'), row.invitation_url);
@@ -1174,6 +1183,7 @@ function showEditBeneficiaryModal(beneficiary) {
       <div class="form-group"><label>Name *</label><input type="text" name="name" value="${esc(beneficiary.name || '')}" required></div>
       <div class="form-group"><label>Email</label><input type="email" name="email" value="${esc(beneficiary.email || '')}"></div>
       <div class="form-group"><label>Phone</label><input type="text" name="phone" value="${esc(beneficiary.phone || '')}"></div>
+      <p class="legacy-help">For family registration, save both this beneficiary’s email and cell phone. Their signup details must match both saved values.</p>
       <div class="form-group"><label>Relationship</label>
         <select name="relationship"><option value="">-- Select --</option>
           <option ${beneficiary.relationship === 'Spouse' ? 'selected' : ''}>Spouse</option>
@@ -1224,6 +1234,7 @@ function showAddBeneficiaryModal() {
       <div class="form-group"><label>Name *</label><input type="text" name="name" required></div>
       <div class="form-group"><label>Email</label><input type="email" name="email"></div>
       <div class="form-group"><label>Phone</label><input type="text" name="phone"></div>
+      <p class="legacy-help">For family registration, save both this beneficiary’s email and cell phone. Their signup details must match both saved values.</p>
       <div class="form-group"><label>Relationship</label>
         <select name="relationship"><option value="">-- Select --</option>
           <option>Spouse</option><option>Child</option><option>Parent</option><option>Sibling</option>

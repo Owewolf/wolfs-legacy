@@ -39,6 +39,7 @@ function database(snapshot) {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_check_in DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE beneficiaries(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,name TEXT,email TEXT,phone TEXT);
       CREATE TABLE dead_switch_config (id INTEGER PRIMARY KEY, user_id INTEGER UNIQUE NOT NULL);
       CREATE TABLE audit_log (
         id INTEGER PRIMARY KEY, user_id INTEGER, action TEXT NOT NULL,
@@ -63,12 +64,15 @@ function smsProvider() {
 
 async function fixture({ db = database(), provider = smsProvider(), env = {}, ownerId, clock = { value: Date.now() } } = {}) {
   ownerId ??= seed(db);
+  if (!db.prepare('SELECT id FROM beneficiaries WHERE user_id=? AND email=? AND phone=?').get(ownerId, APPLICANT.email, APPLICANT.phone)) {
+    db.prepare('INSERT INTO beneficiaries(user_id,name,email,phone) VALUES(?,?,?,?)').run(ownerId, APPLICANT.name, APPLICANT.email, APPLICANT.phone);
+  }
   const authEnv = {
     JWT_SECRET: 'synthetic-jwt-secret-at-least-thirty-two-characters',
     OTP_HASH_KEY: 'synthetic-otp-secret-at-least-thirty-two-characters',
     ENCRYPTION_KEY: 'a'.repeat(64),
     AUTH_SMS_REQUIRED: 'true', ACCOUNT_APPROVAL_REQUIRED: 'true',
-    ACCOUNT_APPROVAL_OWNER_USER_ID: String(ownerId),
+    ACCOUNT_FAMILY_ROOT_USER_ID: String(ownerId), ACCOUNT_APPROVAL_OWNER_USER_ID: String(ownerId),
     ACCOUNT_APPROVAL_OWNER_SMS_E164: OWNER_PHONE,
     APP_BASE_URL: 'https://approval.example.test', ...env
   };
