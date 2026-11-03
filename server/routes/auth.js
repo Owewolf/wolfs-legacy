@@ -11,6 +11,7 @@ const { smsAuthRequired, normalizeAuthPhone, resolveSavedPhone } = require('../s
 const { validateString, validationError } = require('../validate');
 const { createRegistrationApprovalService } = require('../registration-approval');
 const { createRegistrationApprovalRouter } = require('./registration-approval');
+const { gatewayAudience, verifyGatewayRequest } = require('../local-auth-gateway');
 
 function createAuthRouter({ dbGetter = getDb, auditWriter = audit, env = process.env, now = Date.now, smsProvider = createSmsProvider(env), decryptFields } = {}) {
   const router = express.Router();
@@ -58,13 +59,16 @@ function createAuthRouter({ dbGetter = getDb, auditWriter = audit, env = process
     return true;
   }
 
-  function publicUser(db, user, mfa = null) {
-    return { id: user.id, email: user.email, name: user.name, is_registration_owner: approval(db).isOwner({ ...user, mfa }) };
+  function publicUser(db, user, mfa = null, gateway = null) {
+    const actor = { ...user, mfa, ...(gateway ? { local_gateway_id: gateway.gatewayId,
+      aud: gatewayAudience(gateway.gatewayId), local_gateway_verified: true } : {}) };
+    return { id: user.id, email: user.email, name: user.name, is_registration_owner: approval(db).isOwner(actor) };
   }
 
-  function createToken(user, secondFactorMethod = null) {
+  function createToken(user, secondFactorMethod = null, gateway = null) {
     const payload = { id: user.id, email: user.email, name: user.name, auth_version: user.auth_version ?? 0 };
     if (secondFactorMethod) payload.mfa = secondFactorMethod;
+    if (gateway) { payload.local_gateway_id = gateway.gatewayId; payload.aud = gatewayAudience(gateway.gatewayId); }
     return jwt.sign(payload, env.JWT_SECRET, { expiresIn: '24h' });
   }
 
@@ -152,10 +156,11 @@ function createAuthRouter({ dbGetter = getDb, auditWriter = audit, env = process
 
   router.post('/login', async (req, res) => {
     try {
+      const db = dbGetter();
+      const gateway = verifyGatewayRequest(req, { db, env, now });
       const { email, password } = req.body;
       if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) return validationError(res, 'Email and password required');
 
-      const db = dbGetter();
       const smsOtp = service(db);
       const cleanEmail = email.toLowerCase().trim();
       const user = db.prepare('SELECT * FROM users WHERE email = ?').get(cleanEmail);
@@ -166,6 +171,13 @@ function createAuthRouter({ dbGetter = getDb, auditWriter = audit, env = process
       const currentUser = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
       if (!currentUser || currentUser.password_hash !== user.password_hash) return res.status(401).json({ error: 'Sign in again' });
       if (rejectAccount(res, accountAccess(db, currentUser))) return;
+
+      if (gateway) {
+        if (currentUser.account_status !== 'active') return res.status(403).json({ error: 'Complete account activation before signing in', code: 'APPROVAL_REQUIRED' });
+        auditWriter(user.id, 'login_local_gateway', 'user', user.id, null, req.ip);
+        return res.json({ sms_required: false, token: createToken(currentUser, 'local_gateway', gateway),
+          user: publicUser(db, currentUser, 'local_gateway', gateway) });
+      }
 
       if (!smsAuthRequired(env) && !user.sms_2fa_enabled && user.account_status !== 'registered_unverified') {
         auditWriter(user.id, 'login', 'user', user.id, null, req.ip);
@@ -197,7 +209,8 @@ function createAuthRouter({ dbGetter = getDb, auditWriter = audit, env = process
 
       auditWriter(user.id, 'login_challenge_issued', 'user', user.id, null, req.ip);
       return res.json(challengeResponse(issued, user));
-    } catch {
+    } catch (error) {
+      if (error.code === 'LOCAL_GATEWAY_INVALID' || error.code === 'LOCAL_GATEWAY_UNAVAILABLE') return res.status(error.status).json({ error: error.message, code: error.code });
       return res.status(500).json({ error: 'Login failed' });
     }
   });

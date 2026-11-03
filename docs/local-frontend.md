@@ -28,6 +28,31 @@ node --test tests/dev-frontend.test.js
 
 The certificate-rejection check uses OpenSSL to generate a temporary self-signed fixture certificate when OpenSSL is available. No production API or database is contacted.
 
+## Trusted local sign-in
+
+The frontend can use a separately authorized local gateway to keep the live production backend while allowing existing users to sign in from this computer with their password, without an SMS challenge. The public production website retains its normal SMS requirement. Existing password checks and registration approval still apply.
+
+The optional gateway configuration lives at `~/.config/wolfs-legacy/local-auth.json`, outside the checkout and public files. Its parent directory must belong to the frontend process user and have mode `0700`; the regular, non-symlink file must belong to that user and have mode `0600`. Configure the matching gateway privately on the production backend before enabling this file:
+
+```json
+{
+  "enabled": true,
+  "api_origin": "https://wolfspack.co.za",
+  "gateway_id": "<32 random hexadecimal characters>",
+  "secret": "<64 random hexadecimal characters>"
+}
+```
+
+The example values are placeholders. Both sides must use the same privately generated gateway ID and secret. The backend explicitly enables this gateway with `AUTH_LOCAL_GATEWAY_ENABLED=true`, the matching `AUTH_LOCAL_GATEWAY_ID` and a random 64-hex-character `AUTH_LOCAL_GATEWAY_SECRET`; keep `AUTH_SMS_REQUIRED=true`. The secret stays in private server configuration, the local file and process memory. Request proofs go only to the exact configured, certificate-verified HTTPS API origin. An absent file keeps the normal proxy behavior; `{"enabled":false}` disables local gateway signing. A malformed, insecurely permissioned or mismatched configuration prevents startup with a generic configuration error. Restart the frontend after changing this file.
+
+Gateway signing requires a direct socket connection from loopback or an address assigned to this computer. The additional request authority must be `localhost`, a loopback/own-interface address, this machine’s hostname, or its `.local` name (for example, `asus.local`). Browser Origin and Referer must match the local frontend when present, and cross-site requests are rejected. Other computers on the LAN use the normal SMS flow. Forwarded headers never establish local eligibility; inbound gateway proof headers are stripped from every request.
+
+Uploads and downloads continue to stream without buffering, and local and public frontends continue to read and change the same production data. The gateway configuration does not require `.env` to be loaded by the frontend-only process.
+
+Local sessions are labelled `local_gateway`, not SMS-verified, and each protected request requires a fresh machine proof. Copying their bearer token directly to the public site does not authorize it. Account blocking, password checks, session revocation, owner identity checks and new-account mobile activation remain enforced. Owner management uses the authenticated account and a server-verified local gateway when accessed from this computer. SMS enrollment and saved mobile numbers are retained.
+
+The server stores short-lived consumed nonces in `local_auth_gateway_nonces`, preventing replay across web processes. Disabling the backend gateway or rotating its ID/secret blocks its local sessions; normal public SMS sessions remain valid. Retain pre-change snapshots locally only and remove any temporary hosting snapshot after verified download.
+
 ## Keep the production HomeBank source current
 
 The standalone Python forwarder sends a validated copy of the local HomeBank file over certificate-verified FTPS. It does not start the app or read its database. Keep its configuration in a private `0600` file, for example `.env.homebank-sync` (ignored by Git):

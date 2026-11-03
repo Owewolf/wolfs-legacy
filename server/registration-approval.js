@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { decrypt } = require('./crypto');
 const { normalizeAuthPhone, resolveSavedPhone } = require('./sms-auth-policy');
 const { validateEmail, validateString } = require('./validate');
+const { isVerifiedGatewayActor } = require('./local-auth-gateway');
 
 const INVITATION_TTL_MS = 48 * 60 * 60 * 1000;
 const REQUEST_MESSAGE = 'Request submitted. Account creation requires owner approval.';
@@ -100,7 +101,7 @@ function createRegistrationApprovalService({ db, env = process.env, now = Date.n
   }
   function isOwner(user) {
     const config = ownerConfiguration();
-    return !!(config.ok && user && Number(user.id) === config.owner.id && user.mfa === 'sms_otp' &&
+    return !!(config.ok && user && Number(user.id) === config.owner.id && (user.mfa === 'sms_otp' || isVerifiedGatewayActor(user, env)) &&
       Number(user.auth_version || 0) === Number(config.owner.auth_version || 0));
   }
   function hasDenial(email, phone) {
