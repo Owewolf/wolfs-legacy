@@ -1,0 +1,160 @@
+{
+  "synthetic_data_only": true,
+  "engines": [
+    {
+      "name": "chromium",
+      "version": "138.0.7204.15"
+    },
+    {
+      "name": "system-webkit",
+      "version": "2.52.4"
+    }
+  ],
+  "workflows": [
+    {
+      "engine": "chromium",
+      "width": 390,
+      "checks": [
+        "Pet Care config exposes all 14 planned fields",
+        "dashboard shows an empty Pet Care card",
+        "sidebar lists Pet Care",
+        "Dashboard fits the viewport",
+        "mobile navigation exposes a touch-sized Pet Care item",
+        "Pet Care has a dedicated section and empty state",
+        "Empty Pet Care section fits the viewport",
+        "new entry form has every care, vet and carer field",
+        "pet date and phone fields retain native mobile input types",
+        "Pet Care keeps the existing managed document picker",
+        "mobile Pet Care inputs use at least 16px text",
+        "Pet Care entry form fits the viewport",
+        "create submits all Pet Care fields through the existing entry API",
+        "saved pet text is rendered as escaped content",
+        "saved Pet Care card displays every field",
+        "Saved Pet Care card fits the viewport",
+        "edit form restores every stored Pet Care field",
+        "editing saves the updated care plan through the existing entry API",
+        "updated care plan is visible after saving",
+        "dashboard summary updates the Pet Care count after save",
+        "beneficiary portal identifies the Pet Care section",
+        "beneficiary read-only view shows every Pet Care label and current care plan",
+        "beneficiary Pet Care view has no owner editing controls",
+        "Beneficiary Pet Care view fits the viewport"
+      ]
+    },
+    {
+      "engine": "chromium",
+      "width": 820,
+      "checks": [
+        "Pet Care config exposes all 14 planned fields",
+        "dashboard shows an empty Pet Care card",
+        "sidebar lists Pet Care",
+        "Dashboard fits the viewport",
+        "mobile navigation exposes a touch-sized Pet Care item",
+        "Pet Care has a dedicated section and empty state",
+        "Empty Pet Care section fits the viewport",
+        "new entry form has every care, vet and carer field",
+        "pet date and phone fields retain native mobile input types",
+        "Pet Care keeps the existing managed document picker",
+        "mobile Pet Care inputs use at least 16px text",
+        "Pet Care entry form fits the viewport",
+        "create submits all Pet Care fields through the existing entry API",
+        "saved pet text is rendered as escaped content",
+        "saved Pet Care card displays every field",
+        "Saved Pet Care card fits the viewport",
+        "edit form restores every stored Pet Care field",
+        "editing saves the updated care plan through the existing entry API",
+        "updated care plan is visible after saving",
+        "dashboard summary updates the Pet Care count after save",
+        "beneficiary portal identifies the Pet Care section",
+        "beneficiary read-only view shows every Pet Care label and current care plan",
+        "beneficiary Pet Care view has no owner editing controls",
+        "Beneficiary Pet Care view fits the viewport"
+      ]
+    },
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "checks": [
+        "Pet Care config exposes all 14 planned fields",
+        "dashboard shows an empty Pet Care card",
+        "sidebar lists Pet Care",
+        "Dashboard fits the viewport",
+        "Pet Care has a dedicated section and empty state",
+        "Empty Pet Care section fits the viewport",
+        "new entry form has every care, vet and carer field",
+        "pet date and phone fields retain native mobile input types",
+        "Pet Care keeps the existing managed document picker",
+        "Pet Care entry form fits the viewport",
+        "create submits all Pet Care fields through the existing entry API",
+        "saved pet text is rendered as escaped content",
+        "saved Pet Care card displays every field",
+        "Saved Pet Care card fits the viewport",
+        "edit form restores every stored Pet Care field",
+        "editing saves the updated care plan through the existing entry API",
+        "updated care plan is visible after saving",
+        "dashboard summary updates the Pet Care count after save",
+        "beneficiary portal identifies the Pet Care section",
+        "beneficiary read-only view shows every Pet Care label and current care plan",
+        "beneficiary Pet Care view has no owner editing controls",
+        "Beneficiary Pet Care view fits the viewport"
+      ]
+    },
+    {
+      "engine": "system-webkit",
+      "screen": "workflows",
+      "width": 390,
+      "checks": [
+        "Pet Care config exposes all 14 planned fields",
+        "dashboard shows an empty Pet Care card",
+        "sidebar lists Pet Care",
+        "Dashboard fits the viewport",
+        "mobile navigation exposes a touch-sized Pet Care item",
+        "Pet Care has a dedicated section and empty state",
+        "Empty Pet Care section fits the viewport",
+        "new entry form has every care, vet and carer field",
+        "pet date and phone fields retain native mobile input types",
+        "Pet Care keeps the existing managed document picker",
+        "mobile Pet Care inputs use at least 16px text",
+        "Pet Care entry form fits the viewport",
+        "create submits all Pet Care fields through the existing entry API",
+        "saved pet text is rendered as escaped content",
+        "saved Pet Care card displays every field",
+        "Saved Pet Care card fits the viewport",
+        "edit form restores every stored Pet Care field",
+        "editing saves the updated care plan through the existing entry API",
+        "updated care plan is visible after saving",
+        "dashboard summary updates the Pet Care count after save",
+        "beneficiary portal identifies the Pet Care section",
+        "beneficiary read-only view shows every Pet Care label and current care plan",
+        "beneficiary Pet Care view has no owner editing controls",
+        "Beneficiary Pet Care view fits the viewport"
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "engine": "chromium",
+      "width": 390,
+      "view": "beneficiary",
+      "file": "pet-care-beneficiary-390.png"
+    },
+    {
+      "engine": "chromium",
+      "width": 390,
+      "view": "owner",
+      "file": "pet-care-owner-390.png"
+    },
+    {
+      "engine": "chromium",
+      "width": 820,
+      "view": "form",
+      "file": "pet-care-form-820.png"
+    },
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "view": "owner",
+      "file": "pet-care-owner-1440.png"
+    }
+  ]
+}
