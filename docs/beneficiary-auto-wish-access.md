@@ -1,6 +1,6 @@
 # Automatic beneficiary Final Wishes: local implementation and rollout
 
-Date: 3 November 2026. Implemented in the existing `main` checkout. This report describes local implementation and acceptance; it does not record a production deployment.
+Date: 3 November 2026. Implemented in the existing `main` checkout. The owner subsequently authorized deployment; see the [verified production rollout and local-only backup record](beneficiary-auto-wish-deployment.md). This document records implementation and local acceptance.
 
 ## Result and permission boundary
 
@@ -60,7 +60,7 @@ Run this maintenance against a locally retained snapshot. The apply path makes a
 
 For historical reconciliation, inspect owner-scoped audit entries with `action='legacy_auto_wish_reconciliation'`. Each `detail` contains the replacement content ID and preserved candidate IDs/reasons. Review the historical material through the authenticated owner interface; do not automatically merge, retarget or release it. Also review suppression counts before rollout.
 
-A dry run against the existing cached pre-approval deployment snapshot found **3 beneficiaries and 3 unambiguous historical wishes**: all 3 adopt their existing IDs, with **0 creations, 0 suppressions and 0 reconciliation cases**. The matching key was verified against ciphertext and the original snapshot bytes remained unchanged. This is historical snapshot evidence, not a current production audit. The current production database was neither inspected nor repaired; repeat this preflight on a fresh deployment snapshot before rollout.
+A dry run against the existing cached pre-approval deployment snapshot found **3 beneficiaries and 3 unambiguous historical wishes**: all 3 adopt their existing IDs, with **0 creations, 0 suppressions and 0 reconciliation cases**. The matching key was verified against ciphertext and the original snapshot bytes remained unchanged. The subsequent authorized rollout repeated this preflight on a fresh stopped production snapshot and verified the live migration; see the [deployment record](beneficiary-auto-wish-deployment.md). Future rollouts must repeat preflight against a fresh snapshot.
 
 ## Verification and evidence
 
@@ -77,7 +77,7 @@ Repeat it with `node scripts/beneficiary-auto-wish-local-acceptance.js`; Firefox
 
 ## Deployment recommendation and recovery
 
-**Recommendation: deployment-ready with a fresh snapshot preflight.** The owner has now authorized committing and deploying this implementation; deployment is pending completion of the verified commit and rollout. The local acceptance results above do not claim a production deployment, FTP upload, production migration or live token/content test. Preserve the existing SMS OTP, Clickatell and notification configuration during rollout.
+**Status: deployed and verified following owner authorization.** The [production record](beneficiary-auto-wish-deployment.md) contains fresh-snapshot preflight, live validation and hosting cleanup evidence. Preserve the existing SMS OTP, Clickatell and notification configuration during future rollouts.
 
 Backup retention is **local only**. Keep verified recovery databases, configuration/key copies, media snapshots and source archives in a protected local directory outside Git. Download and verify any temporary hosting backup against its size and cryptographic digest, then remove the hosted copy. Do not retain backup files or archives on the FTP host; this preserves its available disk space. Runtime application data and files remain in place.
 
