@@ -1,0 +1,37 @@
+{
+  "ok": true,
+  "browser": "Firefox",
+  "width": 1440,
+  "checks": [
+    "existing synthetic owner signs in through the real authentication route",
+    "real beneficiary creation returns its dedicated Final Wish and token",
+    "owner beneficiary summary links to the same automatically created wish",
+    "active automatic wish has no ordinary Delete action",
+    "actual owner editor locks the dedicated recipient and has no general recipient picker",
+    "actual owner edit updates the same exclusively linked record",
+    "actual server rejects a crafted automatic-recipient reassignment",
+    "valid ungranted token lists only its own personal wish through the real API",
+    "personal content uses private no-store responses",
+    "next real token read contains the owner edit",
+    "actual token API conceals the other beneficiary’s dedicated wish",
+    "real access API retains no_access and exposes no ordinary vault entries",
+    "real browser shows the personal wish while withholding the vault and manual draft",
+    "real emergency waiting status retains the personal wish without a vault grant",
+    "actual owner revoke removes the personal entitlement",
+    "actual confirmed restoration restores only the personal wish",
+    "beneficiary token stays out of browser storage and URL",
+    "actual desktop owner UI fits its viewport"
+  ],
+  "origin": "http://[::1]:4444",
+  "actual_entrypoint": "server/index.js (disposable source copy; observation endpoints only)",
+  "environment": "synthetic existing owner and data; no repository secrets/data copied; background jobs and all SMS/mail transports disabled",
+  "counts": {
+    "users": 1,
+    "beneficiaries": 2,
+    "dedicated_wishes": 2,
+    "sms_attempts": 0,
+    "notifications": 0
+  },
+  "unrestricted_final_wish_copies": 0,
+  "checked_at": "2026-11-03T11:38:20.198Z"
+}

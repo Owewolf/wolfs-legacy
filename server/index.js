@@ -107,7 +107,14 @@ app.get('{*path}', (req, res) => {
 
 const startupDb = getDb();
 const beneficiaryWishes = require('./beneficiary-final-wishes').backfillBeneficiaryFinalWishes(startupDb);
-if (beneficiaryWishes.created) log.info('Created missing private beneficiary wishes', { count: beneficiaryWishes.created });
+if (beneficiaryWishes.created || beneficiaryWishes.adopted || beneficiaryWishes.reconciliation.length) {
+  log.info('Reconciled beneficiary personal wishes', {
+    created: beneficiaryWishes.created,
+    adopted: beneficiaryWishes.adopted,
+    suppressed: beneficiaryWishes.suppressed,
+    reconciliation: beneficiaryWishes.reconciliation.length,
+  });
+}
 app.listen(PORT, process.env.LISTEN_HOST || '0.0.0.0', () => {
   log.info("Wolf's Vault started", { port: PORT });
   if (BACKGROUND_JOBS_ENABLED) {

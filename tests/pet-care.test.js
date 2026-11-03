@@ -48,6 +48,7 @@ function request(route, { method = 'GET', body, owner = OWNER, auth = true, toke
     };
     const res = {
       statusCode: 200,
+      set() { return this; },
       status(value) { this.statusCode = value; return this; },
       json(data) {
         try {

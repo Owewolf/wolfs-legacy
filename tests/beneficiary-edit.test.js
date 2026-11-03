@@ -29,6 +29,7 @@ function request(id, { method = 'PUT', owner = OWNER, mfa = true, body = {
       ip: '127.0.0.1', app: { locals: { getDb: () => db } } };
     const res = {
       statusCode: 200,
+      set() { return this; },
       status(value) { this.statusCode = value; return this; },
       json(data) { resolve({ status: this.statusCode, data }); return this; }
     };
@@ -110,7 +111,12 @@ test('beneficiary PUT edits phone and owner fields while preserving the edited e
   assert.equal(wish.beneficiaries[0].name, 'Updated beneficiary');
   assert.equal(wish.status, 'draft');
   assert.equal(wish.release_policy, 'owner_only');
-  assert.deepEqual(legacy.list(db, OWNER, {}, afterBeneficiary), []);
+  const personalWishes = legacy.list(db, OWNER, {}, afterBeneficiary);
+  assert.equal(personalWishes.length, 1);
+  assert.equal(personalWishes[0].id, created.final_wish_id);
+  assert.equal(personalWishes[0].body_markdown, wish.body_markdown);
+  assert.equal(personalWishes[0].locked_beneficiary.name, 'Updated beneficiary');
+  assert.equal(personalWishes[0].access_scope, 'personal_final_wish');
   assert.deepEqual(db.prepare("SELECT user_id,target_id,detail FROM audit_log WHERE action='edit_beneficiary'").all(),
     [{ user_id: OWNER, target_id: created.id, detail: 'Updated beneficiary' }]);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM notification_outbox').get().n, 0);

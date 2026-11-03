@@ -73,6 +73,7 @@ const API = {
   denyEmergency: (id) => API.request('POST', '/beneficiaries/' + id + '/deny-emergency'),
   grantAccess: (id) => API.request('POST', '/beneficiaries/' + id + '/grant'),
   revokeAccess: (id) => API.request('POST', '/beneficiaries/' + id + '/revoke'),
+  restorePersonalWishAccess: (id) => API.request('POST', '/beneficiaries/' + id + '/restore-personal-wish-access', { confirmed: true }),
   regenerateToken: (id) => API.request('POST', '/beneficiaries/' + id + '/regenerate-token'),
 
   getSwitchStatus: () => API.request('GET', '/deadswitch/status'),

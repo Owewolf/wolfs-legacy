@@ -39,7 +39,7 @@ const API = {
  async updateEntry(id,body){fixtureCalls.push({method:'updateEntry',id,body:fixtureCopy(body)});const entry=fixtureEntries.find(row=>String(row.id)===String(id));Object.assign(entry,body);return fixtureCopy(entry);},
  async getBeneficiaries(){return fixtureCopy(fixtureRecipients);},
  async exportVault(){fixtureCalls.push({method:'exportVault'});return {owner:fixtureCopy(fixtureOwner),entries:fixtureCopy(fixtureEntries),exported_at:'2026-10-29T10:00:00Z'};},
- async addBeneficiary(body){fixtureCalls.push({method:'addBeneficiary',body:fixtureCopy(body)});const beneficiary={...body,id:3,created_at:'2026-10-29T10:00:00Z'};fixtureRecipients.push(beneficiary);const finalWish=fixtureSync({...fixtureCopy(fixtureCommon),id:'beneficiary-3-wish',title:body.name,type:'instruction',body_markdown:'',metadata:{final_wishes:{content_type:'',category:'Beneficiary Instructions',details:'',contact_person:'',contact_phone:'',notes:''}},beneficiary_ids:[3]});fixtureItems.push(finalWish);return {id:3,accessToken:'synthetic-recipient-token',final_wish_id:finalWish.id};},
+ async addBeneficiary(body){fixtureCalls.push({method:'addBeneficiary',body:fixtureCopy(body)});const beneficiary={...body,id:3,created_at:'2026-10-29T10:00:00Z'};fixtureRecipients.push(beneficiary);const finalWish=fixtureSync({...fixtureCopy(fixtureCommon),id:'beneficiary-3-wish',auto_generated:true,locked_beneficiary:{id:3,name:body.name},title:body.name,type:'instruction',body_markdown:'',metadata:{final_wishes:{content_type:'',category:'Beneficiary Instructions',details:'',contact_person:'',contact_phone:'',notes:''}},beneficiary_ids:[3]});fixtureItems.push(finalWish);return {id:3,accessToken:'synthetic-recipient-token',final_wish_id:finalWish.id};},
  async getSwitchStatus(){return {is_active:true,switch_triggered:false,is_overdue:false,last_check_in:'2026-10-28T10:00:00Z',next_check_in:'2026-11-28T10:00:00Z',grace_deadline:'2026-12-05T10:00:00Z',check_in_interval_days:30,grace_period_days:7};},
  async getAuditLog(){return {logs:[{created_at:'2026-10-28T10:00:00Z',action:'login',target_type:'owner',detail:'Synthetic owner session',ip_address:'192.0.2.1'}],page:1,pages:1};},
  async search(query){return fixtureCopy(fixtureEntries.filter(entry=>JSON.stringify(entry).toLowerCase().includes(decodeURIComponent(query).toLowerCase())));},
@@ -82,7 +82,7 @@ window.fetch=async(url,options={})=>{
 window.renderMobileRecipient=()=>renderVaultReadonly({owner:fixtureCopy(fixtureOwner),beneficiary:fixtureCopy(fixtureRecipients[0]),entries:fixtureCopy([fixtureEntries[1]])},'synthetic-recipient-token');
 `;
 
-async function createMobileFixtureServer({ publicRoot = path.resolve(__dirname, '../../public'), checks = '', onResult = () => {} } = {}) {
+async function createMobileFixtureServer({ publicRoot = path.resolve(__dirname, '../../public'), checks = '', onResult = () => {}, fixtureScript = apiFixture } = {}) {
   const server = http.createServer((req, res) => {
     if (req.url === '/mobile-test-result' && req.method === 'POST') {
       let body = '';
@@ -93,7 +93,7 @@ async function createMobileFixtureServer({ publicRoot = path.resolve(__dirname, 
       });
       return;
     }
-    if (req.url === '/js/api.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(apiFixture); return; }
+    if (req.url === '/js/api.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(fixtureScript); return; }
     if (req.url === '/' || req.url?.startsWith('/?')) {
       res.setHeader('Content-Type', 'text/html');
       const frameWidth = Number(new URL(req.url, 'http://fixture.invalid').searchParams.get('mobile-frame'));
@@ -237,7 +237,7 @@ async function runMobileWorkflow() {
   viewportToast.remove();
   rootStyle.setProperty('--mobile-viewport-height', previousHeight); rootStyle.setProperty('--mobile-viewport-top', previousTop);
   const beneficiaryForm = document.querySelector('#add-ben-form');
-  check(!beneficiaryForm.querySelector('[name="beneficiary_ids"],#legacy-recipient-search') && beneficiaryForm.textContent.includes('private Final Wish draft'), 'Add Beneficiary explains automatic wish creation without a recipient checklist');
+  check(!beneficiaryForm.querySelector('[name="beneficiary_ids"],#legacy-recipient-search') && beneficiaryForm.textContent.includes('dedicated personal Final Wish'), 'Add Beneficiary explains automatic wish creation without a recipient checklist');
   beneficiaryForm.elements.name.value = 'Taylor Example';
   beneficiaryForm.elements.email.value = 'taylor@example.test';
   beneficiaryForm.elements.relationship.value = 'Trusted Friend';
@@ -245,14 +245,14 @@ async function runMobileWorkflow() {
   await until(() => !document.querySelector('#add-ben-form') && document.querySelector('[data-legacy-beneficiary="3"]'), 'beneficiary added with a private wish');
   const beneficiaryWish = fixtureItems.find(item => item.id === 'beneficiary-3-wish');
   check(beneficiaryWish && beneficiaryWish.status === 'draft' && beneficiaryWish.release_policy === 'owner_only' && beneficiaryWish.beneficiary_ids.length === 1 && beneficiaryWish.beneficiary_ids[0] === 3, 'adding a beneficiary creates one private wish assigned to that beneficiary');
-  check([...document.querySelectorAll('.toast')].some(toast => toast.textContent.includes('private Final Wish draft created')), 'beneficiary success feedback confirms the automatic wish');
+  check([...document.querySelectorAll('.toast')].some(toast => toast.textContent.includes('personal Final Wish created')), 'beneficiary success feedback confirms the automatic wish');
   await route('section/final_wishes/beneficiary-3-wish', '[data-legacy-action="edit"]');
   check(document.querySelector('.legacy-detail .record-category-chip')?.textContent === 'Beneficiary Instructions' && !document.querySelector('[data-legacy-action="review-no-change"]'), 'automatic beneficiary wish is a normal Final Wishes card without information review actions');
   document.querySelector('[data-legacy-action="edit"]').click();
   await until(() => document.querySelector('#legacy-editor'), 'automatic beneficiary wish editor');
   const automaticEditor = document.querySelector('#legacy-editor');
-  check(automaticEditor.elements.title.value === 'Taylor Example' && automaticEditor.querySelector('[data-remove-recipient="beneficiary:3"]') && automaticEditor.elements.type.value === '' && automaticEditor.elements.wish_category.value === 'Beneficiary Instructions' && ['wish_details','wish_contact_person','wish_contact_phone','wish_notes','description','introduction','body_markdown'].every(name => automaticEditor.elements[name].value === '') && automaticEditor.querySelector('#legacy-review-fields').hidden, 'automatic beneficiary wish prefills the beneficiary name, recipient and Beneficiary Instructions category while other content stays blank');
-  check(automaticEditor.querySelectorAll('#legacy-recipient-results button').length === 3, 'automatic wish still offers the other saved beneficiaries and contacts without typing');
+  check(automaticEditor.elements.title.value === 'Taylor Example' && automaticEditor.querySelector('[data-locked-beneficiary="3"]') && automaticEditor.elements.type.value === '' && automaticEditor.elements.wish_category.value === 'Beneficiary Instructions' && ['wish_details','wish_contact_person','wish_contact_phone','wish_notes','description','introduction','body_markdown'].every(name => automaticEditor.elements[name].value === '') && automaticEditor.querySelector('#legacy-review-fields').hidden, 'automatic beneficiary wish prefills the beneficiary name, recipient and Beneficiary Instructions category while other content stays blank');
+  check(!automaticEditor.querySelector('#legacy-recipient-search,[data-add-recipient],[data-remove-recipient]'), 'automatic wish locks its recipient and hides other beneficiaries and contacts');
 
   await route('homebank', '.hb-account');
   document.querySelector('.hb-account').open = true; fits('Expanded HomeBank account');

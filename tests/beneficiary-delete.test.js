@@ -24,6 +24,7 @@ function request(id, { owner = OWNER, mfa = true } = {}) {
       ip: '127.0.0.1', app: { locals: { getDb: () => db } } };
     const res = {
       statusCode: 200,
+      set() { return this; },
       status(value) { this.statusCode = value; return this; },
       json(data) { resolve({ status: this.statusCode, data }); return this; }
     };

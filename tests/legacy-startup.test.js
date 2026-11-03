@@ -88,7 +88,7 @@ test('isolated production entrypoint starts, serves both legacy APIs and private
   assert.ok(!output().includes('SyntheticLongPassword91!'));
 });
 
-test('production startup creates editable private wishes for existing beneficiaries and new additions without restart duplicates',async t=>{
+test('production startup repairs dedicated wishes with immediate token retrieval and preserves edits across restart',async t=>{
   const fixture=await isolatedServer(t),{base,root}=fixture;
   const token=await seedExistingAndLogin(root,base,{name:'Synthetic repair owner',email:'startup-repair@example.test',password:'SyntheticLongPassword92!'});
   const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
@@ -99,10 +99,12 @@ test('production startup creates editable private wishes for existing beneficiar
   const dbPath=path.join(root,'data','vault.db');
   const seed=new Database(dbPath);
   let beneficiaryId;
+  const existingToken='synthetic-startup-existing-beneficiary-token';
+  const {hashToken}=require('../server/crypto');
   try {
     const owner=seed.prepare('SELECT id FROM users WHERE email=?').get('startup-repair@example.test');
-    beneficiaryId=Number(seed.prepare('INSERT INTO beneficiaries(user_id,name,email,access_granted) VALUES(?,?,?,1)')
-      .run(owner.id,'Synthetic existing beneficiary','existing@example.test').lastInsertRowid);
+    beneficiaryId=Number(seed.prepare('INSERT INTO beneficiaries(user_id,name,email,access_granted,access_token,token_expires_at) VALUES(?,?,?,1,?,?)')
+      .run(owner.id,'Synthetic existing beneficiary','existing@example.test',hashToken(existingToken),'2099-01-01T00:00:00.000Z').lastInsertRowid);
     assert.equal(seed.prepare('SELECT COUNT(*) AS n FROM legacy_contents').get().n,0);
   } finally {seed.close();}
 
@@ -121,6 +123,11 @@ test('production startup creates editable private wishes for existing beneficiar
   assert.equal(existingWish.release_policy,'owner_only');
   assert.deepEqual(existingWish.beneficiary_ids,[beneficiaryId]);
   assert.equal(existingWish.final_wishes_entry_id,null);
+  assert.equal(existingWish.auto_generated,true);
+  assert.deepEqual(existingWish.locked_beneficiary,{id:beneficiaryId,name:'Synthetic existing beneficiary'});
+  const repairedTokenView=await fetch(base+'/api/beneficiary-access/legacy/'+existingWish.id,{headers:{Authorization:'Bearer '+existingToken}});
+  assert.equal(repairedTokenView.status,200);
+  assert.equal((await repairedTokenView.json()).id,existingWish.id);
 
   const createdResponse=await fetch(base+'/api/beneficiaries',{method:'POST',headers,
     body:JSON.stringify({name:'Synthetic future beneficiary',email:'future@example.test',relationship:'Friend'})});
@@ -139,6 +146,18 @@ test('production startup creates editable private wishes for existing beneficiar
   assert.deepEqual(newWish.beneficiary_ids,[beneficiary.id]);
   assert.equal(newWish.status,'draft');
   assert.equal(newWish.release_policy,'owner_only');
+  assert.equal(newWish.auto_generated,true);
+  const recipientHeaders={Authorization:'Bearer '+beneficiary.accessToken};
+  const noAccess=await fetch(base+'/api/beneficiaries/access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accessToken:beneficiary.accessToken})});
+  assert.equal(noAccess.status,200);
+  assert.equal(noAccess.headers.get('cache-control'),'private, no-store');
+  const portal=await noAccess.json();
+  assert.equal(portal.status,'no_access');
+  assert.equal(portal.personal_final_wish_available,true);
+  assert.ok(!portal.entries?.length);
+  const initialRecipientList=await fetch(base+'/api/beneficiary-access/legacy',{headers:recipientHeaders});
+  assert.equal(initialRecipientList.status,200);
+  assert.deepEqual((await initialRecipientList.json()).map(item=>item.id),[newWish.id]);
 
   for(const [wish,name] of [[existingWish,'existing'],[newWish,'future']]) {
     const editedResponse=await fetch(base+'/api/final-wishes/legacy/'+wish.id,{method:'PATCH',headers,
@@ -149,6 +168,11 @@ test('production startup creates editable private wishes for existing beneficiar
     assert.equal(edited.revision,2);
     assert.equal(edited.release_policy,'owner_only');
     assert.deepEqual(edited.beneficiary_ids,wish.beneficiary_ids);
+    const tokenView=await fetch(base+'/api/beneficiary-access/legacy/'+wish.id,{headers:{Authorization:'Bearer '+(name==='future'?beneficiary.accessToken:existingToken)}});
+    assert.equal(tokenView.status,200);
+    const recipientItem=await tokenView.json();
+    assert.equal(recipientItem.id,wish.id);
+    assert.equal(recipientItem.body_markdown,'Private wishes for the '+name+' beneficiary.');
   }
 
   assert.equal(await fixture.stop(),0);
@@ -162,11 +186,15 @@ test('production startup creates editable private wishes for existing beneficiar
     assert.equal(saved.title,'Edited wish for '+name);
     assert.equal(saved.body_markdown,'Private wishes for the '+name+' beneficiary.');
     assert.equal(saved.revision,2,'startup preserves the owner’s edits');
+    const afterRestart=await fetch(base+'/api/beneficiary-access/legacy/'+wish.id,{headers:{Authorization:'Bearer '+(name==='future'?beneficiary.accessToken:existingToken)}});
+    assert.equal(afterRestart.status,200);
+    assert.equal((await afterRestart.json()).body_markdown,saved.body_markdown);
   }
   assert.equal(await fixture.stop(),0);
   const verify=new Database(dbPath,{readonly:true});
   try {
     assert.equal(verify.prepare('SELECT COUNT(*) AS n FROM legacy_contents').get().n,2);
+    assert.equal(verify.prepare('SELECT COUNT(*) AS n FROM legacy_beneficiary_auto_wishes').get().n,2);
     assert.equal(verify.prepare('SELECT COUNT(*) AS n FROM vault_entries').get().n,0,'wishes stay outside the general vault');
     assert.equal(verify.prepare('SELECT COUNT(*) AS n FROM legacy_content_beneficiaries WHERE released_at IS NOT NULL').get().n,0);
     assert.equal(verify.prepare('SELECT COUNT(*) AS n FROM notification_outbox').get().n,0);

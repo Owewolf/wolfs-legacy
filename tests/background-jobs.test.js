@@ -33,7 +33,7 @@ function webEntrypoint(env = {}) {
     './logger': { info() {}, error() {}, requestLogger() {} },
     './middleware/auth': { authenticateToken() {} },
     './beneficiary-final-wishes': {
-      backfillBeneficiaryFinalWishes(actual) { assert.equal(actual, db); calls.push('backfill'); return { created: 0 }; }
+      backfillBeneficiaryFinalWishes(actual) { assert.equal(actual, db); calls.push('backfill'); return { created: 0, adopted: 0, suppressed: 0, reconciliation: [] }; }
     },
     './notifications/service': {
       createNotificationService() { return { releaseDue() { calls.push('release'); } }; }

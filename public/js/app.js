@@ -1086,6 +1086,7 @@ async function renderBeneficiaries() {
     else if (b.emergency_access_requested) statusBadge = '<span class="badge badge-warning">Emergency Requested</span>';
 
     const expired = b.token_expires_at && new Date() > new Date(b.token_expires_at);
+    if (b.auto_wish_access_revoked_at) statusBadge += ' <span class="badge badge-danger">Personal Wish Revoked</span>';
     if (expired) statusBadge += ' <span class="badge badge-danger">Token Expired</span>';
 
     return RecordCards.render({ title: b.name, section: 'beneficiaries', category: b.relationship, badges: statusBadge,
@@ -1097,6 +1098,8 @@ async function renderBeneficiaries() {
         primary: RecordCards.action({ label: 'Edit', iconName: 'pencil', attributes: `data-edit="${b.id}"` }) +
           (b.emergency_access_requested && !b.access_granted ? RecordCards.action({ label: 'Deny Emergency', attributes: `data-deny="${b.id}"`, danger: true }) : '') +
           RecordCards.action({ label: b.access_granted ? 'Revoke' : 'Grant Access', attributes: b.access_granted ? `data-revoke="${b.id}"` : `data-grant="${b.id}"` }) +
+          (!b.access_granted && !b.auto_wish_access_revoked_at ? RecordCards.action({ label: 'Revoke', attributes: `data-revoke="${b.id}"` }) : '') +
+          (b.auto_wish_access_revoked_at ? RecordCards.action({ label: 'Restore Personal Wish', attributes: `data-restore-personal-wish="${b.id}"` }) : '') +
           RecordCards.action({ label: 'New Token', attributes: `data-regen="${b.id}"` }),
         secondary: RecordCards.action({ label: 'Remove', iconName: 'trash', attributes: `data-remove="${b.id}"`, danger: true })
       })
@@ -1138,6 +1141,12 @@ async function renderBeneficiaries() {
   });
   document.querySelectorAll('[data-revoke]').forEach(el => {
     el.onclick = async () => { try { await API.revokeAccess(el.dataset.revoke); showSuccess('Access revoked'); renderBeneficiaries(); } catch (e) { showError(e.message); } };
+  });
+  document.querySelectorAll('[data-restore-personal-wish]').forEach(el => {
+    el.onclick = async () => {
+      if (!confirm('Restore access to this beneficiary’s personal Final Wish? General vault access stays unchanged.')) return;
+      try { await API.restorePersonalWishAccess(el.dataset.restorePersonalWish); showSuccess('Personal Final Wish access restored'); renderBeneficiaries(); } catch (e) { showError(e.message); }
+    };
   });
   document.querySelectorAll('[data-deny]').forEach(el => {
     el.onclick = async () => { try { await API.denyEmergency(el.dataset.deny); showSuccess('Emergency access denied'); renderBeneficiaries(); } catch (e) { showError(e.message); } };
@@ -1211,7 +1220,7 @@ function showAddBeneficiaryModal() {
   overlay.innerHTML = `<div class="modal">
     <h2>Add Beneficiary</h2>
     <form id="add-ben-form">
-      <p class="legacy-help">A private Final Wish draft will be created for this beneficiary.</p>
+      <p class="legacy-help">A dedicated personal Final Wish will be created for this beneficiary. Their valid token can read it immediately; general vault access is separate.</p>
       <div class="form-group"><label>Name *</label><input type="text" name="name" required></div>
       <div class="form-group"><label>Email</label><input type="email" name="email"></div>
       <div class="form-group"><label>Phone</label><input type="text" name="phone"></div>
@@ -1246,7 +1255,7 @@ function showAddBeneficiaryModal() {
       });
       state.newToken = res.accessToken;
       overlay.remove();
-      showSuccess(res.final_wish_id ? 'Beneficiary added and private Final Wish draft created' : 'Beneficiary added');
+      showSuccess(res.final_wish_id ? 'Beneficiary added and personal Final Wish created' : 'Beneficiary added');
       try { state.counts = await vaultCounts(await API.getSummary()); } catch { /* Refresh on the next vault view. */ }
       renderBeneficiaries();
     } catch (err) { showError(err.message); }
@@ -1630,8 +1639,10 @@ async function renderAccessPortal() {
       <div style="margin-top:20px;text-align:center"><a href="#login">Vault owner? Sign in here</a></div>
     </div>`;
 
+  let accessSequence = 0;
   $('#access-form').onsubmit = async (e) => {
     e.preventDefault();
+    const current = ++accessSequence;
     const token = new FormData(e.target).get('token').trim();
     const action = e.submitter?.value;
     const result = $('#access-result');
@@ -1639,16 +1650,25 @@ async function renderAccessPortal() {
     try {
       if (action === 'emergency') {
         const r = await API.requestEmergency(token);
+        if (!result.isConnected || current !== accessSequence) return;
         if (r.status === 'requested') result.innerHTML = `<div class="alert alert-success">Emergency access requested. The vault owner has ${r.waiting_days} days to deny.</div>`;
         else if (r.status === 'already_requested') result.innerHTML = `<div class="alert alert-warning">Already requested on ${fmtDate(r.requested_at)}. Wait for the period to expire.</div>`;
         else if (r.status === 'already_granted') result.innerHTML = `<div class="alert alert-success">Access already granted. Click "View Vault".</div>`;
+        if (['requested', 'already_requested', 'already_granted'].includes(r.status)) {
+          result.insertAdjacentHTML('beforeend', '<div id="beneficiary-legacy-root" class="section-group"></div>');
+          await Legacy.mountRecipient(result.querySelector('#beneficiary-legacy-root'), token, []);
+        }
         return;
       }
       const r = await API.accessVault(token);
-      if (r.status === 'no_access') result.innerHTML = `<div class="alert alert-warning">Access not yet granted. Request emergency access above.</div>`;
-      else if (r.status === 'waiting') result.innerHTML = `<div class="alert alert-warning">Pending. Access on ${fmtDate(r.waitInfo.access_at)} unless denied.</div>`;
-      else if (r.status === 'granted') renderVaultReadonly(r, token);
-    } catch (err) { result.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`; }
+      if (!result.isConnected || current !== accessSequence) return;
+      if (r.status === 'granted') { renderVaultReadonly(r, token); return; }
+      if (r.status === 'no_access' || r.status === 'waiting') {
+        const notice = r.status === 'waiting' ? `Pending. Access on ${fmtDate(r.waitInfo.access_at)} unless denied.` : 'General vault access not yet granted. Request emergency access above.';
+        result.innerHTML = `<div class="alert alert-warning">${notice}</div><div id="beneficiary-legacy-root" class="section-group"></div>`;
+        await Legacy.mountRecipient(result.querySelector('#beneficiary-legacy-root'), token, []);
+      }
+    } catch (err) { if (result.isConnected && current === accessSequence) result.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`; }
   };
 }
 

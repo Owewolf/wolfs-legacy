@@ -11,6 +11,14 @@ const Legacy = (() => {
   // optional content type presents the ordinary Final Wishes form.
   const contentType = item => item.metadata?.final_wishes?.content_type === '' ? '' : item.type;
   const contentLabel = item => types[contentType(item)] || 'Final Wishes';
+  // Only server serialization of the relational identity enables a locked editor.
+  const isAutomatic = item => item.auto_generated === true;
+  const isRetiredAutomatic = item => isAutomatic(item) && item.auto_wish_retired === true;
+  const canDelete = item => !isAutomatic(item) || (isRetiredAutomatic(item) && item.status === 'archived');
+  const recipientAccessLabel = item => item.access_scope === 'personal_final_wish' ? 'Personal Final Wish' : 'Released content';
+  function lockedRecipient(item) {
+    return `<div class="legacy-locked-recipient" data-locked-beneficiary="${escape(item.locked_beneficiary?.id)}"><strong>${escape(item.locked_beneficiary?.name || 'Linked beneficiary')}</strong><p class="legacy-help">Automatically assigned to this beneficiary. Recipients cannot be changed.</p></div>`;
+  }
   const recordCategory = item => item.metadata?.final_wishes?.category || contentLabel(item);
   const hasInformationReview = item => Boolean(item.review_enabled) || (contentType(item)!=='' && (contentType(item)==='review' || (item.reviews || []).length>0 || Boolean(item.last_reviewed_at)));
   const recordIcons = {letter:'envelope',recording:'chat-heart',family_history:'clock-history',instruction:'tools',review:'journal-text'};
@@ -69,7 +77,7 @@ const Legacy = (() => {
     return safeHtml(result.html);
   }
   async function recipientRequest(token,method,path='',body) {
-    const response = await fetch('/api/beneficiary-access/legacy'+path,{method,headers:{Authorization:'Bearer '+token,Accept:'application/json','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+    const response = await fetch('/api/beneficiary-access/legacy'+path,{method,cache:'no-store',headers:{Authorization:'Bearer '+token,Accept:'application/json','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
     const data = await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error || 'Protected content is unavailable');
     return data;
@@ -114,6 +122,8 @@ const Legacy = (() => {
     return `${item.introduction?`<p class="legacy-introduction">${escape(item.introduction)}</p>`:''}${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}${metadataView(item)}<div class="legacy-markdown">${html || '<p>No written message.</p>'}</div>${checklistView(item,acknowledge)}${attachmentCards(item)}`;
   }
   function ownerRecipientSummary(item) {
+    if(isRetiredAutomatic(item))return '<section class="legacy-subsection"><h3>Archived personal Final Wish</h3><p class="legacy-help">This beneficiary has been deleted. This archive is retained for your records and cannot be edited, restored or reassigned. You may permanently delete the archive.</p></section>';
+    if(isAutomatic(item))return `<section class="legacy-subsection"><h3>Personal Final Wish recipient</h3>${lockedRecipient(item)}<p class="legacy-help">This beneficiary’s valid, unrevoked token can read this wish, including draft edits. Archiving removes access. General vault access is separate.</p></section>`;
     const recipients=item.beneficiaries || [],contacts=contactRecipients(item);
     return `<section class="legacy-subsection"><h3>Recipients and release</h3><p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)}</p>${recipients.length || contacts.length?`<ul class="legacy-recipients">${recipients.map(recipient=>`<li><strong>${escape(recipient.name || 'Beneficiary')}</strong> ${recipient.revoked_at?badge('revoked','danger'):recipient.released_at?badge('released'):badge('private')}${recipient.released_at?`<small>Released ${escape(date(recipient.released_at,true))}${recipient.release_scope?` · ${escape(recipient.release_scope.replace(/_/g,' '))}`:''}</small>`:''}${recipient.revoked_at?`<small>Revoked ${escape(date(recipient.revoked_at,true))}</small>`:''}</li>`).join('')}${contacts.map(recipient=>`<li><strong>${escape(recipient.name)}</strong> <span class="legacy-recipient-kind">Contact</span><small>Named on this wish; no vault access.</small></li>`).join('')}</ul>`:'<p>No recipients selected.</p>'}</section>`;
   }
@@ -139,14 +149,14 @@ const Legacy = (() => {
     }
     function card(item,timeline=item.type==='family_history') {
       const metadata=item.metadata || {};
-      const recipients=[...(item.beneficiaries || []).map(recipient=>recipient.name),...contactRecipients(item).map(recipient=>recipient.name)].filter(Boolean);
+      const recipients=(isAutomatic(item)?[item.locked_beneficiary?.name]:[...(item.beneficiaries || []).map(recipient=>recipient.name),...contactRecipients(item).map(recipient=>recipient.name)]).filter(Boolean);
       const timelineDate=timeline?`<p class="legacy-timeline-date">${escape(metadata.event_date?`${metadata.date_precision==='approximate'?'Approx. ':''}${metadata.event_date}`:'Unknown date')}</p>`:'';
       return RecordCards.render({
         title:item.title,section:'final_wishes',category:recordCategory(item),iconName:recordIcons[contentType(item)] || 'file-earmark-text',
         badges:`<div class="legacy-badges">${badge(item.status)}${item.review_enabled?badge(item.review_state):''}</div>`,
         className:'legacy-item',
-        body:`<div class="record-card-body">${timelineDate}${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">${escape(policies[item.release_policy] || item.release_policy)} · ${recipients.length?`For ${escape(recipients.join(', '))}`:`${(item.beneficiary_ids || item.beneficiaries || []).length} recipient(s)`}${metadata.people?.length?` · ${escape(textList(metadata.people))}`:''}${metadata.tags?.length?`<br>Tags: ${escape(textList(metadata.tags))}`:''}</p><p class="legacy-help">Updated ${escape(date(item.updated_at))}${item.next_review_at?` · Review ${escape(date(item.next_review_at))}`:''}</p></div>`,
-        footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-legacy-action="open" data-item-id="${escape(item.id)}"`}),secondary:RecordCards.action({label:'Delete',iconName:'trash',attributes:`data-legacy-action="delete" data-item-id="${escape(item.id)}"`,danger:true})})
+        body:`<div class="record-card-body">${timelineDate}${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">${isRetiredAutomatic(item)?'Archived personal Final Wish — beneficiary deleted':isAutomatic(item)?'Personal Final Wish — token access':escape(policies[item.release_policy] || item.release_policy)} · ${recipients.length?`For ${escape(recipients.join(', '))}`:`${(item.beneficiary_ids || item.beneficiaries || []).length} recipient(s)`}${metadata.people?.length?` · ${escape(textList(metadata.people))}`:''}${metadata.tags?.length?`<br>Tags: ${escape(textList(metadata.tags))}`:''}</p><p class="legacy-help">Updated ${escape(date(item.updated_at))}${item.next_review_at?` · Review ${escape(date(item.next_review_at))}`:''}</p></div>`,
+        footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-legacy-action="open" data-item-id="${escape(item.id)}"`}),secondary:canDelete(item)?RecordCards.action({label:'Delete',iconName:'trash',attributes:`data-legacy-action="delete" data-item-id="${escape(item.id)}"`,danger:true}):''})
       });
     }
     function drawList() {
@@ -176,7 +186,7 @@ const Legacy = (() => {
       finally{if(alive())root.removeAttribute('aria-busy');}
     }
     function reviewControls(item) {
-      if(!hasInformationReview(item))return '';
+      if(isRetiredAutomatic(item) || !hasInformationReview(item))return '';
       return `<section class="legacy-subsection"><h3>Information review ${item.review_enabled?badge(item.review_state):''}</h3><dl class="legacy-metadata"><div><dt>Last reviewed</dt><dd>${escape(date(item.last_reviewed_at))}</dd></div><div><dt>Next review</dt><dd>${escape(date(item.next_review_at))}</dd></div><div><dt>Interval</dt><dd>${item.review_interval_months?Number(item.review_interval_months)+' months':'Not scheduled'}</dd></div>${item.review_snoozed_until?`<div><dt>Reminder snoozed until</dt><dd>${escape(date(item.review_snoozed_until))}</dd></div>`:''}</dl><div class="actions">${button('review-no-change','Reviewed — No Change','success')}${button('review-updated','Reviewed and Updated')}${button('review-reschedule','Reschedule')}${item.review_enabled?button('review-snooze','Snooze reminder')+button('review-disable','Disable review'):''}</div><p class="legacy-help">This review records information accuracy and leaves your separate check-in schedule unchanged.</p></section>`;
     }
     function historyView(item) {
@@ -193,10 +203,10 @@ const Legacy = (() => {
         if(item.links?.length && !vaultEntries.length)vaultEntries=await allVaultEntries();
         if(!alive() || current!==sequence)return;
         detail=item;
-        const controls=recipientPreview?button('open','Return to management','outline',`data-item-id="${escape(item.id)}"`):RecordCards.action({label:'Edit',iconName:'pencil',attributes:'data-legacy-action="edit"'})+button('preview','Preview recipient view')+(item.status==='draft'?button('ready','Mark ready','success'):'')+(item.release_policy==='manual_release' && ['ready','released'].includes(item.status)?button('release','Release…','primary'):'')+((item.beneficiaries || []).some(recipient=>recipient.released_at && !recipient.revoked_at)?button('revoke','Revoke release…','warning'):'');
-        const archiveControl=!recipientPreview && item.status!=='archived'?RecordCards.action({label:'Archive',iconName:'archive',attributes:'data-legacy-action="archive"'}):'';
-        const deleteControl=recipientPreview?'':RecordCards.action({label:'Delete',iconName:'trash',attributes:`data-legacy-action="delete" data-item-id="${escape(item.id)}"`,danger:true});
-        root.innerHTML=heading(item.title,button('back','← All Final Wishes'))+feedback+`<div class="card record-card legacy-detail">${RecordCards.heading({title:item.title,section:'final_wishes',category:recordCategory(item),iconName:recordIcons[contentType(item)] || 'file-earmark-text',badges:recipientPreview?'':`<div class="legacy-badges">${badge(item.status)}</div>`})}${recipientPreview?'<div class="alert alert-info">Owner preview of the recipient’s content. Actual recipient access depends on their current authorisation and this item’s release.</div>':''}${contentView(item,html)}${!recipientPreview?ownerRecipientSummary(item)+renderLinks(item)+reviewControls(item)+`<p class="legacy-help">Created ${escape(date(item.created_at,true))} · Updated ${escape(date(item.updated_at,true))} · Revision ${Number(item.revision) || 1}</p>`+historyView(item):''}${RecordCards.footer({primary:controls+archiveControl,secondary:deleteControl})}</div>`;
+        const controls=recipientPreview?button('open','Return to management','outline',`data-item-id="${escape(item.id)}"`):(isRetiredAutomatic(item)?'':RecordCards.action({label:'Edit',iconName:'pencil',attributes:'data-legacy-action="edit"'}))+button('preview','Preview recipient view')+(!isAutomatic(item) && item.status==='draft'?button('ready','Mark ready','success'):'')+(!isAutomatic(item) && item.release_policy==='manual_release' && ['ready','released'].includes(item.status)?button('release','Release…','primary'):'')+(!isAutomatic(item) && (item.beneficiaries || []).some(recipient=>recipient.released_at && !recipient.revoked_at)?button('revoke','Revoke release…','warning'):'');
+        const archiveControl=!recipientPreview && !isRetiredAutomatic(item) && item.status!=='archived'?RecordCards.action({label:'Archive',iconName:'archive',attributes:'data-legacy-action="archive"'}):'';
+        const deleteControl=recipientPreview || !canDelete(item)?'':RecordCards.action({label:'Delete',iconName:'trash',attributes:`data-legacy-action="delete" data-item-id="${escape(item.id)}"`,danger:true});
+        root.innerHTML=heading(item.title,button('back','← All Final Wishes'))+feedback+`<div class="card record-card legacy-detail">${RecordCards.heading({title:item.title,section:'final_wishes',category:recordCategory(item),iconName:recordIcons[contentType(item)] || 'file-earmark-text',badges:recipientPreview?'':`<div class="legacy-badges">${badge(item.status)}</div>`})}${recipientPreview?`<div class="alert alert-info">Owner preview of the recipient’s content. ${isRetiredAutomatic(item)?'This archived content belonged to a deleted beneficiary and is retained only for the owner’s records.':isAutomatic(item)?'Their valid, unrevoked token can read this personal wish unless it is archived.':'Actual recipient access depends on their current authorisation and this item’s release.'}</div>`:''}${contentView(item,html)}${!recipientPreview?ownerRecipientSummary(item)+renderLinks(item)+reviewControls(item)+`<p class="legacy-help">Created ${escape(date(item.created_at,true))} · Updated ${escape(date(item.updated_at,true))} · Revision ${Number(item.revision) || 1}</p>`+historyView(item):''}${RecordCards.footer({primary:controls+archiveControl,secondary:deleteControl})}</div>`;
         bindActions();bindFiles(root,item);
       }catch(error){message(error.message,true);}
     }
@@ -272,6 +282,7 @@ const Legacy = (() => {
       return ()=>[...chosen.values()].filter(recipient=>recipient.kind==='Contact').map(recipient=>({entry_id:recipient.id,name:recipient.name}));
     }
     async function showEditor(item={},reviewAfterSave=false) {
+      if(isRetiredAutomatic(item)){message('This archived personal Final Wish cannot be edited, restored or reassigned.',true);return;}
       const current=++sequence;
       item={type:'instruction',status:'draft',release_policy:'owner_only',metadata:{final_wishes:{content_type:''}},...item};
       if(!vaultEntries.length){try{vaultEntries=await allVaultEntries();}catch(error){message(error.message,true);return;}}
@@ -283,11 +294,11 @@ const Legacy = (() => {
         ${reviewAfterSave?'<div class="alert alert-info">Saving this update also records the information review.</div>':''}
         ${wishFields(item)}
         <fieldset class="legacy-fieldset"><legend>Recipients for this wish</legend>
-          <p id="legacy-recipient-help" class="legacy-help">Search your beneficiaries and saved contacts. Contacts are named on the wish; access remains separate.</p>
+          ${isAutomatic(item)?lockedRecipient(item):`<p id="legacy-recipient-help" class="legacy-help">Search your beneficiaries and saved contacts. Contacts are named on the wish; access remains separate.</p>
           <ul class="legacy-recipient-selection" data-selected-recipients aria-label="Selected recipients" hidden></ul>
           <div class="form-group"><label for="legacy-recipient-search">Find a recipient</label><input id="legacy-recipient-search" type="search" placeholder="Search name, role, email or phone" autocomplete="off" aria-describedby="legacy-recipient-help legacy-recipient-status" aria-controls="legacy-recipient-results"></div>
           <p id="legacy-recipient-status" class="legacy-help" role="status" aria-live="polite"></p>
-          <ul id="legacy-recipient-results" class="legacy-recipient-results" aria-label="Matching recipients" hidden></ul>
+          <ul id="legacy-recipient-results" class="legacy-recipient-results" aria-label="Matching recipients" hidden></ul>`}
         </fieldset>
         <fieldset class="legacy-fieldset"><legend>Content for this wish</legend>
           <div class="form-group"><label for="legacy-type">Content type (optional)</label><select id="legacy-type" name="type"><option value="">-- Select --</option>${selectOptions(types,contentType(item))}</select></div>
@@ -297,12 +308,12 @@ const Legacy = (() => {
           <div id="legacy-type-fields">${metadataFields(item)}</div>
           ${Docs.panel({accept:uploadConfig.accepted,help:'Drop documents, images, MP3, M4A, WAV, MP4 or MOV files here (up to '+Math.round(uploadConfig.max_file_bytes/1024/1024)+' MB each)'})}
         </fieldset>
-        <div class="legacy-form-grid"><div class="form-group"><label for="legacy-status">Status</label><select id="legacy-status" name="status">${selectOptions({draft:'Draft',ready:'Ready',archived:'Archived'},item.status==='released'?'draft':item.status)}</select></div><div class="form-group"><label for="legacy-release_policy">Release policy</label><select id="legacy-release_policy" name="release_policy">${selectOptions(policies,item.release_policy)}</select></div></div>
-        <p class="legacy-help">Drafts stay private. A ready item becomes available only after its release condition occurs for an authorised, selected recipient.</p>
+        <div class="legacy-form-grid"><div class="form-group"><label for="legacy-status">Status</label><select id="legacy-status" name="status">${selectOptions({draft:'Draft',ready:'Ready',archived:'Archived'},item.status==='released'?'draft':item.status)}</select></div><div class="form-group"><label for="legacy-release_policy">${isAutomatic(item)?'General release policy':'Release policy'}</label><select id="legacy-release_policy" name="release_policy">${selectOptions(isAutomatic(item)?{...policies,owner_only:'No general release (personal token access remains)'}:policies,item.release_policy)}</select></div></div>
+        <p class="legacy-help">${isAutomatic(item)?'This beneficiary’s valid, unrevoked token can read this personal wish immediately, including draft edits. Archive the wish to remove access. General vault access is separate.':'Drafts stay private. A ready item becomes available only after its release condition occurs for an authorised, selected recipient.'}</p>
         <fieldset id="legacy-review-fields" class="legacy-fieldset" ${reviewVisible?'':'hidden'}><legend>Information review</legend><label class="legacy-check"><input name="review_enabled" type="checkbox" ${item.review_enabled?'checked':''}><span>Schedule information reviews</span></label><div class="legacy-form-grid"><div class="form-group"><label for="legacy-review_interval_months">Review interval</label><select id="legacy-review_interval_months" name="review_interval_months">${selectOptions({3:'Every 3 months',6:'Every 6 months',12:'Every 12 months'},item.review_interval_months || 12)}</select></div>${field('next_review_at','Next review date',dateInput(item.next_review_at),{type:'date'})}</div></fieldset>
         <button type="submit" class="btn btn-primary" id="legacy-save">Save Final Wishes Entry &amp; copy files</button>
       </form></div>`;
-      const selectedContacts=mountRecipientPicker(item);
+      const selectedContacts=isAutomatic(item)?()=>[]:mountRecipientPicker(item);
       widget=Docs.mount(savedId,{edit:false,maxBytes:uploadConfig.max_file_bytes,list:async id=>(await API.request('GET',base+'/'+urlId(id))).attachments || [],unlink:(id,attachmentId)=>API.request('DELETE',base+'/'+urlId(id)+'/attachments/'+urlId(attachmentId)),open:(attachment,id,mode)=>openAttachment(id,attachment,mode),upload:async(id,file)=>{const form=new FormData();form.append('files',file,file.name);const response=await fetch('/api'+base+'/'+urlId(id)+'/attachments',{method:'POST',headers:{Authorization:'Bearer '+API.token},body:form});const result=await response.json();if(!response.ok || result.errors?.length)throw new Error(result.errors?.[0]?.error || result.error || 'Upload failed');}});
       bindActions();
       const reviewToggle=root.querySelector('[name="review_enabled"]'),reviewDate=root.querySelector('[name="next_review_at"]');
@@ -332,7 +343,7 @@ const Legacy = (() => {
             const id=previous?.id || stepId();used.add(id);return {id,text};
           });
         }
-        const payload={type,title:values.get('title'),description:values.get('description'),introduction:values.get('introduction') || '',body_markdown:values.get('body_markdown'),status:values.get('status'),release_policy:values.get('release_policy'),metadata,beneficiary_ids:values.getAll('beneficiary_ids').map(Number),links:item.links || [],final_wishes_entry_id:values.has('final_wishes_entry_id')?(values.get('final_wishes_entry_id')?Number(values.get('final_wishes_entry_id')):null):(item.final_wishes_entry_id ?? null),review_enabled:reviewVisible?values.has('review_enabled'):Boolean(item.review_enabled),review_interval_months:reviewVisible?Number(values.get('review_interval_months')):(item.review_interval_months ?? null),next_review_at:reviewVisible?(values.get('next_review_at') || null):(item.next_review_at ?? null)};
+        const payload={type,title:values.get('title'),description:values.get('description'),introduction:values.get('introduction') || '',body_markdown:values.get('body_markdown'),status:values.get('status'),release_policy:values.get('release_policy'),metadata,beneficiary_ids:isAutomatic(item)?[Number(item.locked_beneficiary.id)]:values.getAll('beneficiary_ids').map(Number),links:item.links || [],final_wishes_entry_id:values.has('final_wishes_entry_id')?(values.get('final_wishes_entry_id')?Number(values.get('final_wishes_entry_id')):null):(item.final_wishes_entry_id ?? null),review_enabled:reviewVisible?values.has('review_enabled'):Boolean(item.review_enabled),review_interval_months:reviewVisible?Number(values.get('review_interval_months')):(item.review_interval_months ?? null),next_review_at:reviewVisible?(values.get('next_review_at') || null):(item.next_review_at ?? null)};
         try{
           const result=await API.request(savedId?'PATCH':'POST',base+(savedId?'/'+urlId(savedId):''),payload);
           savedId=result.id || savedId;item={...item,...payload,id:savedId};
@@ -382,7 +393,7 @@ const Legacy = (() => {
           if(action==='archive'){if(!confirm('Archive this content and remove recipient access? The owner’s record and managed files will be retained.'))return;await API.request('PATCH',base+'/'+urlId(detail.id),{status:'archived'});showSuccess('Content archived');if(window.location.hash!=='#section/final_wishes'){window.location.hash='section/final_wishes';return;}return load();}
           if(action==='delete'){
             const item=items.find(candidate=>String(candidate.id)===String(control.dataset.itemId)) || detail;
-            if(!item || !confirm('Permanently delete “'+item.title+'”? This removes the wish, its history, and attached files that are not shared with other records. This cannot be undone.'))return;
+            if(!item || !canDelete(item) || !confirm('Permanently delete “'+item.title+'”? This removes the wish, its history, and attached files that are not shared with other records. This cannot be undone.'))return;
             const card=control.closest('.record-card'),controls=[...(card || root).querySelectorAll('button')];
             card?.setAttribute('aria-busy','true');controls.forEach(button=>{button.disabled=true;});
             try{
@@ -422,7 +433,7 @@ const Legacy = (() => {
       if(!panel.open)return;
       const request=Number(panel.dataset.request || 0)+1;panel.dataset.request=String(request);
       const target=panel.querySelector('[data-legacy-recipient-items]');target.textContent='Loading content…';
-      try{const items=arrayResult(await API.request('GET','/beneficiaries/'+urlId(panel.dataset.legacyBeneficiary)+'/legacy'));if(!panel.isConnected || !panel.open || Number(panel.dataset.request)!==request)return;target.innerHTML=`<div class="actions legacy-recipient-actions"><a class="btn btn-outline btn-sm" href="#section/final_wishes">Manage in Final Wishes</a>${['letter','recording','instruction'].map(type=>`<a class="btn btn-outline btn-sm" href="#add/final_wishes?type=${type}&amp;beneficiary_id=${urlId(panel.dataset.legacyBeneficiary)}">+ Add ${singular[type]}</a>`).join('')}</div>${items.length?items.map(item=>`<div class="legacy-recipient-row"><div><a href="#section/final_wishes/${urlId(item.id)}"><strong>${escape(item.title)}</strong></a><small>${escape(contentLabel(item))} · ${escape(policies[item.release_policy] || item.release_policy)}</small><small>${item.updated_at?'Updated '+escape(date(item.updated_at)):''}${item.released_at?' · Released '+escape(date(item.released_at)):''}</small></div><div class="legacy-badges">${badge(item.status)}${item.revoked_at?badge('revoked','danger'):item.released_at?badge('released'):badge('private')}</div></div>`).join(''):'<p>No personal content is assigned to this beneficiary yet.</p>'}`;}
+      try{const items=arrayResult(await API.request('GET','/beneficiaries/'+urlId(panel.dataset.legacyBeneficiary)+'/legacy'));if(!panel.isConnected || !panel.open || Number(panel.dataset.request)!==request)return;target.innerHTML=`<div class="actions legacy-recipient-actions"><a class="btn btn-outline btn-sm" href="#section/final_wishes">Manage in Final Wishes</a>${['letter','recording','instruction'].map(type=>`<a class="btn btn-outline btn-sm" href="#add/final_wishes?type=${type}&amp;beneficiary_id=${urlId(panel.dataset.legacyBeneficiary)}">+ Add ${singular[type]}</a>`).join('')}</div>${items.length?items.map(item=>`<div class="legacy-recipient-row"><div><a href="#section/final_wishes/${urlId(item.id)}"><strong>${escape(item.title)}</strong></a><small>${isAutomatic(item)?'Personal Final Wish · Automatically assigned':escape(contentLabel(item))+' · '+escape(policies[item.release_policy] || item.release_policy)}</small>${isAutomatic(item)?lockedRecipient(item):''}<small>${item.updated_at?'Updated '+escape(date(item.updated_at)):''}${item.released_at?' · Released '+escape(date(item.released_at)):''}</small></div><div class="legacy-badges">${badge(item.status)}${isAutomatic(item)?badge('personal'):item.revoked_at?badge('revoked','danger'):item.released_at?badge('released'):badge('private')}</div></div>`).join(''):'<p>No personal content is assigned to this beneficiary yet.</p>'}`;}
       catch(error){if(panel.isConnected && Number(panel.dataset.request)===request)target.textContent=error.message;}
     }));
   }
@@ -431,20 +442,23 @@ const Legacy = (() => {
     if(!root)return;
     const alive=()=>root.isConnected;
     let sequence=0;
-    const header='<h2 class="section-title">🕊 Final Wishes — Personal messages, memories and instructions</h2>';
+    const header='<div class="legacy-heading"><h2 class="section-title">🕊 Final Wishes — Shared personal content</h2><button type="button" class="btn btn-outline btn-sm" data-recipient-refresh>Refresh</button></div>';
+    const bindRefresh=()=>{root.querySelector('[data-recipient-refresh]').onclick=load;};
     async function load() {
       const current=++sequence;
       try{
-        const items=arrayResult(await recipientRequest(token,'GET'));
+        const response=arrayResult(await recipientRequest(token,'GET'));
+        const items=[...new Map(response.map(item=>[String(item.id),item])).values()];
         if(!alive() || current!==sequence)return;
         root.innerHTML=header+(items.length?items.map(item=>RecordCards.render({
           title:item.title,section:'final_wishes',category:recordCategory(item),iconName:recordIcons[contentType(item)] || 'file-earmark-text',className:'legacy-item',
-          body:`<div class="record-card-body">${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">Released content · Updated ${escape(date(item.updated_at))}</p></div>`,
+          body:`<div class="record-card-body">${item.description?`<p class="legacy-description">${escape(item.description)}</p>`:''}<p class="legacy-help">${recipientAccessLabel(item)} · Updated ${escape(date(item.updated_at))}</p></div>`,
           footer:RecordCards.footer({primary:RecordCards.action({label:'Open',iconName:'file-earmark-text',attributes:`data-recipient-content="${escape(item.id)}"`})})
-        })).join(''):'<div class="card"><p>No personal content has been released to you.</p></div>');
+        })).join(''):'<div class="card"><p>No shared personal content is available to this token.</p></div>');
+        bindRefresh();
         root.querySelectorAll('[data-recipient-content]').forEach(control=>control.onclick=()=>open(control.dataset.recipientContent));
       }
-      catch(error){if(alive() && current===sequence)root.innerHTML=header+`<div class="alert alert-error">${escape(error.message)}</div>`;}
+      catch(error){if(alive() && current===sequence){root.innerHTML=header+`<div class="alert alert-error">${escape(error.message)}</div>`;bindRefresh();}}
     }
     async function open(id) {
       const current=++sequence;
@@ -457,13 +471,14 @@ const Legacy = (() => {
         const linked=(item.links || []).map(link=>entries.find(entry=>String(entry.id)===String(link.entry_id))).filter(Boolean);
         root.innerHTML=header+RecordCards.render({
           title:item.title,section:'final_wishes',category:recordCategory(item),iconName:recordIcons[contentType(item)] || 'file-earmark-text',className:'legacy-detail',
-          body:`${contentView(item,html || `<p>${escape(item.body_markdown).replace(/\n/g,'<br>')}</p>`,true)}${linked.length?`<section class="legacy-subsection"><h3>Related vault records</h3><div class="actions">${linked.map(entry=>`<button type="button" class="btn btn-outline btn-sm" data-recipient-linked-entry="${escape(entry.id)}">${escape(entry.title)}</button>`).join('')}</div></section>`:''}<p class="legacy-help">Updated ${escape(date(item.updated_at,true))}</p><div data-recipient-feedback class="legacy-help" role="status" aria-live="polite"></div>`,
+          body:`<p class="legacy-help">${recipientAccessLabel(item)}</p>${contentView(item,html || (item.body_markdown?`<p>${escape(item.body_markdown).replace(/\n/g,'<br>')}</p>`:''),true)}${linked.length?`<section class="legacy-subsection"><h3>Related vault records</h3><div class="actions">${linked.map(entry=>`<button type="button" class="btn btn-outline btn-sm" data-recipient-linked-entry="${escape(entry.id)}">${escape(entry.title)}</button>`).join('')}</div></section>`:''}<p class="legacy-help">Updated ${escape(date(item.updated_at,true))}</p><div data-recipient-feedback class="legacy-help" role="status" aria-live="polite"></div>`,
           footer:RecordCards.footer({primary:RecordCards.action({label:'All messages',iconName:'envelope',attributes:'data-recipient-back'})})
         });
+        bindRefresh();
         root.querySelector('[data-recipient-back]').onclick=load;bindFiles(root,item,token);
         root.querySelectorAll('[data-recipient-linked-entry]').forEach(control=>control.onclick=()=>document.getElementById('beneficiary-vault-entry-'+control.dataset.recipientLinkedEntry)?.scrollIntoView({behavior:'smooth',block:'start'}));
         root.querySelectorAll('[data-legacy-step]').forEach(control=>control.onchange=async()=>{const checked=control.checked;control.disabled=true;try{await recipientRequest(token,'POST','/'+urlId(item.id)+'/acknowledgements',{step_id:control.dataset.legacyStep,acknowledged:checked});if(alive() && current===sequence)root.querySelector('[data-recipient-feedback]').textContent=checked?'Step acknowledged.':'Acknowledgement removed.';}catch(error){control.checked=!checked;if(alive() && current===sequence)root.querySelector('[data-recipient-feedback]').textContent=error.message;}finally{control.disabled=false;}});
-      }catch(error){if(alive() && current===sequence)root.innerHTML=header+`<div class="alert alert-error">${escape(error.message)}</div>`;}
+      }catch(error){if(alive() && current===sequence){root.innerHTML=header+`<div class="alert alert-error">${escape(error.message)}</div>`;bindRefresh();}}
     }
     await load();
   }

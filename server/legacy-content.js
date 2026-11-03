@@ -5,6 +5,8 @@ const { encrypt, decrypt, hashToken } = require('./crypto');
 const { renderMarkdown } = require('./legacy-markdown');
 const { utc } = require('./notifications/time');
 const store = require('./document-store');
+const autoWish = require('./beneficiary-auto-wish');
+const { createVaultVisibility } = require('./vault-visibility');
 const TYPES = ['letter','recording','family_history','instruction','review'];
 const POLICIES = ['owner_only','manual_release','dead_switch_release','emergency_access_release'];
 const now = () => new Date().toISOString();
@@ -123,17 +125,31 @@ function reviewState(row,at=now()) {
 }
 function toView(db,row,{beneficiary=null,detail=true}={}) {
   const data=payload(row);
+  const automatic=autoWish.forContent(db,row.id);
+  const binding=automatic&&autoWish.validBinding(db,automatic)?automatic:null;
+  const currentBeneficiary=beneficiary?db.prepare('SELECT access_granted FROM beneficiaries WHERE id=? AND user_id=?')
+    .get(beneficiary.id,row.user_id):null;
+  const visibility=currentBeneficiary?.access_granted?createVaultVisibility({getDb:()=>db}).forUser(row.user_id):null;
+  const visibleEntry=id=>{
+    const entry=store.ownedEntry(db,row.user_id,id);
+    return entry&&(!beneficiary||(visibility&&visibility.isVisible(entry)));
+  };
   const view={...data,id:row.id,type:row.type,status:row.status,release_policy:row.release_policy,
+    auto_generated:!!automatic,
+    auto_wish_retired:!!automatic?.retired_at,
+    ...(automatic?{locked_beneficiary:{id:automatic.beneficiary_id,name:automatic.beneficiary_name}}:{}),
     revision:row.revision,final_wishes_entry_id:row.final_wishes_entry_id,
     review_enabled:!!row.review_enabled,review_interval_months:row.review_interval_months,
     last_reviewed_at:row.last_reviewed_at,next_review_at:row.next_review_at,review_snoozed_until:row.review_snoozed_until,
     review_state:reviewState(row),created_at:row.created_at,updated_at:row.updated_at,
     body_html:renderMarkdown(data.body_markdown),
     attachments:db.prepare(`SELECT d.* FROM managed_documents d JOIN legacy_content_attachments a ON a.document_id=d.id
-      WHERE a.content_id=? AND d.user_id=? ORDER BY a.display_order,d.created_at`).all(row.id,row.user_id).map(d=>({...store.toView(d),sha256:d.sha256})),
+      WHERE a.content_id=? AND d.user_id=? AND d.legacy_restricted=1 AND d.status='active' ORDER BY a.display_order,d.created_at`).all(row.id,row.user_id).map(d=>({...store.toView(d),sha256:d.sha256})),
     links:db.prepare('SELECT entry_id FROM legacy_content_links WHERE content_id=?').all(row.id)
-      .filter(link=>store.ownedEntry(db,row.user_id,link.entry_id))};
+      .filter(link=>visibleEntry(link.entry_id))};
   if(beneficiary) {
+    view.access_scope=binding&&binding.beneficiary_id===beneficiary.id?'personal_final_wish':'released_content';
+    if(!visibleEntry(view.final_wishes_entry_id))view.final_wishes_entry_id=null;
     view.acknowledgements=db.prepare('SELECT step_id,acknowledged,updated_at FROM legacy_content_acknowledgements WHERE content_id=? AND beneficiary_id=?').all(row.id,beneficiary.id);
     return view;
   }
@@ -168,7 +184,7 @@ function list(db,userId,filters={},beneficiary=null) {
     return true;
   });
 }
-function save(db,userId,input,id=null) {
+function save(db,userId,input,id=null,{allowAutomaticOrigin=false}={}) {
   return db.transaction(()=>{
     if(!input||typeof input!=='object'||Array.isArray(input)) throw error('Invalid content');
     const before=id?owned(db,userId,id):null;
@@ -176,6 +192,24 @@ function save(db,userId,input,id=null) {
     const data={title:input.title??old.title??'',body_markdown:input.body_markdown??old.body_markdown??'',
       introduction:input.introduction??old.introduction??'',description:input.description??old.description??'',
       metadata:validateMetadata(input.metadata??old.metadata??{})};
+    const automatic=before?autoWish.forContent(db,before.id):null;
+    if(['auto_generated','locked_beneficiary','auto_wish_identity','auto_beneficiary_id','owner_user_id']
+      .some(key=>Object.prototype.hasOwnProperty.call(input,key))||(input.id!==undefined&&input.id!==id))throw error('Automatic wish identity is managed by the server');
+    if(automatic) {
+      if(automatic.retired_at)throw error('The beneficiary was removed; this personal wish must remain archived',409);
+      if(automatic.owner_user_id!==userId||!autoWish.validBinding(db,automatic))throw error('Automatic wish ownership requires reconciliation',409);
+      if(JSON.stringify(data.metadata.origin)!==JSON.stringify(old.metadata?.origin))throw error('Automatic wish identity cannot be changed');
+      if(input.beneficiary_ids!==undefined&&(!Array.isArray(input.beneficiary_ids)||input.beneficiary_ids.length!==1||input.beneficiary_ids[0]!==automatic.beneficiary_id))
+        throw error('Automatically assigned recipients cannot be changed');
+      const contacts=data.metadata.final_wishes?.contact_recipients;
+      if(contacts!==undefined&&(!Array.isArray(contacts)||contacts.length))throw error('Automatic wishes cannot have contact recipients');
+    } else if(allowAutomaticOrigin&&!before) {
+      const origin=data.metadata.origin;
+      if(origin?.type!=='beneficiary'||!Number.isSafeInteger(origin.beneficiary_id)||
+        !db.prepare('SELECT 1 FROM beneficiaries WHERE id=? AND user_id=?').get(origin.beneficiary_id,userId)||
+        !Array.isArray(input.beneficiary_ids)||input.beneficiary_ids.length!==1||input.beneficiary_ids[0]!==origin.beneficiary_id)
+        throw error('Invalid automatic wish identity');
+    } else if(JSON.stringify(data.metadata.origin)!==JSON.stringify(old.metadata?.origin))throw error('Content origin is managed by the server');
     validateContactRecipients(db,userId,data.metadata,old.metadata);
     text(data.title,'title',500);if(!data.title.trim()) throw error('Title is required');
     if(data.metadata.related_legacy_content_id) {
@@ -233,12 +267,16 @@ function versionAttachmentIds(rows) {
 // Managed copies are staged privately until commit and restored on rollback;
 // browser-selected original files are never read or removed here.
 function permanentlyDelete(db,userId,id) {
+  const initial=owned(db,userId,id),automatic=autoWish.forContent(db,id);
+  if(automatic&&(!automatic.retired_at||initial.status!=='archived'))throw error('Archive the automatic wish instead; its beneficiary assignment must remain intact',409);
   if(db.inTransaction)throw error('Permanent deletion requires its own transaction',409);
   const staged=[];
   let result;
   try {
     result=db.transaction(()=>{
       const row=owned(db,userId,id),at=now();
+      const assignment=autoWish.forContent(db,id);
+      if(assignment&&(!assignment.retired_at||row.status!=='archived'))throw error('The automatic wish assignment must remain intact',409);
       const candidates=versionAttachmentIds(db.prepare('SELECT payload_encrypted FROM legacy_content_versions WHERE content_id=?').all(id));
       for(const attachment of db.prepare('SELECT document_id FROM legacy_content_attachments WHERE content_id=?').all(id))
         candidates.add(attachment.document_id);
@@ -262,9 +300,6 @@ function permanentlyDelete(db,userId,id) {
         fs.renameSync(filename,temporary);
         staged.push({filename,temporary});
       }
-      db.prepare(`INSERT OR IGNORE INTO legacy_beneficiary_wish_suppressions(user_id,beneficiary_id,created_at)
-        SELECT ?,m.beneficiary_id,? FROM legacy_content_beneficiaries m
-        JOIN beneficiaries b ON b.id=m.beneficiary_id WHERE m.content_id=? AND b.user_id=?`).run(userId,at,id,userId);
       db.prepare('INSERT INTO legacy_content_deletion_permissions(content_id,user_id) VALUES(?,?)').run(id,userId);
       db.prepare('DELETE FROM legacy_release_events WHERE content_id=?').run(id);
       db.prepare("DELETE FROM audit_log WHERE user_id=? AND target_type='legacy_content' AND detail=?").run(userId,id);
@@ -287,6 +322,9 @@ function permanentlyDelete(db,userId,id) {
   return result;
 }
 function replaceRecipients(db,userId,id,recipients,at=now()) {
+  const automatic=autoWish.forContent(db,id);
+  if(automatic&&(automatic.owner_user_id!==userId||!autoWish.validBinding(db,automatic)||recipients.length!==1||recipients[0]!==automatic.beneficiary_id))
+    throw error('Automatically assigned recipients cannot be changed');
   for(const m of db.prepare('SELECT * FROM legacy_content_beneficiaries WHERE content_id=?').all(id)) {
     if(!recipients.includes(m.beneficiary_id)) {
       event(db,{userId,contentId:id,beneficiaryId:m.beneficiary_id,type:'recipient_removed',at});
@@ -302,16 +340,28 @@ function invalidateReleases(db,id,at,type) {
   db.prepare('UPDATE legacy_content_beneficiaries SET released_at=NULL,release_scope=NULL WHERE content_id=?').run(id);
 }
 function canRead(db,beneficiary,row) {
-  if(!beneficiary?.access_granted||Number(beneficiary.user_id)!==Number(row.user_id)||row.status!=='released'||row.release_policy==='owner_only') return false;
-  if(beneficiary.token_expires_at) { const expiry=utc(beneficiary.token_expires_at).getTime(); if(!Number.isFinite(expiry)||expiry<=Date.now()) return false; }
+  if(!beneficiary?.id||Number(beneficiary.user_id)!==Number(row.user_id))return false;
+  const fresh=db.prepare('SELECT * FROM beneficiaries WHERE id=? AND user_id=?').get(beneficiary.id,row.user_id);
+  if(!fresh||fresh.access_token!==beneficiary.access_token)return false;
+  if(fresh.token_expires_at) {
+    try {if(utc(fresh.token_expires_at).getTime()<=Date.now())return false;}catch{return false;}
+  }
+  const automatic=autoWish.forContent(db,row.id);
+  if(automatic) {
+    const mapping=db.prepare('SELECT revoked_at FROM legacy_content_beneficiaries WHERE content_id=? AND beneficiary_id=?').get(row.id,fresh.id);
+    return automatic.beneficiary_id===fresh.id&&automatic.owner_user_id===fresh.user_id&&autoWish.validBinding(db,automatic)&&
+      !fresh.auto_wish_access_revoked_at&&!mapping?.revoked_at&&row.status!=='archived';
+  }
+  if(!fresh.access_granted||row.status!=='released'||row.release_policy==='owner_only') return false;
   const mapping=db.prepare('SELECT * FROM legacy_content_beneficiaries WHERE content_id=? AND beneficiary_id=?').get(row.id,beneficiary.id);
   return !!(mapping?.released_at&&!mapping.revoked_at&&mapping.release_scope===row.release_policy);
 }
 function authenticateBeneficiary(db,token) {
   const b=typeof token==='string'&&token.length>=1&&token.length<=256
     ?db.prepare('SELECT * FROM beneficiaries WHERE access_token=?').get(hashToken(token)):null;
-  const expires=b?.token_expires_at?utc(b.token_expires_at).getTime():Infinity;
-  if(!b||!b.access_granted||!Number.isFinite(expires)&&expires!==Infinity||expires<=Date.now()) {
+  let expires=Infinity;
+  try {if(b?.token_expires_at)expires=utc(b.token_expires_at).getTime();}catch{expires=NaN;}
+  if(!b||!Number.isFinite(expires)&&expires!==Infinity||expires<=Date.now()) {
     event(db,{userId:b?.user_id??null,beneficiaryId:b?.id??null,type:'access_denied'});
     throw error('Beneficiary access is not authorised',403);
   }
@@ -383,6 +433,7 @@ function addMonths(at,months) {
 function review(db,userId,id,input) {
   return db.transaction(()=>{
     const row=owned(db,userId,id),action=input?.action,at=now();
+    if(autoWish.forContent(db,id)?.retired_at)throw error('The beneficiary was removed; this personal wish must remain archived',409);
     if(!['no_change','updated','reschedule','snooze','disable'].includes(action)) throw error('Invalid review action');
     let next=row.next_review_at,snooze=null,last=row.last_reviewed_at,enabled=row.review_enabled;
     if(action==='no_change'||action==='updated') {last=at;next=input.next_review_at?date(input.next_review_at,'next review date'):addMonths(at,row.review_interval_months);enabled=1;}

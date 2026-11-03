@@ -7,6 +7,7 @@ const multer=require('multer');
 const {getDb}=require('../db');
 const {authenticateToken}=require('../middleware/auth');
 const legacy=require('../legacy-content');
+const autoWish=require('../beneficiary-auto-wish');
 const store=require('../document-store');
 const {renderMarkdown}=require('../legacy-markdown');
 const {stripPhotoMetadata}=require('../legacy-media');
@@ -27,11 +28,12 @@ function errorHandler(err,req,res,next) {
 }
 function attachment(db,row,id) {
   const doc=db.prepare(`SELECT d.* FROM managed_documents d JOIN legacy_content_attachments a ON a.document_id=d.id
-    WHERE a.content_id=? AND d.id=? AND d.user_id=? AND d.legacy_restricted=1`).get(row.id,id,row.user_id);
+    WHERE a.content_id=? AND d.id=? AND d.user_id=? AND d.legacy_restricted=1 AND d.status='active'`).get(row.id,id,row.user_id);
   if(!doc) {legacy.event(db,{userId:row.user_id,contentId:row.id,type:'attachment_denied'});throw legacy.error('Attachment not found',404);}
   return doc;
 }
 function revisionForAttachment(db,row) {
+  if(autoWish.forContent(db,row.id)?.retired_at)throw legacy.error('The beneficiary was removed; this personal wish must remain archived',409);
   const at=legacy.now();
   const snapshot={...legacy.payload(row),attachments:db.prepare('SELECT document_id FROM legacy_content_attachments WHERE content_id=?').all(row.id)};
   db.prepare('INSERT INTO legacy_content_versions(content_id,revision,payload_encrypted,editor_id,created_at) VALUES (?,?,?,?,?)')
@@ -83,9 +85,11 @@ ownerRouter.post('/legacy/:id/revoke',handler((req,res)=>{
     const maps=db.prepare('SELECT beneficiary_id FROM legacy_content_beneficiaries WHERE content_id=?').all(row.id);
     const selected=req.body.beneficiary_ids===undefined?maps.map(x=>x.beneficiary_id):legacy.validateRecipients(db,req.user.id,req.body.beneficiary_ids);
     const at=legacy.now();
+    const automatic=autoWish.forContent(db,row.id);
     for(const b of selected) {
       if(!maps.some(x=>x.beneficiary_id===b))throw legacy.error('Recipient not assigned');
       db.prepare('UPDATE legacy_content_beneficiaries SET revoked_at=? WHERE content_id=? AND beneficiary_id=?').run(at,row.id,b);
+      if(automatic&&automatic.beneficiary_id===b)db.prepare('UPDATE beneficiaries SET auto_wish_access_revoked_at=COALESCE(auto_wish_access_revoked_at,?) WHERE id=? AND user_id=?').run(at,b,req.user.id);
       legacy.event(db,{userId:req.user.id,contentId:row.id,beneficiaryId:b,type:'revoked',at});
     }
     return legacy.toView(db,row);

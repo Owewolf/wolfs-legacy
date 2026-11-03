@@ -56,6 +56,9 @@ before(async () => {
 beforeEach(() => {
   db.exec(`DROP TRIGGER IF EXISTS fixture_wish_insert_failure;
     DROP TRIGGER IF EXISTS fixture_wish_audit_failure;
+    DROP TRIGGER IF EXISTS fixture_identity_audit_failure;
+    DROP TRIGGER IF EXISTS fixture_wish_identity_failure;
+    DROP TRIGGER IF EXISTS fixture_wish_mapping_failure;
     DROP TRIGGER IF EXISTS fixture_beneficiary_audit_failure;
     DELETE FROM legacy_contents;
     DELETE FROM beneficiaries;
@@ -68,7 +71,7 @@ after(async () => {
   if (db?.open) db.close();
 });
 
-test('adding a beneficiary creates one encrypted private draft assigned to that beneficiary', async () => {
+test('adding a beneficiary creates one encrypted dedicated draft immediately readable only by that beneficiary', async () => {
   const result = await request({ body: {
     name: '  Synthetic beneficiary  ', email: 'synthetic-recipient@example.test',
     phone: '000', relationship: 'Friend', emergency_waiting_days: 9
@@ -105,13 +108,17 @@ test('adding a beneficiary creates one encrypted private draft assigned to that 
   assert.equal(mappings[0].release_scope, null);
   assert.equal(count('vault_entries'), 0);
   assert.equal(count('notification_outbox'), 0);
-  assert.deepEqual(db.prepare('SELECT action FROM audit_log ORDER BY id').all().map(x => x.action), ['legacy_created', 'add_beneficiary']);
+  assert.deepEqual(db.prepare('SELECT action FROM audit_log ORDER BY id').all().map(x => x.action), ['legacy_created', 'legacy_auto_wish_linked', 'add_beneficiary']);
 
-  // Even existing general access cannot expose an unprepared owner-only wish.
+  const identity = db.prepare('SELECT * FROM legacy_beneficiary_auto_wishes WHERE beneficiary_id=?').get(created.id);
+  assert.equal(identity.owner_user_id, OWNER);
+  assert.equal(identity.content_id, row.id);
+  assert.equal(legacy.canRead(db, beneficiary, row), true);
+  assert.deepEqual(legacy.list(db, OWNER, {}, beneficiary).map(item => item.id), [row.id]);
   db.prepare('UPDATE beneficiaries SET access_granted=1 WHERE id=?').run(created.id);
   const authorised = db.prepare('SELECT * FROM beneficiaries WHERE id=?').get(created.id);
-  assert.equal(legacy.canRead(db, authorised, row), false);
-  assert.deepEqual(legacy.list(db, OWNER, {}, authorised), []);
+  assert.equal(legacy.canRead(db, authorised, row), true);
+  assert.deepEqual(legacy.list(db, OWNER, {}, authorised).map(item => item.id), [row.id]);
 });
 
 test('automatic wishes belong to the authenticated owner and are absent for other owners', async () => {
@@ -148,6 +155,9 @@ test('invalid or unauthenticated additions do not create a beneficiary or wish',
 
 for (const failure of [
   { name: 'wish creation', trigger: 'fixture_wish_insert_failure', table: 'legacy_contents', condition: '' },
+  { name: 'wish identity', trigger: 'fixture_wish_identity_failure', table: 'legacy_beneficiary_auto_wishes', condition: '' },
+  { name: 'wish mapping', trigger: 'fixture_wish_mapping_failure', table: 'legacy_content_beneficiaries', condition: '' },
+  { name: 'identity audit', trigger: 'fixture_identity_audit_failure', table: 'audit_log', condition: "WHEN NEW.action='legacy_auto_wish_linked'" },
   { name: 'wish audit', trigger: 'fixture_wish_audit_failure', table: 'audit_log', condition: "WHEN NEW.action='legacy_created'" },
   { name: 'beneficiary audit', trigger: 'fixture_beneficiary_audit_failure', table: 'audit_log', condition: "WHEN NEW.action='add_beneficiary'" }
 ]) {
@@ -156,7 +166,7 @@ for (const failure of [
     db.exec(`CREATE TRIGGER ${failure.trigger} BEFORE INSERT ON ${failure.table} ${failure.condition}
       BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END;`);
     assert.equal((await request()).status, 500);
-    for (const table of ['beneficiaries', 'legacy_contents', 'legacy_content_beneficiaries', 'audit_log']) {
+    for (const table of ['beneficiaries', 'legacy_contents', 'legacy_beneficiary_auto_wishes', 'legacy_content_beneficiaries', 'audit_log']) {
       assert.equal(count(table), 0, table + ' remains unchanged after a failed addition');
     }
     assert.equal(count('legacy_release_events'), priorEvents);

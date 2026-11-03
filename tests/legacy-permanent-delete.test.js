@@ -160,13 +160,16 @@ test('shared managed documents survive current wishes, another wish history and 
   assert.equal(count('legacy_content_versions',other.id),1);
 });
 
-test('startup repair respects intentional deletion while a newly added beneficiary still gets a blank draft',()=>{
+test('automatic wish deletion is blocked and archiving preserves its identity across startup repair',()=>{
   const person=beneficiary();
   const wish=ensureBeneficiaryFinalWish(db,OWNER,person);
-  legacy.permanentlyDelete(db,OWNER,wish.id);
+  const before=db.prepare('SELECT * FROM legacy_contents WHERE id=?').get(wish.id);
+  assert.throws(()=>legacy.permanentlyDelete(db,OWNER,wish.id),{status:409});
+  assert.deepEqual(db.prepare('SELECT * FROM legacy_contents WHERE id=?').get(wish.id),before);
+  legacy.save(db,OWNER,{status:'archived'},wish.id);
   initLegacySchema(db);initLegacySchema(db);
-  assert.deepEqual(backfillBeneficiaryFinalWishes(db),{created:0,total:1});
-  assert.deepEqual(ensureBeneficiaryFinalWish(db,OWNER,person),{id:null,created:false,suppressed:true});
+  assert.deepEqual(backfillBeneficiaryFinalWishes(db),{created:0,total:1,adopted:0,suppressed:0,reconciliation:[]});
+  assert.deepEqual(ensureBeneficiaryFinalWish(db,OWNER,person),{id:wish.id,created:false});
   db.prepare('DELETE FROM beneficiaries WHERE id=?').run(person);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM legacy_beneficiary_wish_suppressions').get().n,0);
   const replacement=beneficiary();assert.notEqual(replacement,person);
@@ -175,6 +178,14 @@ test('startup repair respects intentional deletion while a newly added beneficia
   const view=legacy.toView(db,legacy.owned(db,OWNER,next.id));
   assert.equal(view.title,'Synthetic recipient');assert.equal(view.body_markdown,'');
   assert.deepEqual(view.beneficiary_ids,[replacement]);
+});
+
+test('deleting a manually assigned wish does not suppress a dedicated automatic wish',()=>{
+  const person=beneficiary(),manual=create({beneficiary_ids:[person]});
+  legacy.permanentlyDelete(db,OWNER,manual.id);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM legacy_beneficiary_wish_suppressions').get().n,0);
+  assert.equal(backfillBeneficiaryFinalWishes(db).created,1);
+  assert.ok(db.prepare('SELECT content_id FROM legacy_beneficiary_auto_wishes WHERE beneficiary_id=?').get(person));
 });
 
 test('failed deletion restores all managed bytes, content, events and recipients atomically',()=>{
