@@ -21,7 +21,8 @@ const SECTIONS = {
     icon: '\u{1F3E6}',
     fields: [
       { key: 'bank_name', label: 'Bank Name', type: 'text' },
-      { key: 'account_type', label: 'Account Type', type: 'select', options: ['Savings', 'Current / Checking', 'Fixed Deposit', 'Recurring Deposit', 'Joint Account', 'Other'] },
+      { key: 'account_type', label: 'Account Type', type: 'select', options: ['Bank', 'Cash', 'Savings', 'Current / Checking', 'Fixed Deposit', 'Recurring Deposit', 'Joint Account', 'Other'] },
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'account_number', label: 'Account Number', type: 'text', sensitive: true },
       { key: 'ifsc_routing', label: 'IFSC / Routing / SWIFT', type: 'text' },
       { key: 'branch', label: 'Branch', type: 'text' },
@@ -36,6 +37,7 @@ const SECTIONS = {
     icon: '\u{1F4C8}',
     fields: [
       { key: 'institution', label: 'Institution / Platform', type: 'text' },
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'type', label: 'Type', type: 'select', options: ['Stocks', 'Mutual Funds', 'Bonds', 'ETFs', 'Cryptocurrency', 'Fixed Income', 'PPF / EPF', 'Other'] },
       { key: 'account_number', label: 'Account / Folio Number', type: 'text', sensitive: true },
       { key: 'value_approx', label: 'Approximate Value', type: 'text' },
@@ -49,7 +51,9 @@ const SECTIONS = {
     icon: '\u{1F3D6}',
     fields: [
       { key: 'provider', label: 'Provider / Employer', type: 'text' },
-      { key: 'type', label: 'Account Type', type: 'select', options: ['401(k)', 'IRA', 'Roth IRA', 'Pension', 'EPF', 'NPS', 'Annuity', 'Other'] },
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
+      { key: 'type', label: 'Account Type', type: 'select', options: ['401(k)', 'IRA', 'Roth IRA', 'Pension', 'Provident Fund', 'EPF', 'NPS', 'Annuity', 'Other'] },
+      { key: 'investment_type', label: 'Underlying Account / Investment Type', type: 'text' },
       { key: 'account_number', label: 'Account Number', type: 'text', sensitive: true },
       { key: 'value_approx', label: 'Approximate Value', type: 'text' },
       { key: 'beneficiary', label: 'Designated Beneficiary', type: 'text' },
@@ -76,6 +80,7 @@ const SECTIONS = {
     name: 'Real Estate & Property',
     icon: '\u{1F3E0}',
     fields: [
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'type', label: 'Property Type', type: 'select', options: ['Residential', 'Commercial', 'Land', 'Agricultural', 'Rental', 'Other'] },
       { key: 'address', label: 'Property Address', type: 'textarea' },
       { key: 'ownership', label: 'Ownership', type: 'select', options: ['Sole Owner', 'Joint Owner', 'Through Company', 'Trust'] },
@@ -92,6 +97,7 @@ const SECTIONS = {
     name: 'Debts & Liabilities',
     icon: '\u{1F4B3}',
     fields: [
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'creditor', label: 'Creditor / Lender', type: 'text' },
       { key: 'type', label: 'Type', type: 'select', options: ['Mortgage', 'Personal Loan', 'Car Loan', 'Student Loan', 'Credit Card', 'Business Loan', 'Informal Loan', 'Other'] },
       { key: 'account_number', label: 'Account / Loan #', type: 'text', sensitive: true },
@@ -120,11 +126,13 @@ const SECTIONS = {
     name: 'Vehicles',
     icon: '\u{1F697}',
     fields: [
+      { key: 'homebank_group', label: 'HomeBank Group', type: 'text' },
       { key: 'type', label: 'Vehicle Type', type: 'select', options: ['Car', 'Motorcycle', 'Truck', 'Boat', 'RV', 'Other'] },
       { key: 'make_model', label: 'Make & Model', type: 'text' },
       { key: 'year', label: 'Year', type: 'text' },
       { key: 'registration', label: 'Registration Number', type: 'text' },
       { key: 'vin', label: 'VIN / Chassis Number', type: 'text', sensitive: true },
+      { key: 'current_value', label: 'Current Value (est.)', type: 'text' },
       { key: 'loan_provider', label: 'Loan Provider', type: 'text' },
       { key: 'loan_balance', label: 'Loan Balance', type: 'text' },
       { key: 'insurance_policy', label: 'Insurance Policy #', type: 'text' }

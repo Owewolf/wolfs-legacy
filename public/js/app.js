@@ -451,6 +451,7 @@ async function renderEntryForm(sectionKey, entryId) {
   let existing = null;
   if (entryId) {
     try { existing = await API.getEntry(entryId); } catch { return navigate('section/' + sectionKey); }
+    if (existing.section !== sectionKey && SECTIONS[existing.section]) return navigate('edit/' + existing.section + '/' + entryId);
   }
   if (window.location.hash !== expectedHash) return;
   editingHomebankEntry = existing?.homebank_account_id != null ? existing : null;
@@ -506,17 +507,22 @@ async function renderEntryForm(sectionKey, entryId) {
     const button = e.target.querySelector('button[type=submit]');
     button.disabled = true;
     const f = new FormData(e.target);
-    const fields = {};
+    const knownFields = new Set(sec.fields.map(fd => fd.key));
+    const fields = Object.fromEntries(Object.entries(existing?.fields || {}).filter(([key]) =>
+      !knownFields.has(key) && !managedFields.has(key)));
     sec.fields.forEach(fd => {
       if (editingHomebankEntry?.homebank_managed_fields?.includes(fd.key)) return;
       const v = f.get(fd.key); if (v) fields[fd.key] = v;
     });
     try {
       const payload = { section: sectionKey, title: f.get('title'), fields, notes: f.get('notes') };
+      let savedSection = sectionKey;
       if (existing) {
-        await API.updateEntry(entryId, payload);
+        const saved = await API.updateEntry(entryId, payload);
+        if (SECTIONS[saved?.section]) savedSection = saved.section;
       } else {
         const created = await API.createEntry(payload);
+        if (SECTIONS[created.section]) savedSection = created.section;
         entryId = created.id;
         existing = await API.getEntry(entryId);
       }
@@ -527,7 +533,7 @@ async function renderEntryForm(sectionKey, entryId) {
         return;
       }
       showSuccess('Record and documents saved');
-      navigate('section/' + sectionKey);
+      navigate('section/' + savedSection);
     } catch (err) { showError(err.message); }
     finally { button.disabled = false; }
   };
@@ -920,6 +926,18 @@ async function refreshLiveVault() {
         return;
       }
       if (window.location.hash !== expectedHash) return;
+      if (fresh.section && fresh.section !== key && SECTIONS[fresh.section]) {
+        // Preserve unsaved fields and queued attachments in the current form.
+        // The API maps this draft into the new source section when it saves.
+        let notice = $('#homebank-reclassification');
+        if (!notice) {
+          notice = document.createElement('p'); notice.id = 'homebank-reclassification';
+          notice.className = 'alert alert-info'; notice.setAttribute('role', 'status');
+          $('#entry-form')?.prepend(notice);
+        }
+        notice.textContent = `HomeBank now classifies this record as ${SECTIONS[fresh.section].name}. Saving keeps your changes in that section.`;
+        return;
+      }
       const previous = new Set(editingHomebankEntry.homebank_managed_fields || []);
       const managed = new Set(fresh.homebank_managed_fields || []);
       for (const field of new Set([...previous, ...managed])) {

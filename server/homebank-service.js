@@ -6,9 +6,10 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { getDb, audit } = require('./db');
 const { encrypt, decrypt } = require('./crypto');
+const { reconcileHomebankClassifications } = require('./homebank-classification');
 const MAX_BYTES = 50 * 1024 * 1024;
 // Keep in step with homebank_parse.py; reparse old snapshots on parser upgrades.
-const SNAPSHOT_SCHEMA_VERSION = 2;
+const SNAPSHOT_SCHEMA_VERSION = 3;
 const ROOT = path.resolve(process.env.HOMEBANK_ALLOWED_ROOT || '/home/wolf/Documents');
 const DEFAULT_DIRECTORY = process.env.HOMEBANK_DIRECTORY || '/home/wolf/Documents/Money';
 const inflight = new Map();
@@ -108,7 +109,11 @@ async function syncUser(userId, force = false) {
       if (!file) throw new Error('No HomeBank .xhb file found in the selected directory');
       const existing = decodedSnapshot(current);
       if (!force && current.fingerprint === file.fingerprint && current.snapshot_encrypted && !current.last_error &&
-          existing?.snapshot_schema_version === SNAPSHOT_SCHEMA_VERSION && existing?.exported_date === localDay()) return current;
+          existing?.snapshot_schema_version === SNAPSHOT_SCHEMA_VERSION && existing?.exported_date === localDay()) {
+        const aligned = reconcileHomebankClassifications(getDb(), userId, existing, { ownerEmail: process.env.HOMEBANK_OWNER_EMAIL });
+        if (aligned.changed) audit(userId, 'homebank_classification_realign', 'homebank', null, `entries=${aligned.changed}`, null);
+        return current;
+      }
       // Validate file again after parsing, so incomplete atomic saves never replace a good snapshot.
       const snap = await parseXhb(file.full);
       const after = await fs.stat(file.full);
@@ -117,9 +122,14 @@ async function syncUser(userId, force = false) {
       }
       const hash = crypto.createHash('sha256').update(JSON.stringify(snap)).digest('hex');
       const syncedAt = NOW();
-      getDb().prepare(`UPDATE homebank_snapshots SET snapshot_encrypted=?,fingerprint=?,source_file=?,
-        source_saved_at=?,synced_at=?,last_error=NULL,content_hash=? WHERE user_id=?`)
-        .run(encrypt(JSON.stringify(snap)), file.fingerprint, file.name, file.mtime, syncedAt, hash, userId);
+      const db = getDb();
+      const aligned = db.transaction(() => {
+        db.prepare(`UPDATE homebank_snapshots SET snapshot_encrypted=?,fingerprint=?,source_file=?,
+          source_saved_at=?,synced_at=?,last_error=NULL,content_hash=? WHERE user_id=?`)
+          .run(encrypt(JSON.stringify(snap)), file.fingerprint, file.name, file.mtime, syncedAt, hash, userId);
+        return reconcileHomebankClassifications(db, userId, snap, { ownerEmail: process.env.HOMEBANK_OWNER_EMAIL });
+      })();
+      if (aligned.changed) audit(userId, 'homebank_classification_realign', 'homebank', null, `entries=${aligned.changed}`, null);
       audit(userId, 'homebank_sync_success', 'homebank', null, `accounts=${snap.counts.all}`, null);
     } catch (e) {
       const msg = String(e.message).slice(0,300);
