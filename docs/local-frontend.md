@@ -53,6 +53,10 @@ Local sessions are labelled `local_gateway`, not SMS-verified, and each protecte
 
 The server stores short-lived consumed nonces in `local_auth_gateway_nonces`, preventing replay across web processes. Disabling the backend gateway or rotating its ID/secret blocks its local sessions; normal public SMS sessions remain valid. Retain pre-change snapshots locally only and remove any temporary hosting snapshot after verified download.
 
+Local activation was verified on **3 November 2026 at 14:54:42 SAST** using runtime commit `50bd5ee`. The owner approved Fedora's administrator prompt, and `wolfs-legacy.service` restarted successfully at 14:53:50 SAST. Port 4444 and `asus.local:4444` now use the trusted password-only local sign-in path with the same live production data. Public-site `AUTH_SMS_REQUIRED=true` remains enabled. Requests with invalid credentials were rejected, forged browser proof headers were replaced, and foreign browser origins were rejected; verification sent no SMS and created no accounts. A real synthetic HTTPS proxy/authentication integration verified successful password-only login, protected access, rejection of its token directly on the public API, and unchanged ordinary SMS login. The full suite passed **455 Node tests and 17 Python tests**, with no failures or skips. No user's password was requested for verification.
+
+Production integrity, existing accounts/enrollment, protected records and existing keys were verified unchanged. Fresh recovery snapshots, keys and managed-file copies are retained locally only; temporary hosting snapshots, helper scripts and upload artifacts were removed. Gateway credentials remain outside Git and public assets.
+
 ## Keep the production HomeBank source current
 
 The standalone Python forwarder sends a validated copy of the local HomeBank file over certificate-verified FTPS. It does not start the app or read its database. Keep its configuration in a private `0600` file, for example `.env.homebank-sync` (ignored by Git):
