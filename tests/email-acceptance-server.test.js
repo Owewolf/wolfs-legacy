@@ -46,10 +46,9 @@ test('acceptance harness isolates paths/secrets and protects one-time real remin
   assert.match(missing.headers.get('content-type'),/application\/json/);
   assert.deepEqual(await missing.json(),{error:'API endpoint not found'});
   assert.equal((await request('/api/notifications/acceptance/status')).status,401);
-  const password='SyntheticAcceptancePassword123!';
+  const password=prepared.syntheticOwner.password;
   const registered=await request('/api/auth/register',{name:'Synthetic acceptance owner',email:'owner@example.invalid',password});
-  assert.equal(registered.status,201);
-  assert.equal(Boolean((await registered.json()).token),false,'registration requires a separate sign-in');
+  assert.equal(registered.status,403,'the mail harness cannot bypass owner approval through public registration');
   const login=await request('/api/auth/login',{email:'owner@example.invalid',password});
   assert.equal(login.status,200);
   const {token}=await login.json();

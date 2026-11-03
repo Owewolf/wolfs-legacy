@@ -22,6 +22,11 @@ function prepareAcceptance({repoRoot=path.resolve(__dirname,'..'),mailEnv={},all
   for(const directory of ['server','public'])fs.cpSync(path.join(repoRoot,directory),path.join(staging,directory),{recursive:true});
   fs.symlinkSync(path.join(repoRoot,'node_modules'),path.join(staging,'node_modules'),'dir');
   for(const directory of ['data','managed-documents','empty-homebank'])fs.mkdirSync(path.join(staging,directory),{mode:0o700});
+  // This isolated mail harness uses a pre-existing synthetic owner. It never
+  // bypasses the production registration API or inherits a real SMS provider.
+  const syntheticOwner={name:'Synthetic acceptance owner',email:'owner@example.invalid',password:crypto.randomBytes(24).toString('hex')};
+  const syntheticOwnerFile=path.join(staging,'synthetic-owner.json');
+  fs.writeFileSync(syntheticOwnerFile,JSON.stringify(syntheticOwner)+'\n',{mode:0o600});
   fs.copyFileSync(path.join(repoRoot,'scripts/email-acceptance/route.js'),path.join(staging,'server/acceptance-route.js'));
   fs.copyFileSync(path.join(repoRoot,'scripts/email-acceptance/client.js'),path.join(staging,'public/js/acceptance.js'));
   fs.copyFileSync(path.join(repoRoot,'scripts/email-acceptance/bootstrap.js'),path.join(staging,'bootstrap.js'));
@@ -41,14 +46,14 @@ function prepareAcceptance({repoRoot=path.resolve(__dirname,'..'),mailEnv={},all
   const childEnv={PATH:process.env.PATH||'/usr/bin:/bin',LANG:'C.UTF-8',TZ:'Africa/Johannesburg',NODE_ENV:'production',
     PORT:String(port),LISTEN_HOST:'127.0.0.1',JWT_SECRET:crypto.randomBytes(32).toString('hex'),
     ENCRYPTION_KEY:crypto.randomBytes(32).toString('hex'),NOTIFICATION_SECRET:crypto.randomBytes(32).toString('hex'),
-    NOTIFICATIONS_ENABLED:allowRealEmail?'true':'false',NOTIFICATION_TIMEZONE:'Africa/Johannesburg',NOTIFICATION_REMINDER_DAYS:'5',
+    NOTIFICATIONS_ENABLED:allowRealEmail?'true':'false',NOTIFICATION_TIMEZONE:'Africa/Johannesburg',NOTIFICATION_REMINDER_DAYS:'5',AUTH_SMS_REQUIRED:'false',
     HOMEBANK_OWNER_EMAIL:'',HOMEBANK_DIRECTORY:path.join(staging,'empty-homebank'),HOMEBANK_ALLOWED_ROOT:path.join(staging,'empty-homebank'),
     DOCUMENT_STORAGE_ROOT:path.join(staging,'managed-documents'),EMAIL_ACCEPTANCE_ROOT:staging,EMAIL_ACCEPTANCE_ID:crypto.randomUUID(),
     EMAIL_ACCEPTANCE_EXPIRES_AT:new Date(Date.now()+2*60*60*1000).toISOString()};
   for(const key of MAIL_KEYS)if(typeof mailEnv[key]==='string')childEnv[key]=mailEnv[key];
   // No .env, original data, private files, source HomeBank directory or alternate
   // alert executable is copied/inherited. Secrets live only in child memory.
-  return {staging,childEnv,indexFile,bootstrapFile:path.join(staging,'bootstrap.js'),port};
+  return {staging,childEnv,indexFile,bootstrapFile:path.join(staging,'bootstrap.js'),port,syntheticOwner,syntheticOwnerFile};
 }
 
 function waitForReady(child,port,acceptanceId,timeout=45000) {
@@ -101,12 +106,12 @@ async function run(args) {
   child.once('error',()=>stop());
   try {await waitForReady(child,prepared.port,prepared.childEnv.EMAIL_ACCEPTANCE_ID);}catch(error){stop();await ended;throw error;}
   const metadata={staging:prepared.staging,pid:child.pid,launcher_pid:process.pid,port:prepared.port,
-    url:`http://127.0.0.1:${prepared.port}/#register`,acceptance_id:prepared.childEnv.EMAIL_ACCEPTANCE_ID,
+    url:`http://127.0.0.1:${prepared.port}/#login`,acceptance_id:prepared.childEnv.EMAIL_ACCEPTANCE_ID,
     started_at:new Date().toISOString(),expires_at:prepared.childEnv.EMAIL_ACCEPTANCE_EXPIRES_AT,log_file:logFile,
     initial_mailbox_checkpoint:JSON.parse(fs.readFileSync(path.join(prepared.staging,'mailbox-checkpoint.json'),'utf8'))};
   fs.mkdirSync(path.dirname(sessionFile),{recursive:true,mode:0o700});
   fs.writeFileSync(sessionFile,JSON.stringify(metadata,null,2)+'\n',{mode:0o600});fs.chmodSync(sessionFile,0o600);
-  process.stdout.write(`Isolated acceptance UI: ${metadata.url}\nSession metadata: ${sessionFile}\nRegister a synthetic owner, then open Settings. Real email is enabled only in this disposable instance.\n`);
+  process.stdout.write(`Isolated acceptance UI: ${metadata.url}\nSession metadata: ${sessionFile}\nSynthetic sign-in credentials: ${prepared.syntheticOwnerFile}\nSign in with the disposable owner, then open Settings. Real email is enabled only in this disposable instance.\n`);
   const result=await ended;
   clearTimeout(expiryTimer);
   metadata.stopped_at=new Date().toISOString();metadata.exit_code=result.code;metadata.exit_signal=result.signal;

@@ -20,6 +20,7 @@ require.cache[require.resolve('better-sqlite3')].exports = function FixtureDatab
 test.after(() => assert.equal(persistentDatabaseAttempts, 0, 'all route database dependencies remain synthetic'));
 
 const { initSmsOtpSchema } = require('../server/sms-otp');
+const { initRegistrationApprovalSchema, createRegistrationApprovalService } = require('../server/registration-approval');
 const { createAuthRouter } = require('../server/routes/auth');
 
 function createDb() {
@@ -59,6 +60,7 @@ function createDb() {
     );
   `);
   initSmsOtpSchema(db);
+  initRegistrationApprovalSchema(db);
   return db;
 }
 
@@ -103,7 +105,7 @@ async function requestJson(server, method, path, body, token) {
   return { status: res.status, data };
 }
 
-test('register does not auto-issue jwt', async () => {
+test('public registration cannot create an account or issue a JWT before approval', async () => {
   const db = createDb();
   const smsProvider = { configured: true, sendOtp: async () => ({}) };
   const server = await createServer(db, smsProvider);
@@ -114,11 +116,10 @@ test('register does not auto-issue jwt', async () => {
       name: 'Owner',
       password: 'StrongPass123!'
     });
-    assert.equal(res.status, 201);
+    assert.equal(res.status, 403);
     assert.equal(Boolean(res.data.token), false);
-    assert.equal(res.data.success, true);
-    assert.equal(res.data.sms_required, false);
-    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='register'").get().n, 1);
+    assert.equal(res.data.code, 'APPROVAL_REQUIRED');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
   } finally {
     server.close();
     db.close();
@@ -137,6 +138,14 @@ function capturingProvider() {
 
 function lastOtp(provider) { return provider.sent.at(-1).message.match(/\b(\d{6})\b/)[1]; }
 
+function approvalFixture(db, provider) {
+  const ownerId = seedUser(db, { email: 'approving-owner@example.test', phone: '+27820000001', enabled: 1 });
+  const env = { AUTH_SMS_REQUIRED: 'true', ACCOUNT_APPROVAL_OWNER_USER_ID: String(ownerId), ACCOUNT_APPROVAL_OWNER_SMS_E164: '+27820000001',
+    APP_BASE_URL: 'https://example.test', OTP_HASH_KEY: 'z'.repeat(32) };
+  const approvals = createRegistrationApprovalService({ db, env, smsSender: provider, auditWriter() {} });
+  return { env, approvals, actor: { id: ownerId, mfa: 'sms_otp', auth_version: 0 } };
+}
+
 async function loginRequired(server, email = 'required@example.test') {
   return requestJson(server, 'POST', '/api/auth/login', { email, password: 'StrongPass123!' });
 }
@@ -147,29 +156,33 @@ async function verifyChallenge(server, challenge, otp) {
   });
 }
 
-test('required registration validates mobile and issues no session before SMS verification', async () => {
+test('approved registration validates mobile and issues no session before SMS verification', async () => {
   const db = createDb(), provider = capturingProvider();
-  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  const approval = approvalFixture(db, provider);
+  const server = await createServer(db, provider, approval.env);
   const registration = { email: 'required@example.test', password: 'StrongPass123!', name: 'Synthetic owner' };
   try {
     for (const phone of [undefined, 'not a mobile', '+123']) {
-      const invalid = await requestJson(server, 'POST', '/api/auth/register', { ...registration, phone });
+      const invalid = await requestJson(server, 'POST', '/api/auth/registration-requests', { ...registration, phone });
       assert.equal(invalid.status, 400);
-      assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 0);
+      assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 1);
     }
-    const started = await requestJson(server, 'POST', '/api/auth/register', { ...registration, phone: '082 123 4567' });
+    const requested = await requestJson(server, 'POST', '/api/auth/registration-requests', { ...registration, phone: '082 123 4567' });
+    const invite = approval.approvals.decide({ requestId: requested.data.request_id, actor: approval.actor, decision: 'approve', confirmed: true });
+    assert.equal(invite.ok, true);
+    const started = await requestJson(server, 'POST', '/api/auth/register', { ...registration, phone: '082 123 4567', invitation_token: invite.invitation_token });
     assert.equal(started.status, 201);
     assert.equal(started.data.account_created, true);
     assert.equal(started.data.requires_second_factor, true);
     assert.equal(started.data.recovery_code_allowed, false);
     assert.equal(started.data.token, undefined);
-    assert.equal(provider.sent[0].to, '+27821234567');
-    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users').get().sms_2fa_enabled, 0);
+    assert.equal(provider.sent.at(-1).to, '+27821234567');
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users WHERE email=?').get(registration.email).sms_2fa_enabled, 0);
     const verified = await verifyChallenge(server, started.data, lastOtp(provider));
     assert.equal(verified.status, 200);
     assert.equal(jwt.verify(verified.data.token, 'test-secret').mfa, 'sms_otp');
     assert.equal(verified.data.recovery_codes.length, 10);
-    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users').get().sms_2fa_enabled, 1);
+    assert.equal(db.prepare('SELECT sms_2fa_enabled FROM users WHERE email=?').get(registration.email).sms_2fa_enabled, 1);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='sms_2fa_enabled'").get().n, 1);
     assert.equal((await requestJson(server, 'GET', '/api/auth/me', null, verified.data.token)).status, 200);
     const replay = await verifyChallenge(server, started.data, lastOtp(provider));
@@ -190,16 +203,20 @@ test('registration SMS delivery failure leaves an unverified account recoverable
   const provider = capturingProvider();
   const send = provider.sendOtp;
   provider.sendOtp = async payload => { if (unavailable) throw new Error('synthetic unavailable'); return send.call(provider, payload); };
-  const server = await createServer(db, provider, { AUTH_SMS_REQUIRED: 'true' });
+  const approval = approvalFixture(db, provider);
+  const server = await createServer(db, provider, approval.env);
   try {
+    const requested = await approval.approvals.requestAccess({ name: 'Synthetic owner', email: 'required@example.test', phone: '+27821234567' });
+    const invite = approval.approvals.decide({ requestId: requested.request_id, actor: approval.actor, decision: 'approve', confirmed: true });
+    assert.equal(invite.ok, true);
     const failed = await requestJson(server, 'POST', '/api/auth/register', {
-      email: 'required@example.test', password: 'StrongPass123!', name: 'Synthetic owner', phone: '+27821234567'
+      email: 'required@example.test', password: 'StrongPass123!', name: 'Synthetic owner', phone: '+27821234567', invitation_token: invite.invitation_token
     });
     assert.equal(failed.status, 503);
     assert.equal(failed.data.account_created, true);
     assert.match(failed.data.error, /Sign in/);
     assert.equal(failed.data.token, undefined);
-    assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 2);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM sms_otp_challenges').get().n, 0);
     unavailable = false;
     const retry = await loginRequired(server);
@@ -219,7 +236,7 @@ test('required authentication never falls back to passwords when the SMS provide
     const register = await requestJson(server, 'POST', '/api/auth/register', {
       email: 'other@example.test', password: 'StrongPass123!', name: 'Other', phone: '+27821230001'
     });
-    assert.equal(register.status, 503);
+    assert.equal(register.status, 403);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM users').get().n, 1);
   } finally { server.close(); db.close(); }
 });

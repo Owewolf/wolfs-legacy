@@ -728,6 +728,18 @@ a:hover { text-decoration: underline; }
 }
 
 
+.registration-identity { margin: 18px 0; }
+.registration-identity dt { color: var(--text-muted); font-size: 13px; margin-top: 10px; }
+.registration-identity dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+.registration-request { margin-top: 16px; }
+.registration-request h2 { font-size: 20px; overflow-wrap: anywhere; }
+.registration-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.registration-actions[hidden] { display: none; }
+.registration-actions .btn { min-height: 44px; }
+.registration-decision p { margin: 16px 0; }
+.registration-identity + form { margin-top: 24px; }
+#registration-status-action { margin-top: 16px; }
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }

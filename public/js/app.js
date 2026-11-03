@@ -6,6 +6,13 @@ let state = { user: null, section: null, entries: [], counts: {}, beneficiaries:
 let editingHomebankEntry = null;
 let displayedSearchResults = [];
 let liveVaultRefreshBusy = false;
+let postLoginRoute = null;
+
+function finishLoginRoute() {
+  const destination = postLoginRoute || 'vault';
+  postLoginRoute = null;
+  return navigate(destination);
+}
 
 // ── Helpers ──
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
@@ -159,12 +166,24 @@ async function handleRoute() {
 
   if (route === 'access') return renderAccessPortal();
   if (route === 'login') return renderLogin();
-  if (route === 'register') return renderRegister();
+  if (route === 'register') {
+    postLoginRoute = null;
+    if (p1 === 'invite') return renderInvitedRegistration(p2 || '');
+    if (p1 === 'status') return renderRegistrationStatus(p2 || '', hash.split('/')[3] || '');
+    return renderRegister();
+  }
 
   if (!state.user) {
     if (API.token) {
-      try { state.user = await API.getMe(); } catch { API.setToken(null); return navigate('login'); }
-    } else return navigate('login');
+      try { state.user = await API.getMe(); } catch {
+        API.setToken(null);
+        if (route === 'admin') postLoginRoute = hash;
+        return navigate('login');
+      }
+    } else {
+      if (route === 'admin') postLoginRoute = hash;
+      return navigate('login');
+    }
   }
 
   switch (route) {
@@ -177,6 +196,7 @@ async function handleRoute() {
     case 'settings': return renderSettings();
     case 'homebank': return HomeBank.render();
     case 'audit': return renderAuditLog();
+    case 'admin': return p1 === 'registration-requests' ? renderRegistrationRequests(p2) : renderDashboard();
     case 'search': return renderSearchResults(p1);
     default: return renderDashboard();
   }
@@ -186,6 +206,13 @@ window.addEventListener('hashchange', handleRoute);
 window.addEventListener('sms-verification-required', () => {
   state.user = null;
   navigate('login');
+});
+window.addEventListener('authentication-invalidated', event => {
+  state.user = null;
+  postLoginRoute = null;
+  if (location.hash === '#login') renderLogin();
+  else navigate('login');
+  showError(event.detail?.message || 'Sign in again to continue.');
 });
 
 // ── Auth ──
@@ -226,7 +253,7 @@ function createAuthFlow(restart) {
     dispose();
     API.setToken(token);
     state.user = user;
-    navigate('vault');
+    finishLoginRoute();
   }
   function showRecoveryCodes(session) {
     stopResendTimer();
@@ -377,7 +404,7 @@ function renderLogin(prefillEmail = '') {
         <button type="submit" class="btn btn-primary btn-block">Sign In</button>
       </form>
       <div id="login-2fa-panel"></div>
-      <div class="link-row">No account? <a href="#register">Create one</a> &middot; <a href="#access">Beneficiary access</a></div>
+      <div class="link-row">No account? <a href="#register">Request access</a> &middot; <a href="#access">Beneficiary access</a></div>
     </div></div>`;
   $('#login-email').value = prefillEmail;
   const flow = createAuthFlow(() => renderLogin($('#login-email').value));
@@ -395,7 +422,7 @@ function renderLogin(prefillEmail = '') {
       if (res.sms_required === false && res.token && res.user) {
         API.setToken(res.token);
         state.user = res.user;
-        navigate('vault');
+        finishLoginRoute();
       } else flow.accept(res);
     } catch (err) { if (flow.isActive()) showError(err.message); }
     finally { if (flow.isActive() && button.isConnected) button.disabled = false; }
@@ -404,22 +431,129 @@ function renderLogin(prefillEmail = '') {
 
 function renderRegister() {
   if (disposeAuthFlow) disposeAuthFlow();
+  let active = true;
+  disposeAuthFlow = () => { active = false; disposeAuthFlow = null; };
   app.innerHTML = `
     <div class="auth-container"><div class="auth-box">
-      <h1>Create Account</h1>
-      <p class="subtitle">Your cell phone secures your account with an SMS code at sign-in.</p>
+      <h1>Request Access</h1>
+      <p class="subtitle">Account creation requires owner approval. If approved, you will set a password and verify your own cell phone by SMS.</p>
       <form id="reg-form">
         <div class="form-group"><label for="register-name">Full Name</label><input id="register-name" type="text" name="name" autocomplete="name" required></div>
         <div class="form-group"><label for="register-email">Email</label><input id="register-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" required></div>
         <div class="form-group"><label for="register-phone">Cell Phone Number</label><input id="register-phone" type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="+27821234567" aria-describedby="register-phone-hint" required></div>
         <p id="register-phone-hint" style="color:var(--text-muted);font-size:13px">Include your country code, for example +27 for South Africa. A South African number starting with 0 is also accepted.</p>
-        <div class="form-group"><label for="register-password">Password (min 8 chars)</label><input id="register-password" type="password" name="password" autocomplete="new-password" required minlength="8"></div>
-        <button type="submit" class="btn btn-primary btn-block">Create Vault and Send SMS</button>
+        <button type="submit" class="btn btn-primary btn-block">Request Access</button>
       </form>
-      <div id="login-2fa-panel"></div>
       <div class="link-row">Already have an account? <a href="#login">Sign in</a></div>
     </div></div>`;
-  const flow = createAuthFlow(renderRegister);
+  $('#reg-form').onsubmit = async e => {
+    e.preventDefault();
+    const button = e.target.querySelector('button[type="submit"]');
+    if (button.disabled) return;
+    button.disabled = true;
+    const f = new FormData(e.target);
+    try {
+      const res = await API.requestRegistration({ name: f.get('name'), email: f.get('email'), phone: f.get('phone') });
+      if (!active) return;
+      if (!res.request_id || !res.status_secret) throw new Error('Your request could not be confirmed. Please try again later.');
+      navigate('register/status/' + encodeURIComponent(res.request_id) + '/' + encodeURIComponent(res.status_secret));
+    } catch (err) { if (active) showError(err.message); }
+    finally { if (active && button.isConnected) button.disabled = false; }
+  };
+}
+
+function renderRegistrationStatus(id, secret) {
+  if (disposeAuthFlow) disposeAuthFlow();
+  let active = true;
+  disposeAuthFlow = () => { active = false; disposeAuthFlow = null; };
+  app.innerHTML = `<div class="auth-container"><div class="auth-box">
+    <h1>Registration Request</h1>
+    <div id="registration-status" class="alert alert-info" role="status" tabindex="-1">Request submitted. Account creation requires owner approval.</div>
+    <p>Keep this private status link to check the decision. Anyone with the link can view your request and complete an approved registration.</p>
+    <div class="form-group"><label for="registration-status-link">Private status link</label><input type="text" id="registration-status-link" readonly autocomplete="off"></div>
+    <button type="button" id="registration-status-refresh" class="btn btn-outline btn-block">Check Status</button>
+    <div id="registration-status-action"></div>
+    <div class="link-row"><a href="#login">Sign in to an existing account</a></div>
+  </div></div>`;
+  $('#registration-status-link').value = location.href;
+  $('#registration-status-link').onclick = e => e.target.select();
+  $('#registration-status').focus();
+  const refresh = async () => {
+    const button = $('#registration-status-refresh');
+    if (!active || button.disabled) return;
+    button.disabled = true;
+    try {
+      const res = await API.getRegistrationStatus(id, secret);
+      if (!active) return;
+      const status = $('#registration-status');
+      const action = $('#registration-status-action');
+      action.replaceChildren();
+      if (res.status === 'approved') {
+        status.textContent = 'Your request is approved. Complete registration and verify your approved cell phone by SMS.';
+        const invitation = res.invitation_token || res.invitation?.invitation_token;
+        const url = res.invitation_url || (invitation ? '#register/invite/' + encodeURIComponent(invitation) : null);
+        // Server-generated invitation links stay on this application origin.
+        if (url) {
+          const link = new URL(url, location.href);
+          if (link.origin === location.origin && link.hash.startsWith('#register/invite/')) {
+            const a = document.createElement('a');
+            a.id = 'registration-complete-link'; a.className = 'btn btn-primary btn-block';
+            a.textContent = 'Complete Registration'; a.href = link.href;
+            action.appendChild(a);
+          }
+        }
+      } else if (res.status === 'rejected' || res.status === 'blocked') {
+        status.textContent = 'This registration request was declined. It cannot be used to create an account.';
+        button.hidden = true;
+      } else if (res.status === 'registered' || res.status === 'registered_unverified' || res.status === 'active') {
+        status.textContent = 'Registration has started. Sign in with your password to complete any required SMS verification.';
+        button.hidden = true;
+      } else if (res.status === 'expired') {
+        status.textContent = 'The approved registration invitation has expired. Contact the owner about your request.';
+        button.hidden = true;
+      } else status.textContent = 'Request submitted. Account creation requires owner approval. Your request is awaiting a decision.';
+    } catch (err) {
+      if (active) $('#registration-status').textContent = err.message;
+    } finally { if (active && button.isConnected) button.disabled = false; }
+  };
+  $('#registration-status-refresh').onclick = refresh;
+  refresh();
+}
+
+async function renderInvitedRegistration(token) {
+  if (disposeAuthFlow) disposeAuthFlow();
+  let active = true;
+  disposeAuthFlow = () => { active = false; disposeAuthFlow = null; };
+  app.innerHTML = `<div class="auth-container"><div class="auth-box"><h1>Complete Registration</h1><p id="invitation-loading" role="status">Checking your invitation…</p></div></div>`;
+  let identity;
+  try {
+    identity = await API.getRegistrationInvitation(token);
+    if (!active) return;
+  } catch (err) {
+    if (active) {
+      $('#invitation-loading').textContent = err.message;
+      $('#invitation-loading').setAttribute('role', 'alert');
+      $('#invitation-loading').tabIndex = -1;
+      $('#invitation-loading').focus();
+    }
+    return;
+  }
+  app.innerHTML = `<div class="auth-container"><div class="auth-box">
+    <h1>Complete Registration</h1>
+    <p class="subtitle">Your request has been approved. Set a password, then verify your approved cell phone with an SMS code.</p>
+    <dl class="registration-identity"><dt>Full name</dt><dd id="invitation-name"></dd><dt>Email</dt><dd id="invitation-email"></dd><dt>Cell phone</dt><dd id="invitation-phone"></dd></dl>
+    <form id="reg-form">
+      <div class="form-group"><label for="register-password">Password (min 8 chars)</label><input id="register-password" type="password" name="password" autocomplete="new-password" required minlength="8"></div>
+      <button type="submit" class="btn btn-primary btn-block">Create Account and Send SMS</button>
+    </form>
+    <div id="login-2fa-panel"></div>
+    <div class="link-row">Already started registration? <a href="#login">Sign in</a></div>
+  </div></div>`;
+  $('#invitation-name').textContent = identity.name;
+  $('#invitation-email').textContent = identity.email;
+  $('#invitation-phone').textContent = identity.phone;
+  const flow = createAuthFlow(() => renderInvitedRegistration(token));
+  $('#register-password').focus();
   $('#reg-form').onsubmit = async e => {
     e.preventDefault();
     const button = e.target.querySelector('button[type="submit"]');
@@ -427,24 +561,132 @@ function renderRegister() {
     button.disabled = true;
     API.setToken(null);
     state.user = null;
-    const f = new FormData(e.target);
     try {
-      const res = await API.register({ name: f.get('name'), email: f.get('email'), phone: f.get('phone'), password: f.get('password') });
+      const res = await API.register({ invitation_token: token, password: new FormData(e.target).get('password') });
       if (!flow.isActive()) return;
-      if (res.sms_required === false) {
-        window.history.replaceState(null, '', '#login');
-        renderLogin(String(f.get('email') || ''));
-        showSuccess('Account created. Sign in to continue.');
-      } else flow.accept(res);
+      flow.accept(res);
     } catch (err) {
       if (!flow.isActive()) return;
+      $('#register-password').value = '';
       if (err?.data?.account_created) {
         window.history.replaceState(null, '', '#login');
-        renderLogin(String(f.get('email') || ''));
+        renderLogin(identity.email);
       }
       showError(err.message);
     } finally { if (flow.isActive() && button.isConnected) button.disabled = false; }
   };
+}
+
+async function renderRegistrationRequests(selectedId) {
+  const expectedHash = location.hash;
+  const current = () => location.hash === expectedHash;
+  app.innerHTML = layoutHTML('registration-requests', `<div class="page-header"><h1>Registration Requests</h1></div><p id="registration-admin-status" role="status">Loading registration requests…</p>`);
+  bindSidebar();
+  try {
+    if (!state.user?.is_registration_owner) {
+      const user = await API.getMe();
+      if (!current()) return;
+      state.user = user;
+      if (!user.is_registration_owner) throw new Error('Only the authenticated registration owner may review applications.');
+    }
+    const result = await API.getRegistrationRequests(selectedId ? undefined : 'pending');
+    if (!current()) return;
+    app.innerHTML = layoutHTML('registration-requests', `<div class="page-header"><h1>Registration Requests</h1></div>
+      <p>Review each applicant before allowing account creation. Approval still requires the applicant to verify their own cell phone by SMS.</p>
+      <div class="form-group"><label for="registration-filter">Show requests</label><select id="registration-filter"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All requests</option></select></div>
+      <div id="registration-admin-status" role="status" tabindex="-1"></div>
+      <div id="registration-request-list"></div>`);
+    bindSidebar();
+    const select = $('#registration-filter');
+    select.value = selectedId ? '' : 'pending';
+    const draw = data => {
+      const rows = Array.isArray(data) ? data : data.requests || [];
+      const visible = selectedId ? rows.filter(row => String(row.id) === selectedId) : rows;
+      const list = $('#registration-request-list');
+      list.replaceChildren();
+      $('#registration-admin-status').textContent = visible.length ? '' : 'No registration requests found.';
+      for (const row of visible) {
+        const card = document.createElement('article');
+        card.className = 'card registration-request';
+        card.dataset.requestId = row.id;
+        card.innerHTML = `<h2>${esc(row.name)}</h2>
+          <dl class="registration-identity"><dt>Reference</dt><dd>${esc(row.id)}</dd><dt>Email</dt><dd>${esc(row.email)}</dd><dt>Cell phone</dt><dd>${esc(row.phone)}</dd><dt>Status</dt><dd data-request-status>${esc(row.status)}</dd><dt>Requested</dt><dd>${esc(fmtDate(row.created_at))}</dd>${row.decided_at ? `<dt>Decision date</dt><dd>${esc(fmtDate(row.decided_at))}</dd>` : ''}${row.decision_reason || row.reason ? `<dt>Private reason</dt><dd>${esc(row.decision_reason || row.reason)}</dd>` : ''}${row.notification_status === 'failed' ? '<dt>Owner notification</dt><dd data-notification-status>SMS delivery failed. This request remains subject to your decision.</dd>' : ''}</dl>
+          ${row.status === 'pending' ? `<div class="registration-actions"><button type="button" class="btn btn-primary" data-decision="approve">Approve</button><button type="button" class="btn btn-outline" data-decision="reject">Reject</button>${row.notification_status === 'failed' && Number(row.notification_attempts || 0) < 3 ? '<button type="button" class="btn btn-outline" data-decision="notification/retry">Retry Owner Notification</button>' : ''}</div>` : ''}
+          <div class="registration-decision"></div>`;
+        if (row.status === 'approved' && row.invitation_url) appendRegistrationInvitation(card.querySelector('.registration-decision'), row.invitation_url);
+        card.querySelectorAll('[data-decision]').forEach(button => {
+          button.onclick = () => {
+            const action = button.dataset.decision;
+            const retry = action === 'notification/retry';
+            const region = card.querySelector('.registration-decision');
+            region.innerHTML = `<form class="registration-confirm-form">
+              <p>${retry ? 'Retry the failed owner SMS notification? This sends a review link to the configured owner. Retries are limited and may require waiting.' : action === 'reject' ? 'Reject this application permanently? Future registration requests using its email or phone will be blocked. Existing legitimate accounts are protected.' : 'Approve this application? A one-use registration invitation will be created for the displayed email and cell phone.'}</p>
+              ${action === 'reject' ? '<div class="form-group"><label>Private reason (optional)<textarea name="reason" maxlength="1000" rows="2"></textarea></label></div>' : ''}
+              <div class="registration-actions"><button type="submit" class="btn btn-primary">Confirm ${retry ? 'SMS Retry' : action === 'reject' ? 'Rejection' : 'Approval'}</button><button type="button" class="btn btn-outline" data-cancel>Cancel</button></div>
+            </form>`;
+            card.querySelector('.registration-actions').hidden = true;
+            region.querySelector('button[type="submit"]').focus();
+            region.querySelector('[data-cancel]').onclick = () => {
+              region.replaceChildren(); card.querySelector('.registration-actions').hidden = false; button.focus();
+            };
+            region.querySelector('form').onsubmit = async e => {
+              e.preventDefault();
+              const confirm = e.target.querySelector('button[type="submit"]');
+              if (confirm.disabled) return;
+              confirm.disabled = true;
+              region.querySelector('[data-cancel]').disabled = true;
+              try {
+                const decision = await API.decideRegistration(row.id, action, String(new FormData(e.target).get('reason') || '').trim());
+                if (!current()) return;
+                if (!retry) card.querySelector('[data-request-status]').textContent = action === 'approve' ? 'approved' : 'rejected';
+                region.replaceChildren();
+                const message = document.createElement('p');
+                message.setAttribute('role', 'status'); message.tabIndex = -1;
+                message.textContent = retry ? 'Owner notification submitted. This application still awaits a decision.' : action === 'approve' ? 'Approved. Share this invitation privately with the applicant. It expires after 48 hours and can be used once.' : 'Rejected. Further registration requests with these contact details are blocked.';
+                region.appendChild(message);
+                if (retry) {
+                  card.querySelector('[data-notification-status]').textContent = 'SMS notification submitted to the owner.';
+                  button.remove();
+                  card.querySelector('.registration-actions').hidden = false;
+                }
+                if (action === 'approve' && decision.invitation_url) appendRegistrationInvitation(region, decision.invitation_url);
+                message.focus();
+              } catch (err) {
+                if (!current()) return;
+                showError(err.message); confirm.disabled = false; region.querySelector('[data-cancel]').disabled = false;
+              }
+            };
+          };
+        });
+        list.appendChild(card);
+      }
+      if (selectedId) list.querySelector('h2')?.setAttribute('tabindex', '-1');
+      if (selectedId) list.querySelector('h2')?.focus();
+    };
+    draw(result);
+    select.onchange = async () => {
+      selectedId = null;
+      select.disabled = true;
+      try {
+        const data = await API.getRegistrationRequests(select.value);
+        if (current()) draw(data);
+      } catch (err) { if (current()) showError(err.message); }
+      finally { if (current()) select.disabled = false; }
+    };
+  } catch (err) {
+    if (current()) {
+      $('#registration-admin-status').textContent = err.message;
+      $('#registration-admin-status').setAttribute('role', 'alert');
+    }
+  }
+}
+
+function appendRegistrationInvitation(region, url) {
+  const group = document.createElement('div'); group.className = 'form-group';
+  const label = document.createElement('label'); label.textContent = 'Private registration invitation';
+  const input = document.createElement('input'); input.type = 'text'; input.readOnly = true;
+  input.autocomplete = 'off'; input.value = url;
+  input.onclick = () => input.select(); label.appendChild(input); group.appendChild(label); region.appendChild(group);
 }
 
 // ── Sidebar ──
@@ -491,6 +733,7 @@ function sidebarHTML(activeKey) {
         <button class="nav-item ${activeKey === 'settings' ? 'active' : ''}" data-nav="settings">
           <span class="icon">\u{2699}</span>Account Settings
         </button>
+        ${state.user?.is_registration_owner ? `<button class="nav-item ${activeKey === 'registration-requests' ? 'active' : ''}" data-nav="admin/registration-requests"><span class="icon">✓</span>Registration Requests</button>` : ''}
       </nav>
       <div class="sidebar-footer">
         <button class="btn btn-outline btn-sm" id="logout-btn">Sign out</button>

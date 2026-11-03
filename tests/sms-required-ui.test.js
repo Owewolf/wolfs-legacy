@@ -33,6 +33,7 @@ window.fetch=async(input,options={})=>{
   const auth=new Headers(options.headers).get('Authorization');
   fixtureCalls.push({route,method,auth,body});
   const response=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
+  if(route==='/auth/registration-invitation'&&method==='POST')return response({name:'Synthetic owner',email:fixtureMode==='registration-delivery-failure'?'existing@example.test':'owner@example.test',phone:'+27821234567',request_id:'synthetic-request-id'});
   if(route==='/auth/register'){
     if(fixtureMode==='registration-delivery-failure')return response({error:'Account created, but the SMS code could not be sent. Sign in to request a new code.',account_created:true},503);
     if(fixtureMode==='optional-registration')return response({success:true,sms_required:false},201);
@@ -87,12 +88,11 @@ const browserChecks = `
   }
   await until(()=>document.getElementById('reg-form'),'registration');
   let form=document.getElementById('reg-form');
-  const phone=form.querySelector('[name="phone"]');
-  check(phone.type==='tel'&&phone.required&&phone.autocomplete==='tel'&&document.getElementById('register-phone-hint').textContent.includes('+27'),'registration requires an accessible cell phone field with country-code guidance');
-  form.querySelector('[name="name"]').value='Synthetic owner';form.querySelector('[name="email"]').value='owner@example.test';phone.value='+27821234567';form.querySelector('[name="password"]').value='synthetic-password';
+  check(document.getElementById('invitation-phone').textContent==='+27821234567'&&!form.querySelector('[name="phone"]')&&!form.querySelector('[name="email"]'),'approved registration displays server-bound identity without allowing contact changes');
+  form.querySelector('[name="password"]').value='synthetic-password';
   submit(form);await until(()=>document.getElementById('otp-form'),'registration challenge');
   let call=fixtureCalls.find(call=>call.route==='/auth/register');
-  check(call.body.phone==='+27821234567'&&call.body.name==='Synthetic owner'&&call.body.password==='synthetic-password','registration sends the phone with the new account');
+  check(call.body.invitation_token==='synthetic-invitation-token'&&call.body.password==='synthetic-password'&&Object.keys(call.body).sort().join(',')==='invitation_token,password','registration sends only the one-use invitation and password');
   check(noSession()&&document.getElementById('reg-form').hidden&&document.getElementById('register-password').value==='','registration requires SMS before storing a session and clears its password');
   check(!document.getElementById('login-recovery-code')&&document.getElementById('otp-resend-btn').disabled,'first enrollment only offers SMS and enforces its resend cooldown');
   form=document.getElementById('otp-form');form.querySelector('[name="otp"]').value='000000';submit(form);
@@ -111,7 +111,7 @@ const browserChecks = `
   check(call.body.challenge_token==='synthetic-rotated-challenge-token','verification uses the latest resend challenge credentials');
   let panel=document.getElementById('login-recovery-codes');
   check(fixtureRecovery.every(code=>panel.textContent.includes(code))&&!panel.querySelector('img')&&!window.fixtureInjected,'first-verification recovery codes are readable escaped text');
-  check(document.activeElement===panel&&noSession()&&window.location.hash==='#register','recovery codes receive focus and keep the verified session in memory until confirmation');
+  check(document.activeElement===panel&&noSession()&&window.location.hash==='#register/invite/synthetic-invitation-token','recovery codes receive focus and keep the verified session in memory until confirmation');
   await new Promise(resolve=>setTimeout(resolve,200));
   check(panel.isConnected&&fixtureRecovery.every(code=>panel.textContent.includes(code)),'one-time recovery codes remain visible while waiting for explicit confirmation');
   check(!/synthetic-challenge|synthetic-phone-setup|SYNTHETIC-FIRST-RECOVERY|synthetic-password|123456/.test(stored()),'challenge credentials, OTPs, passwords and recovery codes are never persisted in browser storage');
@@ -158,14 +158,14 @@ const browserChecks = `
   check(noSession()&&window.location.hash==='#login','an unmarked password-only response cannot bypass required SMS verification');
   await login('optional-login');await until(()=>document.getElementById('logout-btn'),'explicit optional login');
   check(API.token==='synthetic-optional-token','an explicitly optional server preserves password-only development login compatibility');
-  API.setToken(null);state.user=null;fixtureMode='optional-registration';window.location.hash='register';await until(()=>document.getElementById('reg-form'),'explicit optional registration');
-  form=document.getElementById('reg-form');form.querySelector('[name="name"]').value='Synthetic owner';form.querySelector('[name="email"]').value='optional@example.test';form.querySelector('[name="phone"]').value='+27821234567';form.querySelector('[name="password"]').value='synthetic-password';submit(form);
-  await until(()=>document.getElementById('login-form'),'optional account sign in');
-  check(noSession()&&window.location.hash==='#login'&&document.getElementById('login-email').value==='optional@example.test','an explicitly optional registration preserves the account-created sign-in flow without storing a session');
-  API.setToken(null);state.user=null;fixtureMode='registration-delivery-failure';window.location.hash='register';await until(()=>document.getElementById('reg-form'),'delivery failure registration');
-  form=document.getElementById('reg-form');form.querySelector('[name="name"]').value='Synthetic owner';form.querySelector('[name="email"]').value='existing@example.test';form.querySelector('[name="phone"]').value='+27821234567';form.querySelector('[name="password"]').value='synthetic-password';submit(form);
+  API.setToken(null);state.user=null;fixtureMode='optional-registration';window.location.hash='register/invite/synthetic-unmarked-invitation';await until(()=>document.getElementById('register-password'),'unmarked registration');
+  form=document.getElementById('reg-form');form.querySelector('[name="password"]').value='synthetic-password';submit(form);
+  await until(()=>document.getElementById('toast-container')?.textContent.includes('SMS verification is required'),'unmarked registration response');
+  check(noSession()&&window.location.hash==='#register/invite/synthetic-unmarked-invitation','an invitation registration cannot skip required SMS even if the server returns an obsolete optional response');
+  API.setToken(null);state.user=null;fixtureMode='registration-delivery-failure';window.location.hash='register/invite/synthetic-delivery-invitation';await until(()=>document.getElementById('register-password')&&document.getElementById('invitation-email')?.textContent==='existing@example.test','delivery failure registration');
+  form=document.getElementById('reg-form');form.querySelector('[name="password"]').value='synthetic-password';submit(form);
   await until(()=>document.getElementById('login-form'),'created account recovery after SMS failure');
-  check(noSession()&&window.location.hash==='#login'&&document.getElementById('login-email').value==='existing@example.test'&&document.getElementById('login-password').value==='','a created account with SMS delivery failure returns to sign-in with its email and no password');
+  check(noSession()&&window.location.hash==='#login'&&document.getElementById('login-email').value==='existing@example.test'&&document.getElementById('login-password').value==='','an approved account with SMS delivery failure returns to sign-in with its email and no password');
   await fetch('/ui-test-result',{method:'POST',body:JSON.stringify({ok:true,checks})});
 })().catch(async error=>{await fetch('/ui-test-result',{method:'POST',body:JSON.stringify({ok:false,error:error.message,stack:error.stack})});});
 `;
@@ -215,7 +215,7 @@ test('required SMS registration, saved-phone sign-in, recovery confirmation and 
     fs.rmSync(profile, { recursive: true, force: true });
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  browser = spawn(firefox, ['--headless', '--no-remote', '--profile', profile, `http://127.0.0.1:${server.address().port}/#register`], {
+  browser = spawn(firefox, ['--headless', '--no-remote', '--profile', profile, `http://127.0.0.1:${server.address().port}/#register/invite/synthetic-invitation-token`], {
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   browser.stderr.on('data', chunk => { browserErrors = (browserErrors + String(chunk)).slice(-2000); });

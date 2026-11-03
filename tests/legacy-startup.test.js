@@ -8,6 +8,7 @@ const net=require('node:net');
 const {spawn}=require('node:child_process');
 const {once}=require('node:events');
 const Database=require('better-sqlite3');
+const bcrypt=require('bcryptjs');
 
 async function isolatedServer(t) {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'wolfs-legacy-startup-'));
@@ -21,7 +22,8 @@ async function isolatedServer(t) {
   const env={...process.env};
   for(const key of Object.keys(env))if(/^(SMTP_|IMAP_|HOMEBANK_|CHECKIN_|NOTIFICATION)/.test(key))delete env[key];
   Object.assign(env,{PORT:String(port),LISTEN_HOST:'127.0.0.1',DOCUMENT_STORAGE_ROOT:media,
-    JWT_SECRET:'synthetic-startup-secret-private-fixture',ENCRYPTION_KEY:'ca'.repeat(32),NOTIFICATIONS_ENABLED:'false'});
+    JWT_SECRET:'synthetic-startup-secret-private-fixture',ENCRYPTION_KEY:'ca'.repeat(32),NOTIFICATIONS_ENABLED:'false',AUTH_SMS_REQUIRED:'false',
+    COLLECTOR_SMS_ENABLED:'false',SMS_ENABLED:'false',BACKGROUND_JOBS_ENABLED:'true'});
   const base='http://127.0.0.1:'+port;
   let child=null,output='';
   async function start() {
@@ -48,11 +50,16 @@ async function isolatedServer(t) {
   return {root,base,start,stop,output:()=>output};
 }
 
-async function registerAndLogin(base,credentials) {
+async function seedExistingAndLogin(root,base,credentials) {
   const headers={'Content-Type':'application/json'};
+  const db=new Database(path.join(root,'data','vault.db'));
+  try {
+    const result=db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)')
+      .run(credentials.email,bcrypt.hashSync(credentials.password,4),credentials.name);
+    db.prepare('INSERT INTO dead_switch_config(user_id) VALUES(?)').run(result.lastInsertRowid);
+  } finally {db.close();}
   const registration=await fetch(base+'/api/auth/register',{method:'POST',headers,body:JSON.stringify(credentials)});
-  assert.equal(registration.status,201);
-  assert.equal(Boolean((await registration.json()).token),false,'registration requires a separate sign-in');
+  assert.equal(registration.status,403,'public registration cannot provision an unapproved user');
   const login=await fetch(base+'/api/auth/login',{method:'POST',headers,
     body:JSON.stringify({email:credentials.email,password:credentials.password})});
   assert.equal(login.status,200);
@@ -61,11 +68,11 @@ async function registerAndLogin(base,credentials) {
 }
 
 test('isolated production entrypoint starts, serves both legacy APIs and private-media CSP, and exits cleanly',async t=>{
-  const {base,stop,output}=await isolatedServer(t);
+  const {root,base,stop,output}=await isolatedServer(t);
   const page=await fetch(base+'/');assert.equal(page.status,200);
   assert.match(page.headers.get('content-security-policy'),/media-src 'self' blob:/);
   assert.match(await page.text(),/js\/legacy.js/);
-  const token=await registerAndLogin(base,{name:'Synthetic owner',email:'startup@example.test',password:'SyntheticLongPassword91!'});
+  const token=await seedExistingAndLogin(root,base,{name:'Synthetic owner',email:'startup@example.test',password:'SyntheticLongPassword91!'});
   const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
   const config=await fetch(base+'/api/final-wishes/config',{headers});assert.equal(config.status,200);
   assert.ok((await config.json()).accepted.includes('.wav'));
@@ -83,7 +90,7 @@ test('isolated production entrypoint starts, serves both legacy APIs and private
 
 test('production startup creates editable private wishes for existing beneficiaries and new additions without restart duplicates',async t=>{
   const fixture=await isolatedServer(t),{base,root}=fixture;
-  const token=await registerAndLogin(base,{name:'Synthetic repair owner',email:'startup-repair@example.test',password:'SyntheticLongPassword92!'});
+  const token=await seedExistingAndLogin(root,base,{name:'Synthetic repair owner',email:'startup-repair@example.test',password:'SyntheticLongPassword92!'});
   const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
   assert.equal(await fixture.stop(),0);
 

@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const { initSmsOtpSchema } = require('./sms-otp');
+const { initRegistrationApprovalSchema } = require('./registration-approval');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'vault.db');
 let db;
@@ -149,6 +150,7 @@ function initTables() {
     db.exec('ALTER TABLE vault_entries ADD COLUMN homebank_account_id INTEGER');
   }
   initSmsOtpSchema(db);
+  initRegistrationApprovalSchema(db);
   // Secrets are loaded before getDb() at startup. Record the existing HomeBank
   // provenance before dropping copied ledger fields and notes. The source link,
   // owner-supplied details, documents and timestamps stay intact; financial

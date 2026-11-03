@@ -1,8 +1,9 @@
 # SMS verification for account creation and sign-in
 
-With `AUTH_SMS_REQUIRED=true`, creating an account requires a mobile number and
-successful SMS verification. A password alone never creates a signed-in session.
-Every later sign-in verifies the password and sends a code to the saved
+All new accounts require [owner approval](registration-approval.md) before
+creation, followed by successful verification of the approved mobile number.
+A password alone never creates a signed-in session.
+With `AUTH_SMS_REQUIRED=true`, every later sign-in verifies the password and sends a code to the saved
 authentication number. Owners cannot disable SMS authentication in this mode.
 
 ## Saved numbers and first verification
@@ -21,8 +22,11 @@ that step and cannot access the vault or replace an enrolled number.
 
 ## Account and sign-in flow
 
-1. Registration submits name, email, password and mobile number to
-   `POST /api/auth/register`. The response contains an SMS challenge, never a JWT.
+1. A visitor submits name, email and mobile to `POST /api/auth/registration-requests`.
+   This creates only a pending request and sends the configured owner an SMS.
+   After the authenticated owner approves, the applicant submits their one-use
+   invitation and password to `POST /api/auth/register`. The response contains
+   an applicant SMS challenge, never a JWT.
 2. Sign-in submits email and password to `POST /api/auth/login`. Required accounts
    receive the same challenge using their saved number. Missing numbers use
    `POST /api/auth/login/phone` with a scoped setup token and the chosen number.
@@ -33,8 +37,8 @@ that step and cannot access the vault or replace an enrolled number.
 4. Future logins use the enrolled number. Authenticated phone changes require
    the existing password and verification of the new phone.
 
-If registration creates the account but SMS submission fails, the response
-directs the owner to sign in and request a new code. No session is issued and the
+If approved registration creates the account but SMS submission fails, the response
+directs the applicant to sign in and request a new code. No session is issued and the
 unverified account remains recoverable. Provider failures never allow a
 password-only fallback. Older password-only sessions are redirected to sign in.
 
@@ -72,7 +76,8 @@ Keep the existing generated production OTP secret in `data/.secrets` when using
 `auto`. Explicitly disabling the transport overrides provider aliases. Simulation
 is available only outside production for disposable tests. Legacy deployments
 may explicitly leave required authentication disabled; their responses identify
-that optional mode with `sms_required: false`.
+that optional mode for existing accounts with `sms_required: false`. New approved
+accounts always require their initial SMS verification.
 
 The [official Clickatell One API reference](https://help.clickatell.com/developers-api-reference/reference/one-api)
 defines message submission and the read-only `GET /v1/balance` credential check.

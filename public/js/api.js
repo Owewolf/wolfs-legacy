@@ -1,8 +1,8 @@
 const API = {
   token: localStorage.getItem('lv_token'),
 
-  async request(method, path, body) {
-    const opts = { method, headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' } };
+  async request(method, path, body, headers = {}) {
+    const opts = { method, headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', ...headers } };
     if (this.token) opts.headers['Authorization'] = 'Bearer ' + this.token;
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch('/api' + path, opts);
@@ -19,6 +19,9 @@ const API = {
       if (res.status === 403 && data?.code === 'SMS_VERIFICATION_REQUIRED') {
         this.setToken(null);
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sms-verification-required'));
+      } else if ((res.status === 403 && data?.code === 'ACCOUNT_BLOCKED') || (res.status === 401 && data?.code === 'SESSION_REVOKED')) {
+        this.setToken(null);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('authentication-invalidated', { detail: { message: data.error } }));
       }
       const err = new Error(typeof data?.error === 'string' && data.error ? data.error : 'Request failed');
       err.data = data;
@@ -34,6 +37,11 @@ const API = {
   },
 
   register: (d) => API.request('POST', '/auth/register', d),
+  requestRegistration: (d) => API.request('POST', '/auth/registration-requests', d),
+  getRegistrationStatus: (id, secret) => API.request('GET', '/auth/registration-requests/status?request_id=' + encodeURIComponent(id), undefined, { 'X-Registration-Secret': secret }),
+  getRegistrationInvitation: (token) => API.request('POST', '/auth/registration-invitation', { invitation_token: token }),
+  getRegistrationRequests: (status) => API.request('GET', '/auth/admin/registration-requests' + (status ? '?status=' + encodeURIComponent(status) : '')),
+  decideRegistration: (id, action, reason) => API.request('POST', '/auth/admin/registration-requests/' + encodeURIComponent(id) + '/' + action, { confirmed: true, ...(reason ? { reason } : {}) }),
   login: (d) => API.request('POST', '/auth/login', d),
   setupLoginPhone: (d) => API.request('POST', '/auth/login/phone', d),
   verifyLoginChallenge: (d) => API.request('POST', '/auth/login/challenge/verify', d),

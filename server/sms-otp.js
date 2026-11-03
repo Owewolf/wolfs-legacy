@@ -86,7 +86,7 @@ function initSmsOtpSchema(db) {
   `);
 }
 
-function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now, loginPhoneResolver = null }) {
+function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now, loginPhoneResolver = null, accountGuard = null, onLoginVerified = null }) {
   const hashKey = env.OTP_HASH_KEY || env.JWT_SECRET || env.ENCRYPTION_KEY;
   if (!hashKey) throw new Error('OTP hash key is not configured');
   if (!smsSender || typeof smsSender.sendOtp !== 'function') throw new Error('SMS sender is required');
@@ -109,13 +109,20 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
 
   const upsertUser2fa = db.prepare('UPDATE users SET sms_2fa_phone_e164=?, sms_2fa_enabled=1, sms_2fa_enrolled_at=? WHERE id=?');
   const clearUser2fa = db.prepare('UPDATE users SET sms_2fa_phone_e164=NULL, sms_2fa_enabled=0, sms_2fa_enrolled_at=NULL WHERE id=?');
-  const getUser2fa = db.prepare('SELECT id, email, name, sms_2fa_enabled, sms_2fa_phone_e164, sms_2fa_enrolled_at FROM users WHERE id=?');
+  const getUser2fa = db.prepare('SELECT * FROM users WHERE id=?');
 
   const revokeRecoveryCodes = db.prepare('UPDATE sms_otp_recovery_codes SET revoked_at=? WHERE user_id=? AND consumed_at IS NULL AND revoked_at IS NULL');
   const insertRecoveryCode = db.prepare('INSERT INTO sms_otp_recovery_codes(user_id,batch_id,code_hash,created_at) VALUES(?,?,?,?)');
   const getActiveRecovery = db.prepare('SELECT id, code_hash FROM sms_otp_recovery_codes WHERE user_id=? AND consumed_at IS NULL AND revoked_at IS NULL');
   const consumeRecoveryById = db.prepare('UPDATE sms_otp_recovery_codes SET consumed_at=? WHERE id=? AND consumed_at IS NULL AND revoked_at IS NULL');
   const countRecovery = db.prepare('SELECT COUNT(*) AS n FROM sms_otp_recovery_codes WHERE user_id=? AND consumed_at IS NULL AND revoked_at IS NULL');
+
+  function checkAccount(userId, details = {}) {
+    const user = getUser2fa.get(userId);
+    if (!user) return { ok: false, reason: 'not_found' };
+    if (user.account_status === 'blocked') return { ok: false, reason: 'account_blocked' };
+    return accountGuard ? accountGuard(user, details) : { ok: true };
+  }
 
   function hashOtp(challengeId, otp) {
     return hmacHex(hashKey, `otp:${challengeId}:${otp}`);
@@ -153,6 +160,8 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
   }
 
   async function createChallenge({ userId, purpose, phone }) {
+    const access = checkAccount(userId, { purpose, phone });
+    if (!access.ok) throw new Error(access.reason);
     const id = crypto.randomUUID();
     const challengeToken = crypto.randomBytes(24).toString('hex');
     const otp = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -180,6 +189,7 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
 
     try {
       await sendChallengeSms({ phone, otp, purpose });
+      if (!checkAccount(userId, { purpose, phone }).ok) throw new Error('Account access changed');
     } catch (err) {
       db.prepare('DELETE FROM sms_otp_challenges WHERE id=?').run(id);
       throw err;
@@ -201,6 +211,8 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
     if (!secureHexEqual(c.challenge_token_hash, hashChallengeToken(c.id, challengeToken || ''))) {
       return { ok: false, reason: 'forbidden' };
     }
+    const access = checkAccount(c.user_id, { purpose, phone: c.phone_e164 });
+    if (!access.ok) return access;
     if (c.used_at) return { ok: false, reason: 'already_used' };
     if (new Date(c.expires_at).getTime() < now()) return { ok: false, reason: 'expired' };
     if (c.attempt_count >= c.max_attempts) return { ok: false, reason: 'locked' };
@@ -222,6 +234,7 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
 
   function consumeRecoveryCode(userId, code) {
     return db.transaction(() => {
+      if (!checkAccount(userId, { purpose: 'recovery' }).ok) return false;
       const hash = hashRecoveryCode(userId, code);
       const rows = getActiveRecovery.all(userId);
       for (const row of rows) {
@@ -251,6 +264,8 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
   async function startEnrollment({ userId, phone }) {
     const normalized = normalizePhoneE164(phone);
     if (!normalized) return { ok: false, reason: 'invalid_phone' };
+    const access = checkAccount(userId, { purpose: 'enrollment', phone: normalized });
+    if (!access.ok) return access;
     try {
       const challenge = await createChallenge({ userId, purpose: 'enrollment', phone: normalized });
       return { ok: true, challenge };
@@ -273,6 +288,8 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
   }
 
   async function issueLoginChallenge({ userId, phone }) {
+    const access = checkAccount(userId, { purpose: 'login', phone });
+    if (!access.ok) return access;
     try {
       const challenge = await createChallenge({ userId, purpose: 'login', phone });
       return { ok: true, challenge };
@@ -288,7 +305,7 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
       const user = getUser2fa.get(found.challenge.user_id);
       if (!user) return { ok: false, reason: 'not_found' };
       const currentPhone = loginPhoneResolver ? loginPhoneResolver(user) : normalizePhoneE164(user.sms_2fa_phone_e164);
-      if ((env.AUTH_SMS_REQUIRED === 'true' || user.sms_2fa_enabled) && currentPhone !== found.challenge.phone_e164) {
+      if ((env.AUTH_SMS_REQUIRED === 'true' || user.sms_2fa_enabled || user.account_status === 'registered_unverified') && currentPhone !== found.challenge.phone_e164) {
         return { ok: false, reason: 'phone_changed' };
       }
 
@@ -311,11 +328,12 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
       if (!otpResult.ok) return otpResult;
       markChallengeUsed.run(at, found.challenge.id);
       const result = { ok: true, user_id: found.challenge.user_id, method: 'sms_otp' };
-      if (env.AUTH_SMS_REQUIRED === 'true' && !user.sms_2fa_enabled) {
+      if ((env.AUTH_SMS_REQUIRED === 'true' || user.account_status === 'registered_unverified') && !user.sms_2fa_enabled) {
         upsertUser2fa.run(found.challenge.phone_e164, at, user.id);
         result.recovery_codes = generateRecoveryCodes(user.id);
         result.phone = found.challenge.phone_e164;
       }
+      if (onLoginVerified) onLoginVerified({ user, phone: found.challenge.phone_e164 });
       return result;
     }).immediate();
   }
@@ -333,6 +351,8 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
     updateChallengeForResend.run(hashOtp(found.challenge.id, otp), expiresAt, resendAt, at, found.challenge.id);
     try {
       await sendChallengeSms({ phone: found.challenge.phone_e164, otp, purpose });
+      const access = checkAccount(found.challenge.user_id, { purpose, phone: found.challenge.phone_e164 });
+      if (!access.ok) return access;
     } catch {
       return { ok: false, reason: 'sms_unavailable' };
     }
@@ -357,12 +377,16 @@ function createSmsOtpService({ db, env = process.env, smsSender, now = Date.now,
   }
 
   function regenerateRecoveryCodes(userId) {
-    return db.transaction(() => generateRecoveryCodes(userId))();
+    return db.transaction(() => {
+      if (!checkAccount(userId, { purpose: 'recovery' }).ok) throw new Error('Account access is blocked');
+      return generateRecoveryCodes(userId);
+    })();
   }
 
   function disable2fa(userId) {
     const at = nowIso(now);
     return db.transaction(() => {
+      if (!checkAccount(userId, { purpose: 'disable' }).ok) throw new Error('Account access is blocked');
       clearUser2fa.run(userId);
       revokeRecoveryCodes.run(at, userId);
       revokeUnusedChallenges.run(at, userId, 'enrollment');

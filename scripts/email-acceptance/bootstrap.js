@@ -11,6 +11,13 @@ if(__dirname!==process.env.EMAIL_ACCEPTANCE_ROOT || process.env.LISTEN_HOST!=='1
     const checkpoint=await require('./acceptance-mailbox').seedMailbox(db,process.env);
     fs.writeFileSync(path.join(__dirname,'mailbox-checkpoint.json'),JSON.stringify(checkpoint)+'\n',{mode:0o600});
   }
+  const syntheticOwner=JSON.parse(fs.readFileSync(path.join(__dirname,'synthetic-owner.json'),'utf8'));
+  const passwordHash=await require('bcryptjs').hash(syntheticOwner.password,12);
+  db.transaction(()=>{
+    const result=db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)')
+      .run(syntheticOwner.email,passwordHash,syntheticOwner.name);
+    db.prepare('INSERT INTO dead_switch_config(user_id) VALUES(?)').run(result.lastInsertRowid);
+  }).immediate();
   require('./server/index');
   const remaining=new Date(process.env.EMAIL_ACCEPTANCE_EXPIRES_AT)-Date.now();
   if(!Number.isFinite(remaining)||remaining<=0)throw new Error('Acceptance lifetime expired');
