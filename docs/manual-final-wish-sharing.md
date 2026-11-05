@@ -17,3 +17,11 @@ Dedicated automatic beneficiary wishes retain their separate, immutable recipien
 ## Local acceptance
 
 The complete suite passed on 5 November 2026: 523 JavaScript tests and 17 Python tests, with no failures or skips. This includes 16 atomic sharing/owner-route tests, 15 independent token-sharing security tests and real Firefox workflows at 1440px and 390px. An isolated copy of the affected production wish confirmed access for its three assigned beneficiaries and its one attachment, with its authored content, other wishes, general vault grants and source database unchanged. No SMS or email was sent by this trial.
+
+## Production verification — 5 November 2026
+
+Revision `31c1e5849ed0f2eefc781ee68ead793362bb72b7` is deployed through FTPS and pushed to `main`; all 73 runtime files match their checksums. The hosted application is healthy and its background jobs are running. Hosted and local port-4444 browser assets match this revision. Private environment settings, Clickatell, SMS policy and the local login gateway were preserved.
+
+After explicit owner authorization, the reviewed existing wish and its one attachment were shared with its three assigned beneficiaries. All three have a current `manual_token_share` permission and can read the wish and attachment. Each beneficiary's visible list contains that shared wish and only their own dedicated personal wish. All general vault grants and existing token hashes remain unchanged, as do other wishes and their permissions. Fourteen protected tables were verified unchanged during the sharing transaction; prior revision history was retained. No SMS or email was sent by sharing or verification.
+
+Verified database snapshots, matching keys, managed attachments and previous runtime files are retained only in the private local deployment cache. Temporary hosted database snapshots and maintenance helpers were removed.
