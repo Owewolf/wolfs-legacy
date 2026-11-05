@@ -172,8 +172,7 @@ function createAuthRouter({ dbGetter = getDb, auditWriter = audit, env = process
       if (!currentUser || currentUser.password_hash !== user.password_hash) return res.status(401).json({ error: 'Sign in again' });
       if (rejectAccount(res, accountAccess(db, currentUser))) return;
 
-      if (gateway) {
-        if (currentUser.account_status !== 'active') return res.status(403).json({ error: 'Complete account activation before signing in', code: 'APPROVAL_REQUIRED' });
+      if (gateway && currentUser.account_status === 'active') {
         auditWriter(user.id, 'login_local_gateway', 'user', user.id, null, req.ip);
         return res.json({ sms_required: false, token: createToken(currentUser, 'local_gateway', gateway),
           user: publicUser(db, currentUser, 'local_gateway', gateway) });
