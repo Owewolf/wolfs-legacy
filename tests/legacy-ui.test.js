@@ -57,6 +57,7 @@ const API={
   if(!item)throw new Error('Fixture route not found: '+route);
   if(method==='GET')return fixtureCopy(item);
   if(method==='PATCH'){item.versions.push({revision:item.revision,payload:{title:item.title,body_markdown:item.body_markdown},created_at:common.updated_at});if(item.status==='released'){item.status='draft';item.beneficiaries.forEach(row=>{row.released_at=null;});}Object.assign(item,body);item.revision++;fixtureSync(item);return fixtureCopy(item);}
+  if(route.endsWith('/share')){if(body.confirm!==true||body.expected_revision!==item.revision)throw new Error('The wish changed. Reopen it before sharing.');item.status='released';item.release_policy='manual_release';item.revision++;item.beneficiaries.filter(row=>body.beneficiary_ids.includes(row.beneficiary_id)).forEach(row=>{row.released_at=common.updated_at;row.release_scope='manual_token_share';row.revoked_at=null;});item.release_events.push({event_type:'shared_now',created_at:common.updated_at});return fixtureCopy(item);}
   if(route.endsWith('/release')){item.status='released';item.beneficiaries.filter(row=>body.beneficiary_ids.includes(row.beneficiary_id)).forEach(row=>{row.released_at=common.updated_at;row.revoked_at=null;});item.release_events.push({event_type:'manual_release',created_at:common.updated_at});return fixtureCopy(item);}
   if(route.endsWith('/revoke')){item.beneficiaries.filter(row=>body.beneficiary_ids.includes(row.beneficiary_id)).forEach(row=>{row.revoked_at=common.updated_at;});return fixtureCopy(item);}
   if(route.endsWith('/review')){item.reviews.push({action:body.action,created_at:common.updated_at});item.last_reviewed_at=common.updated_at;item.review_state='current';if(body.next_review_at)item.next_review_at=body.next_review_at;if(body.action==='disable')item.review_enabled=false;return fixtureCopy(item);}
@@ -69,11 +70,16 @@ window.fetch=async(url,options={})=>{
  if(String(url).startsWith('/api/documents/counts'))return new Response('[]',{headers:{'Content-Type':'application/json'}});
  if(String(url).startsWith('/api/beneficiary-access/legacy')){
   fixtureCalls.push({method:options.method||'GET',route:String(url),headers:options.headers,body:options.body?JSON.parse(options.body):undefined});
-  if(options.headers.Authorization!=='Bearer synthetic-recipient-token')return new Response('{"error":"Access denied"}',{status:403,headers:{'Content-Type':'application/json'}});
-  const item=fixtureCopy(fixtureItems.find(row=>row.id==='instructions-1'));item.body_html='<p><strong>Check the garden each week.</strong></p><img src="https://invalid.example/track">';item.acknowledgements=[];
+  const sharedToken=options.headers.Authorization==='Bearer synthetic-shared-token';
+  if(!sharedToken&&options.headers.Authorization!=='Bearer synthetic-recipient-token')return new Response('{"error":"Access denied"}',{status:403,headers:{'Content-Type':'application/json'}});
+  const allowed=sharedToken?fixtureItems.filter(row=>row.status==='released'&&row.release_policy==='manual_release'&&row.beneficiaries.some(recipient=>recipient.beneficiary_id===2&&recipient.released_at&&!recipient.revoked_at)):[fixtureItems.find(row=>row.id==='instructions-1')];
+  const requested=String(url).split('/')[4];
+  const item=fixtureCopy(allowed.find(row=>row.id===requested)||(requested?undefined:allowed[0]));
+  if(String(url)!=='/api/beneficiary-access/legacy'&&!item)return new Response('{"error":"Not found"}',{status:404,headers:{'Content-Type':'application/json'}});
+  if(item){item.body_html=sharedToken?'<p>'+item.body_markdown+'</p>':'<p><strong>Check the garden each week.</strong></p><img src="https://invalid.example/track">';item.acknowledgements=[];}
   if(String(url).includes('/attachments/'))return new Response(new Uint8Array(128),{headers:{'Content-Type':'audio/wav'}});
   if(String(url).endsWith('/acknowledgements'))return new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
-  const content=String(url)==='/api/beneficiary-access/legacy'?[item]:item;
+  const content=String(url)==='/api/beneficiary-access/legacy'?allowed:item;
   return new Response(JSON.stringify(content),{headers:{'Content-Type':'application/json'}});
  }
  return originalFixtureFetch(url,options);
@@ -97,6 +103,7 @@ const browserChecks = `
  check(document.querySelectorAll('.page-header [data-nav="add/final_wishes"]').length===1&&!action('new')&&!workspace().querySelector('.legacy-heading'),'Final Wishes list has one page-level Add Final Wishes Entry action');
  window.location.hash='section/final_wishes/plain-1';await until(()=>action('edit')&&workspace().querySelector('.legacy-heading')?.textContent.includes('Alex Example'),'beneficiary-created plain wish');
  check(workspace().querySelector('.record-category-chip')?.textContent==='Beneficiary Instructions'&&!action('review-no-change')&&!workspace().textContent.includes('Review history'),'plain beneficiary wish has a normal Final Wishes card without information reviews');
+ check(!action('share'),'automatic personal wish never offers the manual Share now action');
  action('edit').click();await until(()=>document.getElementById('legacy-editor'),'plain beneficiary wish editor');
  let plainForm=document.getElementById('legacy-editor');
  check(plainForm.elements.title.value==='Alex Example'&&plainForm.querySelector('[data-locked-beneficiary="1"]')&&plainForm.elements.type.value===''&&plainForm.elements.wish_category.value==='Beneficiary Instructions'&&['wish_details','wish_contact_person','wish_contact_phone','wish_notes','description','introduction','body_markdown'].every(name=>plainForm.elements[name].value==='')&&!plainForm.elements.category&&!plainForm.elements.priority&&plainForm.querySelector('#legacy-review-fields').hidden,'beneficiary-created wish has its name, recipient and Beneficiary Instructions category populated with other content blank');
@@ -208,6 +215,38 @@ const browserChecks = `
  window.location.hash='section/final_wishes/new?type=recording&beneficiary_id=2';
  await until(()=>location.hash==='#add/final_wishes?type=recording&beneficiary_id=2'&&document.getElementById('legacy-editor')?.elements.type.value==='recording','legacy authoring shortcut redirects to the unified form');
  check(document.querySelectorAll('[name="beneficiary_ids"]').length===1&&document.querySelector('[name="beneficiary_ids"]').value==='2','legacy authoring route retains its chosen content group and beneficiary');
+ fixtureRecipients.push({id:3,name:'Third Example',relationship:'Child',access_granted:0});
+ const sharedWish=fixtureSync({...fixtureCopy(common),id:'share-private',title:'Synthetic memorial instructions',type:'instruction',status:'ready',release_policy:'owner_only',revision:6,body_markdown:'Synthetic shared memorial message',beneficiary_ids:[1,2,3],metadata:{final_wishes:{content_type:'',contact_recipients:[{entry_id:1,name:'Named adviser only'}]}},attachments:[{id:'shared-file',display_name:'Synthetic memorial attachment.pdf',mime_type:'application/pdf',size_bytes:128}]});
+ fixtureItems.push(sharedWish);
+ window.location.hash='section/final_wishes/share-private';await until(()=>action('share')&&workspace().textContent.includes('Synthetic memorial instructions'),'ready private manual wish');
+ check(!action('release')&&workspace().textContent.includes('Assigning recipients, saving or marking Ready does not share')&&workspace().textContent.includes('assigned — not shared'),'ready owner-only wish explains assignment and offers explicit Share now without an earlier release-policy edit');
+ action('share').click();
+ let shareDialog=document.querySelector('[aria-labelledby="legacy-share-dialog"]');
+ check(shareDialog.querySelectorAll('[name="release_ids"]').length===3&&!shareDialog.querySelector('[name="confirmed"]').checked&&!shareDialog.textContent.includes('Named adviser only')&&shareDialog.textContent.includes('Selected beneficiaries can read this wish and its attachments using their tokens. This does not grant access to the rest of your vault.'),'sharing dialog lists only the three assigned beneficiaries and explains wish-only token access');
+ shareDialog.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flush();
+ check(!fixtureCalls.some(call=>call.route.endsWith('/share'))&&sharedWish.status==='ready'&&sharedWish.release_policy==='owner_only','opening or submitting an unconfirmed sharing dialog does not publish the saved private wish');
+ shareDialog.querySelector('[data-cancel]').click();
+ check(!document.querySelector('[aria-labelledby="legacy-share-dialog"]')&&!fixtureCalls.some(call=>call.route.endsWith('/share')),'canceling Share now leaves private content unchanged');
+ action('share').click();shareDialog=document.querySelector('[aria-labelledby="legacy-share-dialog"]');
+ sharedWish.revision=7;
+ shareDialog.querySelector('[name="confirmed"]').checked=true;
+ shareDialog.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+ await until(()=>shareDialog.querySelector('[data-dialog-error]').textContent.includes('wish changed'),'stale sharing revision');
+ check(sharedWish.status==='ready'&&sharedWish.release_policy==='owner_only'&&!shareDialog.querySelector('[type="submit"]').disabled,'a changed revision leaves sharing uncommitted and tells the owner to reopen the wish');
+ shareDialog.querySelector('[data-cancel]').click();action('back').click();await until(()=>workspace().querySelector('.legacy-list'),'refresh owner wish list');
+ window.location.hash='section/final_wishes/share-private';await until(()=>action('share')&&workspace().textContent.includes('Revision 7'),'review refreshed private wish');
+ action('share').click();shareDialog=document.querySelector('[aria-labelledby="legacy-share-dialog"]');
+ shareDialog.querySelector('[name="release_ids"][value="1"]').checked=false;
+ shareDialog.querySelector('[name="confirmed"]').checked=true;
+ const sharingForm=shareDialog.querySelector('form');sharingForm.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));sharingForm.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+ await until(()=>!document.querySelector('[aria-labelledby="legacy-share-dialog"]')&&action('revoke'),'confirmed wish sharing');
+ const shareCalls=fixtureCalls.filter(call=>call.route.endsWith('/share'));
+ check(shareCalls.length===2&&shareCalls[0].body.expected_revision===6&&shareCalls[1].body.confirm===true&&shareCalls[1].body.expected_revision===7&&shareCalls[1].body.beneficiary_ids.join(',')==='2,3','Share now rejects stale review and posts one confirmation for the refreshed revision and selected subset');
+ check(sharedWish.status==='released'&&sharedWish.release_policy==='manual_release'&&sharedWish.beneficiaries.filter(row=>[2,3].includes(row.beneficiary_id)).every(row=>row.release_scope==='manual_token_share')&&workspace().textContent.includes('Shared now — token access')&&sharedWish.beneficiaries.find(row=>row.beneficiary_id===1).released_at===null&&fixtureRecipients.filter(row=>[2,3].includes(row.id)).every(row=>!row.access_granted),'sharing releases only selected mappings and never grants the ordinary vault');
+ const sharedRoot=document.createElement('div');app.replaceChildren(sharedRoot);await Legacy.mountRecipient(sharedRoot,'synthetic-shared-token',[]);
+ check(sharedRoot.querySelector('[data-recipient-content="share-private"]')&&!sharedRoot.textContent.includes('Example family home'),'a beneficiary without a vault grant sees the shared wish in the protected panel');
+ sharedRoot.querySelector('[data-recipient-content="share-private"]').click();await until(()=>sharedRoot.textContent.includes('Synthetic shared memorial message'),'shared recipient message');
+ check(sharedRoot.textContent.includes('Synthetic memorial attachment.pdf')&&!sharedRoot.querySelector('[data-recipient-linked-entry]'),'shared token detail includes its protected attachment without a linked vault record');
  renderVaultReadonly({owner:{name:'Example owner',email:'owner@example.test'},beneficiary:{name:'Alex Example',relationship:'Child'},entries:[fixtureEntries[1]]},'synthetic-recipient-token');
  await until(()=>document.querySelector('[data-recipient-content]'),'protected beneficiary content');
  check(!document.getElementById('beneficiary-legacy-root').textContent.includes('A letter for Alex'),'recipient portal displays only server-authorised records');
@@ -222,11 +261,12 @@ const browserChecks = `
  check(document.querySelector('audio').src.startsWith('blob:')&&!document.querySelector('audio').src.includes('synthetic-recipient-token'),'recording playback uses a private blob URL');
  window.location.hash='login';await until(()=>document.getElementById('login-form'),'navigation cleanup');
  check(!document.querySelector('.doc-preview-overlay'),'navigation closes private playback and revokes its object URL');
- await originalFixtureFetch('/ui-test-result',{method:'POST',body:JSON.stringify({ok:true,checks})});
+ await originalFixtureFetch('/ui-test-result',{method:'POST',body:JSON.stringify({ok:true,width:innerWidth,checks})});
 })().catch(async error=>{await originalFixtureFetch('/ui-test-result',{method:'POST',body:JSON.stringify({ok:false,error:error.message,stack:error.stack})});});
 `;
 
-test('Final Wishes authoring and protected beneficiary content work in Firefox', {
+for(const width of [1440,390]) {
+test(`Final Wishes authoring, explicit sharing and protected beneficiary content work in Firefox at ${width}px`, {
   timeout: 60000,
   skip: firefox ? false : 'Firefox not installed; set FIREFOX_BIN for browser acceptance',
 }, async t => {
@@ -243,7 +283,11 @@ test('Final Wishes authoring and protected beneficiary content work in Firefox',
       req.on('end',()=>{try{resolveResult(JSON.parse(body));res.end('ok');}catch(error){rejectResult(error);res.writeHead(400).end();}});return;
     }
     if(req.url==='/js/api.js'){res.setHeader('Content-Type','text/javascript');res.end(apiFixture);return;}
-    if(req.url==='/'||req.url?.startsWith('/?screenshot=')){
+    if(req.url?.startsWith('/?mobile-frame=')){
+      res.setHeader('Content-Type','text/html');
+      res.end('<!doctype html><html><body style="margin:0"><iframe title="Synthetic Final Wishes phone acceptance" width="390" height="1000" style="border:0;display:block" src="/?fixture-frame=390#section/final_wishes"></iframe></body></html>');return;
+    }
+    if(req.url==='/'||req.url?.startsWith('/?')){
       const screenshot=req.url.includes('screenshot=');
       const actualIndex=fs.readFileSync(path.join(publicRoot,'index.html'),'utf8');
       const recipientShot=req.url.includes('screenshot=recipient');
@@ -264,14 +308,15 @@ test('Final Wishes authoring and protected beneficiary content work in Firefox',
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const origin='http://127.0.0.1:'+server.address().port;
   function launch(args){const profile=fs.mkdtempSync(path.join(os.tmpdir(),'wolfs-legacy-ui-firefox-'));profiles.push(profile);const browser=spawn(firefox,['--headless','--no-remote','--profile',profile,...args],{stdio:['ignore','ignore','pipe']});browsers.push(browser);browser.stderr.on('data',chunk=>{browserErrors=(browserErrors+String(chunk)).slice(-2000);});return browser;}
-  const browser=launch([origin+'/#section/final_wishes']);
+  const browser=launch(['--width',String(Math.max(width,820)),'--height','1100',origin+(width===390?'/?mobile-frame=390':'/#section/final_wishes')]);
   browser.once('error',rejectResult);browser.once('exit',code=>{if(code!==null&&code!==0)rejectResult(new Error('Firefox exited '+code+': '+browserErrors));});
   timer=setTimeout(()=>rejectResult(new Error('Firefox UI checks timed out: '+browserErrors)),40000);
   const report=await result;
   assert.equal(report.ok,true,[report.error,report.stack].filter(Boolean).join('\n'));
+  assert.equal(report.width,width);
   assert.ok(report.checks.length>=25);
   t.diagnostic(report.checks.join('; '));
-  if(process.env.LEGACY_UI_SCREENSHOT_DIR){
+  if(process.env.LEGACY_UI_SCREENSHOT_DIR&&width===1440){
     const directory=path.resolve(process.env.LEGACY_UI_SCREENSHOT_DIR);fs.mkdirSync(directory,{recursive:true});
     for(const [name,route] of [['final-wishes-owner','owner#section/final_wishes'],['beneficiary-personal-content','recipient#access']]){
       const shot=launch(['--screenshot',path.join(directory,name+'.png'),'--window-size','1440,1250',origin+'/?screenshot='+route]);
@@ -280,3 +325,4 @@ test('Final Wishes authoring and protected beneficiary content work in Firefox',
     }
   }
 });
+}

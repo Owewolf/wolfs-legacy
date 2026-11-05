@@ -352,9 +352,13 @@ function canRead(db,beneficiary,row) {
     return automatic.beneficiary_id===fresh.id&&automatic.owner_user_id===fresh.user_id&&autoWish.validBinding(db,automatic)&&
       !fresh.auto_wish_access_revoked_at&&!mapping?.revoked_at&&row.status!=='archived';
   }
-  if(!fresh.access_granted||row.status!=='released'||row.release_policy==='owner_only') return false;
+  if(row.status!=='released'||row.release_policy==='owner_only') return false;
   const mapping=db.prepare('SELECT * FROM legacy_content_beneficiaries WHERE content_id=? AND beneficiary_id=?').get(row.id,beneficiary.id);
-  return !!(mapping?.released_at&&!mapping.revoked_at&&mapping.release_scope===row.release_policy);
+  if(!mapping?.released_at||mapping.revoked_at)return false;
+  // Only an explicit Share now confirmation grants token access to this wish.
+  // Earlier manual and event-driven releases retain their general-vault gate.
+  if(row.release_policy==='manual_release'&&mapping.release_scope==='manual_token_share')return true;
+  return !!(fresh.access_granted&&mapping.release_scope===row.release_policy);
 }
 function authenticateBeneficiary(db,token) {
   const b=typeof token==='string'&&token.length>=1&&token.length<=256
@@ -426,6 +430,32 @@ function manualRelease(db,userId,id,input) {
     return toView(db,owned(db,userId,id));
   })();
 }
+function shareNow(db,userId,id,input) {
+  return db.transaction(()=>{
+    const row=owned(db,userId,id);
+    if(input?.confirm!==true)throw error('Explicit sharing confirmation is required');
+    if(!Number.isSafeInteger(input.expected_revision)||input.expected_revision!==row.revision)
+      throw error('This wish has changed. Refresh it before confirming sharing.',409);
+    if(autoWish.forContent(db,id)||row.status==='archived')throw error('This wish cannot be shared with this action',409);
+    const selected=validateRecipients(db,userId,input.beneficiary_ids);
+    const assigned=db.prepare('SELECT beneficiary_id FROM legacy_content_beneficiaries WHERE content_id=?').all(id);
+    if(!selected.length||selected.some(b=>!assigned.some(m=>m.beneficiary_id===b)))throw error('Choose assigned recipients');
+    // Preserve earlier recipient grants when extending a shared manual wish.
+    // Converting another release policy withdraws its previous grants first.
+    if(row.release_policy!=='manual_release'||row.status==='draft') {
+      const saved=save(db,userId,{release_policy:'manual_release',status:'ready'},id);
+      // Editing a released conditional wish normally creates a private draft.
+      // This confirmed transaction proceeds directly to the selected release.
+      if(saved.status==='draft')db.prepare("UPDATE legacy_contents SET status='ready' WHERE id=? AND user_id=?").run(id,userId);
+    }
+    manualRelease(db,userId,id,{confirm:true,beneficiary_ids:selected});
+    for(const beneficiaryId of selected) {
+      const changed=db.prepare("UPDATE legacy_content_beneficiaries SET release_scope='manual_token_share' WHERE content_id=? AND beneficiary_id=? AND release_scope IS NOT 'manual_token_share'").run(id,beneficiaryId);
+      if(changed.changes)event(db,{userId,contentId:id,beneficiaryId,type:'token_shared'});
+    }
+    return toView(db,owned(db,userId,id));
+  }).immediate();
+}
 function addMonths(at,months) {
   const d=new Date(at),day=d.getUTCDate();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+months);
   const last=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();d.setUTCDate(Math.min(day,last));return d.toISOString();
@@ -447,4 +477,4 @@ function review(db,userId,id,input) {
   })();
 }
 module.exports={TYPES,POLICIES,error,hasSchema,event,owned,payload,toView,list,save,permanentlyDelete,ids,validateRecipients,replaceRecipients,invalidateReleases,
-  canRead,authenticateBeneficiary,beneficiaryItem,releaseForEvent,revokeForBeneficiary,manualRelease,review,reviewState,now};
+  canRead,authenticateBeneficiary,beneficiaryItem,releaseForEvent,revokeForBeneficiary,manualRelease,shareNow,review,reviewState,now};

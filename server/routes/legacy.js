@@ -78,6 +78,7 @@ ownerRouter.put('/legacy/:id/beneficiaries',handler((req,res)=>{
   })());
 }));
 ownerRouter.post('/legacy/:id/release',handler((req,res)=>res.json(legacy.manualRelease(getDb(),req.user.id,req.params.id,req.body))));
+ownerRouter.post('/legacy/:id/share',handler((req,res)=>res.json(legacy.shareNow(getDb(),req.user.id,req.params.id,req.body))));
 ownerRouter.post('/legacy/:id/revoke',handler((req,res)=>{
   const db=getDb();res.json(db.transaction(()=>{
     const row=legacy.owned(db,req.user.id,req.params.id);
